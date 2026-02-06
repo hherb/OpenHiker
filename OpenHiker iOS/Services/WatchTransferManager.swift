@@ -12,6 +12,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     }
 
     @Published var isPaired = false
+    @Published var isWatchAppInstalled = false
     @Published var isReachable = false
     @Published var pendingTransfers: [WCSessionFileTransfer] = []
     @Published var transferStatuses: [UUID: TransferStatus] = [:]
@@ -43,8 +44,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             return
         }
 
-        guard session.isPaired else {
-            print("No watch paired")
+        guard session.isPaired && session.isWatchAppInstalled else {
+            print("No watch paired or watch app not installed (paired=\(session.isPaired) appInstalled=\(session.isWatchAppInstalled))")
             return
         }
 
@@ -74,7 +75,9 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     /// Transfer all downloaded regions to the watch
     func syncAllRegionsToWatch() {
-        guard let session = session, session.activationState == .activated, session.isPaired else {
+        guard let session = session, session.activationState == .activated,
+              session.isPaired, session.isWatchAppInstalled else {
+            print("Cannot sync: session not ready, no watch paired, or watch app not installed")
             return
         }
 
@@ -121,7 +124,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     /// Update app context with current state
     func updateApplicationContext(_ context: [String: Any]) {
-        guard let session = session, session.activationState == .activated else {
+        guard let session = session, session.activationState == .activated,
+              session.isWatchAppInstalled else {
             return
         }
 
@@ -139,14 +143,23 @@ extension WatchConnectivityManager: WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         DispatchQueue.main.async {
             self.isPaired = session.isPaired
+            self.isWatchAppInstalled = session.isWatchAppInstalled
             self.isReachable = session.isReachable
         }
 
         if let error = error {
             print("WCSession activation error: \(error.localizedDescription)")
         } else {
-            print("WCSession activated: \(activationState.rawValue)")
-            if session.isPaired {
+            print("WCSession activated: state=\(activationState.rawValue) paired=\(session.isPaired) appInstalled=\(session.isWatchAppInstalled) reachable=\(session.isReachable)")
+            // Recover any outstanding transfers from previous sessions
+            let outstanding = session.outstandingFileTransfers
+            if !outstanding.isEmpty {
+                print("Found \(outstanding.count) outstanding file transfers")
+                DispatchQueue.main.async {
+                    self.pendingTransfers = outstanding
+                }
+            }
+            if session.isPaired && session.isWatchAppInstalled {
                 sendAvailableRegions()
             }
         }
@@ -171,8 +184,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
     func sessionWatchStateDidChange(_ session: WCSession) {
         DispatchQueue.main.async {
             self.isPaired = session.isPaired
+            self.isWatchAppInstalled = session.isWatchAppInstalled
         }
-        if session.isPaired {
+        print("Watch state changed: paired=\(session.isPaired) appInstalled=\(session.isWatchAppInstalled)")
+        if session.isPaired && session.isWatchAppInstalled {
             sendAvailableRegions()
         }
     }

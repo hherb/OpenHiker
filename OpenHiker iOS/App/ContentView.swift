@@ -139,26 +139,16 @@ struct WatchSyncView: View {
             List {
                 Section {
                     HStack {
-                        Image(systemName: watchConnectivity.isPaired
-                            ? (watchConnectivity.isReachable ? "applewatch.radiowaves.left.and.right" : "applewatch")
-                            : "applewatch.slash")
-                            .foregroundStyle(watchConnectivity.isPaired ? .green : .secondary)
+                        Image(systemName: statusIcon)
+                            .foregroundStyle(statusColor)
                             .font(.title2)
 
                         VStack(alignment: .leading) {
-                            Text(watchConnectivity.isPaired ? "Watch Paired" : "No Watch Paired")
+                            Text(statusTitle)
                                 .font(.headline)
-                            if watchConnectivity.isPaired {
-                                Text(watchConnectivity.isReachable
-                                    ? "Watch app active"
-                                    : "Background transfers available")
-                                    .font(.caption)
-                                    .foregroundStyle(watchConnectivity.isReachable ? .green : .secondary)
-                            } else {
-                                Text("Pair an Apple Watch to sync maps")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(statusSubtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 8)
@@ -166,7 +156,7 @@ struct WatchSyncView: View {
                     Text("Connection Status")
                 }
 
-                if watchConnectivity.isPaired && !storage.regions.isEmpty {
+                if watchConnectivity.isPaired && watchConnectivity.isWatchAppInstalled && !storage.regions.isEmpty {
                     Section {
                         Button {
                             watchConnectivity.syncAllRegionsToWatch()
@@ -216,6 +206,31 @@ struct WatchSyncView: View {
             }
             .navigationTitle("Apple Watch")
         }
+    }
+
+    private var statusIcon: String {
+        if !watchConnectivity.isPaired { return "applewatch.slash" }
+        if !watchConnectivity.isWatchAppInstalled { return "applewatch.slash" }
+        if watchConnectivity.isReachable { return "applewatch.radiowaves.left.and.right" }
+        return "applewatch"
+    }
+
+    private var statusColor: Color {
+        if !watchConnectivity.isPaired || !watchConnectivity.isWatchAppInstalled { return .secondary }
+        return .green
+    }
+
+    private var statusTitle: String {
+        if !watchConnectivity.isPaired { return "No Watch Paired" }
+        if !watchConnectivity.isWatchAppInstalled { return "Watch App Not Installed" }
+        return "Watch Ready"
+    }
+
+    private var statusSubtitle: String {
+        if !watchConnectivity.isPaired { return "Pair an Apple Watch to sync maps" }
+        if !watchConnectivity.isWatchAppInstalled { return "Install OpenHiker on your Apple Watch" }
+        if watchConnectivity.isReachable { return "Watch app active" }
+        return "Background transfers available"
     }
 }
 
