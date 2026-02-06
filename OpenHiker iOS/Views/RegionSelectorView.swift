@@ -14,8 +14,10 @@ struct RegionSelectorView: View {
     @StateObject private var locationManager = LocationManageriOS()
     @StateObject private var searchCompleter = LocationSearchCompleter()
 
-    // Default to a nice hiking area (Yosemite)
-    private let defaultCenter = CLLocationCoordinate2D(latitude: 37.8651, longitude: -119.5383)
+    // Persist the last viewed location
+    @AppStorage("lastLatitude") private var lastLatitude: Double = 37.8651  // Yosemite default
+    @AppStorage("lastLongitude") private var lastLongitude: Double = -119.5383
+    @AppStorage("lastSpan") private var lastSpan: Double = 0.5
 
     var body: some View {
         NavigationStack {
@@ -116,6 +118,7 @@ struct RegionSelectorView: View {
                     searchCompleter: searchCompleter,
                     onSelectLocation: { coordinate in
                         showSearchSheet = false
+                        saveLastLocation(coordinate: coordinate, span: 0.2)
                         withAnimation {
                             cameraPosition = .region(MKCoordinateRegion(
                                 center: coordinate,
@@ -128,10 +131,25 @@ struct RegionSelectorView: View {
             }
         }
         .onAppear {
+            // Load the last viewed location
+            let center = CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
             cameraPosition = .region(MKCoordinateRegion(
-                center: defaultCenter,
-                span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+                center: center,
+                span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
             ))
+        }
+        .onChange(of: locationManager.currentLocation) { _, newLocation in
+            // When location updates, center map if user requested it
+            if locationManager.shouldCenterOnNextUpdate, let location = newLocation {
+                locationManager.shouldCenterOnNextUpdate = false
+                saveLastLocation(coordinate: location.coordinate, span: 0.1)
+                withAnimation {
+                    cameraPosition = .region(MKCoordinateRegion(
+                        center: location.coordinate,
+                        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+                    ))
+                }
+            }
         }
     }
 
@@ -252,9 +270,13 @@ struct RegionSelectorView: View {
     }
 
     private func centerOnUserLocation() {
+        locationManager.shouldCenterOnNextUpdate = true
         locationManager.requestLocationPermission()
 
+        // If we already have a location, center immediately
         if let location = locationManager.currentLocation {
+            locationManager.shouldCenterOnNextUpdate = false
+            saveLastLocation(coordinate: location.coordinate, span: 0.1)
             withAnimation {
                 cameraPosition = .region(MKCoordinateRegion(
                     center: location.coordinate,
@@ -262,6 +284,12 @@ struct RegionSelectorView: View {
                 ))
             }
         }
+    }
+
+    private func saveLastLocation(coordinate: CLLocationCoordinate2D, span: Double) {
+        lastLatitude = coordinate.latitude
+        lastLongitude = coordinate.longitude
+        lastSpan = span
     }
 }
 
@@ -375,6 +403,7 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
 
     @Published var currentLocation: CLLocation?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    var shouldCenterOnNextUpdate = false
 
     override init() {
         super.init()
