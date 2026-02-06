@@ -74,7 +74,7 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
     ///
     /// The C macro `SQLITE_TRANSIENT` is `((sqlite3_destructor_type)-1)`, which doesn't bridge
     /// to Swift. This constant reproduces the same bit pattern via `unsafeBitCast`.
-    private static let sqliteTransient = Self.sqliteTransient
+    private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     // MARK: - Singleton
 

@@ -339,6 +339,9 @@ struct RegionSelectorView: View {
             ))
             loadWaypoints()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
+            loadWaypoints()
+        }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             // When location updates, center map if user requested it
             if locationManager.shouldCenterOnNextUpdate, let location = newLocation {

@@ -69,14 +69,9 @@ struct MapView: View {
     /// The region selected in the picker sheet (used for dismiss callback).
     @State private var pickedRegion: RegionMetadata?
 
-    /// Whether to show an error alert for HealthKit or tracking failures.
-    @State private var showingError = false
-
-    /// The error message to display in the alert (HealthKit/tracking).
-    @State private var healthKitErrorMessage = ""
-
     /// Whether the save hike sheet is currently displayed after stopping tracking.
     @State private var showingSaveHike = false
+
 
     var body: some View {
         GeometryReader { geometry in
@@ -139,6 +134,9 @@ struct MapView: View {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
+            loadWaypoints()
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -163,14 +161,9 @@ struct MapView: View {
         }
         .onChange(of: healthKitManager.healthKitError?.localizedDescription) { _, newValue in
             if let message = newValue {
-                healthKitErrorMessage = message
-                showingError = true
+                errorMessage = message
+                showError = true
             }
-        }
-        .alert("Tracking Error", isPresented: $showingError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(healthKitErrorMessage)
         }
         .sheet(isPresented: $showingSaveHike) {
             SaveHikeSheet(regionId: selectedRegion?.id) { saved in
@@ -420,8 +413,8 @@ struct MapView: View {
                     )
                     if workout == nil, let error = healthKitManager.healthKitError {
                         await MainActor.run {
-                            healthKitErrorMessage = error.localizedDescription
-                            showingError = true
+                            errorMessage = error.localizedDescription
+                            showError = true
                         }
                     }
                 }
@@ -437,7 +430,7 @@ struct MapView: View {
                 // Check if startWorkout set an error (synchronous method)
                 if let error = healthKitManager.healthKitError {
                     errorMessage = error.localizedDescription
-                    showingError = true
+                    showError = true
                 }
             }
         }

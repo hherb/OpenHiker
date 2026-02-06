@@ -18,6 +18,13 @@
 import Foundation
 import CoreLocation
 
+/// Notification posted when a waypoint is received via WatchConnectivity sync.
+///
+/// Views observing this notification should reload their waypoints from the store.
+extension Notification.Name {
+    static let waypointSyncReceived = Notification.Name("waypointSyncReceived")
+}
+
 /// Categories for waypoint pins, each associated with an SF Symbol icon name.
 ///
 /// Used to visually distinguish different types of points of interest on the map.
