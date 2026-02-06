@@ -296,6 +296,73 @@ final class LocationManager: NSObject, ObservableObject {
         }
         return last.timestamp.timeIntervalSince(first.timestamp)
     }
+
+    /// Minimum duration (seconds) below walking speed to count as a rest stop.
+    ///
+    /// Short pauses under this threshold (e.g., stopping at a junction to check
+    /// the map) are counted as walking time to avoid over-counting rest periods.
+    static let walkingAndRestingMinRestDuration: TimeInterval = 60
+
+    /// Computes the walking and resting time from recorded track points.
+    ///
+    /// Walking vs resting is determined by speed between consecutive points:
+    /// - If speed is below ``HikeStatisticsConfig/restingSpeedThreshold`` (0.3 m/s)
+    ///   for longer than ``walkingAndRestingMinRestDuration`` seconds, the interval
+    ///   is counted as resting.
+    /// - All other intervals are counted as walking.
+    ///
+    /// - Returns: A tuple of (walking time, resting time) in seconds, or `(0, 0)`
+    ///   if fewer than 2 track points exist.
+    var walkingAndRestingTime: (walking: TimeInterval, resting: TimeInterval) {
+        guard trackPoints.count > 1 else { return (walking: 0, resting: 0) }
+
+        var walkingTotal: TimeInterval = 0
+        var restingTotal: TimeInterval = 0
+        var currentRestStart: Date?
+
+        for i in 1..<trackPoints.count {
+            let previous = trackPoints[i - 1]
+            let current = trackPoints[i]
+            let distance = current.distance(from: previous)
+            let timeDiff = current.timestamp.timeIntervalSince(previous.timestamp)
+
+            guard timeDiff > 0 else { continue }
+
+            let speed = distance / timeDiff
+
+            if speed < HikeStatisticsConfig.restingSpeedThreshold {
+                // Below walking speed — may be resting
+                if currentRestStart == nil {
+                    currentRestStart = previous.timestamp
+                }
+            } else {
+                // Above walking speed — walking
+                if let restStart = currentRestStart {
+                    let restDuration = previous.timestamp.timeIntervalSince(restStart)
+                    if restDuration >= Self.walkingAndRestingMinRestDuration {
+                        restingTotal += restDuration
+                    } else {
+                        // Too short to count as rest, add to walking instead
+                        walkingTotal += restDuration
+                    }
+                    currentRestStart = nil
+                }
+                walkingTotal += timeDiff
+            }
+        }
+
+        // Handle trailing rest period (still resting at end of track)
+        if let restStart = currentRestStart, let lastPoint = trackPoints.last {
+            let restDuration = lastPoint.timestamp.timeIntervalSince(restStart)
+            if restDuration >= Self.walkingAndRestingMinRestDuration {
+                restingTotal += restDuration
+            } else {
+                walkingTotal += restDuration
+            }
+        }
+
+        return (walking: walkingTotal, resting: restingTotal)
+    }
 }
 
 // MARK: - CLLocationManagerDelegate

@@ -72,8 +72,11 @@ struct MapView: View {
     /// Whether to show an error alert for HealthKit or tracking failures.
     @State private var showingError = false
 
-    /// The error message to display in the alert.
-    @State private var errorMessage = ""
+    /// The error message to display in the alert (HealthKit/tracking).
+    @State private var healthKitErrorMessage = ""
+
+    /// Whether the save hike sheet is currently displayed after stopping tracking.
+    @State private var showingSaveHike = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -160,14 +163,25 @@ struct MapView: View {
         }
         .onChange(of: healthKitManager.healthKitError?.localizedDescription) { _, newValue in
             if let message = newValue {
-                errorMessage = message
+                healthKitErrorMessage = message
                 showingError = true
             }
         }
         .alert("Tracking Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(errorMessage)
+            Text(healthKitErrorMessage)
+        }
+        .sheet(isPresented: $showingSaveHike) {
+            SaveHikeSheet(regionId: selectedRegion?.id) { saved in
+                if saved {
+                    print("Hike saved successfully")
+                } else {
+                    print("Hike discarded")
+                }
+                // Clear track data after save or discard
+                locationManager.trackPoints.removeAll()
+            }
         }
     }
 
@@ -406,11 +420,15 @@ struct MapView: View {
                     )
                     if workout == nil, let error = healthKitManager.healthKitError {
                         await MainActor.run {
-                            errorMessage = error.localizedDescription
+                            healthKitErrorMessage = error.localizedDescription
                             showingError = true
                         }
                     }
                 }
+            }
+            // Present save hike sheet if there are track points to save
+            if !locationManager.trackPoints.isEmpty {
+                showingSaveHike = true
             }
         } else {
             locationManager.startTracking()

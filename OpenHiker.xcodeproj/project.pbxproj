@@ -32,6 +32,23 @@
 		1B0000010000000000000008 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000008 /* HealthKitManager.swift */; };
 		1B0000010000000000000009 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
 		1B0000010000000000000013 /* HikeStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000013 /* HikeStatistics.swift */; };
+		1A0000010000000000000014 /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000014 /* Waypoint.swift */; };
+		1B0000010000000000000014 /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000014 /* Waypoint.swift */; };
+		1A0000010000000000000015 /* WaypointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000015 /* WaypointStore.swift */; };
+		1B0000010000000000000015 /* WaypointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000015 /* WaypointStore.swift */; };
+		1A0000010000000000000016 /* WaypointDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000016 /* WaypointDetailView.swift */; };
+		1A0000010000000000000017 /* AddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000017 /* AddWaypointView.swift */; };
+		1B0000010000000000000016 /* AddWaypointSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000010 /* AddWaypointSheet.swift */; };
+		1A0000010000000000000018 /* SavedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000018 /* SavedRoute.swift */; };
+		1B0000010000000000000018 /* SavedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000018 /* SavedRoute.swift */; };
+		1A0000010000000000000019 /* RouteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000019 /* RouteStore.swift */; };
+		1B0000010000000000000019 /* RouteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000019 /* RouteStore.swift */; };
+		1A0000010000000000000021 /* TrackCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000020 /* TrackCompression.swift */; };
+		1B0000010000000000000021 /* TrackCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000020 /* TrackCompression.swift */; };
+		1B0000010000000000000017 /* SaveHikeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000011 /* SaveHikeSheet.swift */; };
+		1A0000010000000000000022 /* HikesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000021 /* HikesListView.swift */; };
+		1A0000010000000000000023 /* HikeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000022 /* HikeDetailView.swift */; };
+		1A0000010000000000000024 /* ElevationProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000023 /* ElevationProfileView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +99,18 @@
 		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000010000000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		2A0000010000000000000014 /* Waypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waypoint.swift; sourceTree = "<group>"; };
+		2A0000010000000000000015 /* WaypointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointStore.swift; sourceTree = "<group>"; };
+		2A0000010000000000000016 /* WaypointDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointDetailView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000017 /* AddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000010 /* AddWaypointSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointSheet.swift; sourceTree = "<group>"; };
+		2A0000010000000000000018 /* SavedRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedRoute.swift; sourceTree = "<group>"; };
+		2A0000010000000000000019 /* RouteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteStore.swift; sourceTree = "<group>"; };
+		2A0000010000000000000020 /* TrackCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackCompression.swift; sourceTree = "<group>"; };
+		2B0000010000000000000011 /* SaveHikeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveHikeSheet.swift; sourceTree = "<group>"; };
+		2A0000010000000000000021 /* HikesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikesListView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000022 /* HikeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeDetailView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000023 /* ElevationProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevationProfileView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +175,11 @@
 			isa = PBXGroup;
 			children = (
 				2A0000010000000000000004 /* RegionSelectorView.swift */,
+				2A0000010000000000000016 /* WaypointDetailView.swift */,
+				2A0000010000000000000017 /* AddWaypointView.swift */,
+				2A0000010000000000000021 /* HikesListView.swift */,
+				2A0000010000000000000022 /* HikeDetailView.swift */,
+				2A0000010000000000000023 /* ElevationProfileView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -194,6 +228,8 @@
 			children = (
 				2B0000010000000000000006 /* MapView.swift */,
 				2B0000010000000000000007 /* HikeStatsOverlay.swift */,
+				2B0000010000000000000010 /* AddWaypointSheet.swift */,
+				2B0000010000000000000011 /* SaveHikeSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -221,6 +257,7 @@
 			children = (
 				5C0000010000000000000002 /* Models */,
 				5C0000010000000000000003 /* Storage */,
+				5C0000010000000000000004 /* Utilities */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -231,6 +268,8 @@
 				2A0000010000000000000011 /* TileCoordinate.swift */,
 				2A0000010000000000000012 /* Region.swift */,
 				2A0000010000000000000013 /* HikeStatistics.swift */,
+				2A0000010000000000000014 /* Waypoint.swift */,
+				2A0000010000000000000018 /* SavedRoute.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -239,8 +278,18 @@
 			isa = PBXGroup;
 			children = (
 				2A0000010000000000000010 /* TileStore.swift */,
+				2A0000010000000000000015 /* WaypointStore.swift */,
+				2A0000010000000000000019 /* RouteStore.swift */,
 			);
 			path = Storage;
+			sourceTree = "<group>";
+		};
+		5C0000010000000000000004 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000010000000000000020 /* TrackCompression.swift */,
+			);
+			path = Utilities;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -361,6 +410,16 @@
 				1A0000010000000000000011 /* TileCoordinate.swift in Sources */,
 				1A0000010000000000000012 /* Region.swift in Sources */,
 				1A0000010000000000000013 /* HikeStatistics.swift in Sources */,
+				1A0000010000000000000014 /* Waypoint.swift in Sources */,
+				1A0000010000000000000015 /* WaypointStore.swift in Sources */,
+				1A0000010000000000000016 /* WaypointDetailView.swift in Sources */,
+				1A0000010000000000000017 /* AddWaypointView.swift in Sources */,
+				1A0000010000000000000018 /* SavedRoute.swift in Sources */,
+				1A0000010000000000000019 /* RouteStore.swift in Sources */,
+				1A0000010000000000000021 /* TrackCompression.swift in Sources */,
+				1A0000010000000000000022 /* HikesListView.swift in Sources */,
+				1A0000010000000000000023 /* HikeDetailView.swift in Sources */,
+				1A0000010000000000000024 /* ElevationProfileView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -379,6 +438,13 @@
 				1B0000010000000000000013 /* HikeStatistics.swift in Sources */,
 				1B0000010000000000000007 /* HikeStatsOverlay.swift in Sources */,
 				1B0000010000000000000008 /* HealthKitManager.swift in Sources */,
+				1B0000010000000000000014 /* Waypoint.swift in Sources */,
+				1B0000010000000000000015 /* WaypointStore.swift in Sources */,
+				1B0000010000000000000016 /* AddWaypointSheet.swift in Sources */,
+				1B0000010000000000000018 /* SavedRoute.swift in Sources */,
+				1B0000010000000000000019 /* RouteStore.swift in Sources */,
+				1B0000010000000000000021 /* TrackCompression.swift in Sources */,
+				1B0000010000000000000017 /* SaveHikeSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
