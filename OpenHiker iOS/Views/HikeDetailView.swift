@@ -69,6 +69,9 @@ struct HikeDetailView: View {
     /// Whether the comment is currently being edited.
     @State private var isEditingComment = false
 
+    /// Whether the community upload sheet is presented.
+    @State private var showUploadSheet = false
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -122,6 +125,18 @@ struct HikeDetailView: View {
         }
         .navigationTitle(route.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showUploadSheet = true
+                } label: {
+                    Label("Share to Community", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
+        .sheet(isPresented: $showUploadSheet) {
+            RouteUploadView(route: route, waypoints: waypoints)
+        }
         .onAppear {
             decodeTrackData()
             loadWaypoints()

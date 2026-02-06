@@ -1,0 +1,218 @@
+name: Rebuild Route Index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'routes/**/route.json'
+      - 'waypoints/**/waypoints.json'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild index.json
+        run: |
+          python3 << 'SCRIPT'
+          import json
+          import os
+          import glob
+          from datetime import datetime
+
+          entries = []
+
+          for route_file in sorted(glob.glob('routes/**/route.json', recursive=True)):
+              try:
+                  with open(route_file) as f:
+                      data = json.load(f)
+
+                  # Get the route directory path relative to repo root
+                  route_dir = os.path.dirname(route_file)
+
+                  # Count photos
+                  photos_dir = os.path.join(route_dir, 'photos')
+                  photo_count = len(glob.glob(os.path.join(photos_dir, '*.jpg'))) + \
+                                len(glob.glob(os.path.join(photos_dir, '*.jpeg'))) + \
+                                len(glob.glob(os.path.join(photos_dir, '*.png'))) if os.path.isdir(photos_dir) else 0
+
+                  # Build summary (first 200 chars of description)
+                  description = data.get('description', '')
+                  summary = description[:200] + ('...' if len(description) > 200 else '')
+
+                  entry = {
+                      'id': data['id'],
+                      'name': data['name'],
+                      'activityType': data['activityType'],
+                      'author': data['author'],
+                      'summary': summary,
+                      'createdAt': data['createdAt'],
+                      'region': data['region'],
+                      'stats': data['stats'],
+                      'boundingBox': data['boundingBox'],
+                      'path': route_dir,
+                      'photoCount': photo_count,
+                      'waypointCount': len(data.get('waypoints', []))
+                  }
+                  entries.append(entry)
+                  print(f'Indexed: {data["name"]} ({route_dir})')
+
+              except Exception as e:
+                  print(f'WARNING: Could not index {route_file}: {e}')
+
+          # Sort by creation date, newest first
+          entries.sort(key=lambda e: e.get('createdAt', ''), reverse=True)
+
+          index = {
+              'updatedAt': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'routeCount': len(entries),
+              'routes': entries
+          }
+
+          with open('index.json', 'w') as f:
+              json.dump(index, f, indent=2, ensure_ascii=False)
+
+          print(f'\nIndex rebuilt with {len(entries)} routes')
+          SCRIPT
+
+      - name: Generate missing GPX files
+        run: |
+          python3 << 'SCRIPT'
+          import json
+          import glob
+          import os
+
+          def _escape_xml(s):
+              """Escapes XML special characters (& must be first to avoid double-escaping)."""
+              return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+          for route_file in glob.glob('routes/**/route.json', recursive=True):
+              gpx_file = os.path.join(os.path.dirname(route_file), 'route.gpx')
+
+              # Skip if GPX already exists
+              if os.path.exists(gpx_file):
+                  continue
+
+              try:
+                  with open(route_file) as f:
+                      data = json.load(f)
+
+                  gpx = '<?xml version="1.0" encoding="UTF-8"?>\n'
+                  gpx += '<gpx version="1.1" creator="OpenHiker"\n'
+                  gpx += '     xmlns="http://www.topografix.com/GPX/1/1">\n'
+                  gpx += f'  <metadata>\n    <name>{_escape_xml(data["name"])}</name>\n  </metadata>\n'
+
+                  # Waypoints
+                  for wp in data.get('waypoints', []):
+                      gpx += f'  <wpt lat="{wp["lat"]}" lon="{wp["lon"]}">\n'
+                      if wp.get('ele') is not None:
+                          gpx += f'    <ele>{wp["ele"]}</ele>\n'
+                      gpx += f'    <name>{_escape_xml(wp.get("label", ""))}</name>\n'
+                      gpx += f'  </wpt>\n'
+
+                  # Track
+                  gpx += '  <trk>\n'
+                  gpx += f'    <name>{_escape_xml(data["name"])}</name>\n'
+                  gpx += f'    <type>{_escape_xml(data["activityType"])}</type>\n'
+                  gpx += '    <trkseg>\n'
+
+                  for pt in data.get('track', []):
+                      gpx += f'      <trkpt lat="{pt["lat"]}" lon="{pt["lon"]}">\n'
+                      gpx += f'        <ele>{pt["ele"]}</ele>\n'
+                      gpx += f'        <time>{pt["time"]}</time>\n'
+                      gpx += f'      </trkpt>\n'
+
+                  gpx += '    </trkseg>\n  </trk>\n</gpx>\n'
+
+                  with open(gpx_file, 'w') as f:
+                      f.write(gpx)
+                  print(f'Generated: {gpx_file}')
+
+              except Exception as e:
+                  print(f'WARNING: Could not generate GPX for {route_file}: {e}')
+          SCRIPT
+
+      - name: Generate missing README files
+        run: |
+          python3 << 'SCRIPT'
+          import json
+          import glob
+          import os
+
+          for route_file in glob.glob('routes/**/route.json', recursive=True):
+              readme_file = os.path.join(os.path.dirname(route_file), 'README.md')
+
+              # Skip if README already exists
+              if os.path.exists(readme_file):
+                  continue
+
+              try:
+                  with open(route_file) as f:
+                      data = json.load(f)
+
+                  dist_km = data['stats']['distanceMeters'] / 1000
+                  dur_h = int(data['stats']['durationSeconds']) // 3600
+                  dur_m = (int(data['stats']['durationSeconds']) % 3600) // 60
+
+                  md = f"# {data['name']}\n\n"
+                  md += f"**{data['activityType'].title()}** by {data['author']}\n\n"
+
+                  desc = data.get('description', '')
+                  if desc:
+                      md += f"> {desc}\n\n"
+
+                  md += "| Stat | Value |\n|------|-------|\n"
+                  md += f"| Distance | {dist_km:.1f} km |\n"
+                  md += f"| Elevation Gain | {data['stats']['elevationGainMeters']:.0f} m |\n"
+                  md += f"| Elevation Loss | {data['stats']['elevationLossMeters']:.0f} m |\n"
+                  md += f"| Duration | {dur_h}h {dur_m}m |\n"
+                  md += f"| Region | {data['region']['area']}, {data['region']['country']} |\n\n"
+
+                  # Waypoints
+                  waypoints = data.get('waypoints', [])
+                  if waypoints:
+                      md += "## Waypoints\n\n"
+                      for wp in waypoints:
+                          label = wp.get('label') or wp.get('category', 'waypoint')
+                          md += f"- **{label}**"
+                          if wp.get('note'):
+                              md += f" — {wp['note']}"
+                          md += "\n"
+                      md += "\n"
+
+                  # Photos
+                  photos = data.get('photos', [])
+                  if photos:
+                      md += "## Photos\n\n"
+                      for photo in photos:
+                          caption = photo.get('caption') or photo['filename']
+                          md += f"![{caption}](photos/{photo['filename']})\n\n"
+
+                  md += "---\n*Shared via [OpenHiker](https://github.com/hherb/OpenHiker)*\n"
+
+                  with open(readme_file, 'w') as f:
+                      f.write(md)
+                  print(f'Generated: {readme_file}')
+
+              except Exception as e:
+                  print(f'WARNING: Could not generate README for {route_file}: {e}')
+          SCRIPT
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "OpenHiker Bot"
+          git config user.email "openhiker-bot@users.noreply.github.com"
+          git add index.json routes/ waypoints/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Rebuild index and generate missing files"
+            git push
+          fi
