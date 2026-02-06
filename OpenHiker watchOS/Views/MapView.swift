@@ -27,6 +27,7 @@ import WatchKit
 /// - Digital Crown zoom control (bound to ``MapRenderer/currentZoom``)
 /// - GPS position marker and compass heading indicator
 /// - Track trail rendering during active hike recording
+/// - Planned route polyline and navigation overlay for turn-by-turn guidance
 /// - Region selection and loading from received MBTiles databases
 ///
 /// The map is rendered using SpriteKit rather than SwiftUI for efficient tile
@@ -35,6 +36,7 @@ struct MapView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
     @EnvironmentObject var healthKitManager: HealthKitManager
+    @EnvironmentObject var routeGuidance: RouteGuidance
 
     /// Whether to record hikes as workouts in Apple Health.
     @AppStorage("recordWorkouts") private var recordWorkouts = true
@@ -98,6 +100,9 @@ struct MapView: View {
                 // Hike stats overlay (distance, elevation, time, vitals)
                 HikeStatsOverlay()
 
+                // Navigation overlay for route guidance
+                NavigationOverlay(guidance: routeGuidance)
+
                 // Overlays
                 VStack {
                     // Top bar with info
@@ -125,6 +130,7 @@ struct MapView: View {
             if locationManager.isTracking {
                 mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
             }
+            refreshRouteLine()
         }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             updateUserPosition(newLocation)
@@ -360,6 +366,12 @@ struct MapView: View {
             mapRenderer.setCenter(location.coordinate)
             refreshWaypointMarkers()
         }
+
+        // Feed location to route guidance if active navigation
+        if routeGuidance.isNavigating {
+            routeGuidance.updateLocation(location)
+            refreshRouteLine()
+        }
     }
 
     /// Centers the map on the user's current GPS position.
@@ -394,6 +406,18 @@ struct MapView: View {
     /// Called after zoom/pan changes and when waypoints are added or removed.
     private func refreshWaypointMarkers() {
         mapScene?.updateWaypointMarkers(waypoints: waypoints)
+    }
+
+    /// Updates the planned route polyline on the map from the active navigation route.
+    ///
+    /// Called after zoom/pan changes and location updates during active guidance.
+    /// Clears the route line if navigation is not active.
+    private func refreshRouteLine() {
+        if let route = routeGuidance.activeRoute, routeGuidance.isNavigating {
+            mapScene?.updateRouteLine(coordinates: route.coordinates)
+        } else {
+            mapScene?.clearRouteLine()
+        }
     }
 
     /// Toggles hike track recording on or off.
@@ -479,4 +503,5 @@ struct RegionPickerSheet: View {
         .environmentObject(LocationManager())
         .environmentObject(WatchConnectivityReceiver.shared)
         .environmentObject(HealthKitManager())
+        .environmentObject(RouteGuidance())
 }

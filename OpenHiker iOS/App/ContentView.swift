@@ -19,16 +19,17 @@ import SwiftUI
 
 /// The root content view of the iOS companion app.
 ///
-/// Presents a tab-based interface with five main sections:
+/// Presents a tab-based interface with six main sections:
 /// - **Regions**: Select and download new map regions from OpenTopoMap
 /// - **Downloaded**: View, manage, and transfer previously downloaded regions
 /// - **Hikes**: Review saved hikes with track overlay, elevation profile, and stats
+/// - **Routes**: Plan routes and manage planned routes for watch navigation
 /// - **Community**: Browse and download shared routes from the OpenHikerRoutes repository
 /// - **Watch**: Monitor Apple Watch connectivity and manage file transfers
 struct ContentView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
-    /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Community, 4 = Watch).
+    /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Routes, 4 = Community, 5 = Watch).
     @State private var selectedTab = 0
 
     var body: some View {
@@ -51,17 +52,180 @@ struct ContentView: View {
                 }
                 .tag(2)
 
+            PlannedRoutesListView()
+                .tabItem {
+                    Label("Routes", systemImage: "arrow.triangle.turn.up.right.diamond")
+                }
+                .tag(3)
+
             CommunityBrowseView()
                 .tabItem {
                     Label("Community", systemImage: "globe")
                 }
-                .tag(3)
+                .tag(4)
 
             WatchSyncView()
                 .tabItem {
                     Label("Watch", systemImage: "applewatch")
                 }
-                .tag(4)
+                .tag(5)
+        }
+    }
+}
+
+// MARK: - Planned Routes List View
+
+/// Displays a list of all planned routes with options to plan new routes.
+///
+/// Each route shows its name, distance, estimated time, and creation date.
+/// Tapping a route opens ``RouteDetailView`` for full details and watch transfer.
+/// The "Plan Route" button opens ``RoutePlanningView`` for interactive route creation.
+struct PlannedRoutesListView: View {
+    @ObservedObject private var routeStore = PlannedRouteStore.shared
+    @ObservedObject private var regionStorage = RegionStorage.shared
+    @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+
+    /// Whether the route planning sheet is displayed.
+    @State private var showingRoutePlanning = false
+
+    /// The selected region for route planning (needs routing data).
+    @State private var selectedRegion: Region?
+
+    /// Whether the region picker is displayed.
+    @State private var showingRegionPicker = false
+
+    /// Regions that have routing data available.
+    private var routableRegions: [Region] {
+        regionStorage.regions.filter { $0.hasRoutingData }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if routeStore.routes.isEmpty {
+                    ContentUnavailableView(
+                        "No Planned Routes",
+                        systemImage: "arrow.triangle.turn.up.right.diamond",
+                        description: Text("Plan a route to get turn-by-turn navigation on your Apple Watch.")
+                    )
+                } else {
+                    routesList
+                }
+            }
+            .navigationTitle("Planned Routes")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        if routableRegions.count == 1 {
+                            selectedRegion = routableRegions.first
+                            showingRoutePlanning = true
+                        } else if routableRegions.isEmpty {
+                            // No routing data available
+                            selectedRegion = nil
+                            showingRoutePlanning = true
+                        } else {
+                            showingRegionPicker = true
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .onAppear {
+                routeStore.loadAll()
+            }
+            .sheet(isPresented: $showingRoutePlanning) {
+                RoutePlanningView(region: selectedRegion)
+            }
+            .sheet(isPresented: $showingRegionPicker) {
+                regionPickerSheet
+            }
+        }
+    }
+
+    /// The list of saved planned routes.
+    private var routesList: some View {
+        List {
+            ForEach(routeStore.routes) { route in
+                NavigationLink(destination: RouteDetailView(route: route)) {
+                    plannedRouteRow(route)
+                }
+            }
+            .onDelete(perform: deleteRoutes)
+        }
+    }
+
+    /// A single row in the planned routes list.
+    ///
+    /// - Parameter route: The planned route to display.
+    /// - Returns: A view for the list row.
+    private func plannedRouteRow(_ route: PlannedRoute) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(route.name)
+                    .font(.headline)
+                Spacer()
+                Image(systemName: route.mode == .hiking ? "figure.hiking" : "bicycle")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Label(
+                    HikeStatsFormatter.formatDistance(route.totalDistance, useMetric: true),
+                    systemImage: "ruler"
+                )
+                Spacer()
+                Label(route.formattedDuration, systemImage: "clock")
+                Spacer()
+                Label(
+                    "+\(HikeStatsFormatter.formatElevation(route.elevationGain, useMetric: true))",
+                    systemImage: "arrow.up.right"
+                )
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Text(route.formattedDate)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// A sheet for picking which region to plan a route in.
+    private var regionPickerSheet: some View {
+        NavigationStack {
+            List(routableRegions) { region in
+                Button {
+                    selectedRegion = region
+                    showingRegionPicker = false
+                    showingRoutePlanning = true
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(region.name)
+                            .font(.headline)
+                        Text("\(region.tileCount) tiles")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Select Region")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingRegionPicker = false }
+                }
+            }
+        }
+    }
+
+    /// Deletes planned routes at the given index offsets.
+    ///
+    /// - Parameter offsets: The index positions of the routes to delete.
+    private func deleteRoutes(at offsets: IndexSet) {
+        for index in offsets {
+            let route = routeStore.routes[index]
+            try? PlannedRouteStore.shared.delete(id: route.id)
         }
     }
 }

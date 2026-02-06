@@ -25,10 +25,11 @@ import HealthKit
 /// map tiles rendered via SpriteKit. It receives map data from the iOS companion app
 /// through WatchConnectivity.
 ///
-/// Three environment objects are injected into the view hierarchy:
+/// Four environment objects are injected into the view hierarchy:
 /// - ``LocationManager``: Provides GPS location, heading, and track recording
 /// - ``WatchConnectivityReceiver``: Handles file reception from the iOS app
 /// - ``HealthKitManager``: Manages HealthKit workouts, heart rate, and SpO2
+/// - ``RouteGuidance``: Turn-by-turn navigation engine for planned routes
 @main
 struct OpenHikerWatchApp: App {
     /// GPS location and heading manager for the watch.
@@ -40,15 +41,20 @@ struct OpenHikerWatchApp: App {
     /// HealthKit manager for workout sessions, heart rate, and SpO2.
     @StateObject private var healthKitManager = HealthKitManager()
 
+    /// Route guidance engine for turn-by-turn navigation on the watch.
+    @StateObject private var routeGuidance = RouteGuidance()
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()
                 .environmentObject(locationManager)
                 .environmentObject(connectivityManager)
                 .environmentObject(healthKitManager)
+                .environmentObject(routeGuidance)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
+                    initializePlannedRouteStore()
                 }
         }
     }
@@ -75,6 +81,14 @@ struct OpenHikerWatchApp: App {
         } catch {
             print("Error opening RouteStore: \(error.localizedDescription)")
         }
+    }
+
+    /// Loads all saved planned routes into the ``PlannedRouteStore`` cache.
+    ///
+    /// Called once on app launch. Planned routes are stored as JSON files
+    /// and loaded into memory for display in the Routes tab.
+    private func initializePlannedRouteStore() {
+        PlannedRouteStore.shared.loadAll()
     }
 }
 
@@ -236,6 +250,8 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             handleReceivedGPX(file: file, metadata: metadata)
         case "routingdb":
             handleReceivedRoutingDB(file: file, metadata: metadata)
+        case "plannedRoute":
+            handleReceivedPlannedRoute(file: file, metadata: metadata)
         default:
             print("Unknown file type: \(fileType)")
         }
@@ -401,6 +417,38 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
 
         } catch {
             print("Error saving received routing database: \(error.localizedDescription)")
+        }
+    }
+
+    /// Processes a received planned route JSON file from the iOS companion app.
+    ///
+    /// Decodes the ``PlannedRoute`` from the received JSON file and saves it
+    /// to the local ``PlannedRouteStore``. Posts a notification so the UI
+    /// can refresh the planned routes list.
+    ///
+    /// - Parameters:
+    ///   - file: The received WCSession file containing JSON-encoded ``PlannedRoute``.
+    ///   - metadata: The transfer metadata dictionary with route ID and name.
+    private func handleReceivedPlannedRoute(file: WCSessionFile, metadata: [String: Any]) {
+        let name = metadata["name"] as? String ?? "Unknown Route"
+
+        do {
+            let data = try Data(contentsOf: file.fileURL)
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let route = try decoder.decode(PlannedRoute.self, from: data)
+
+            try PlannedRouteStore.shared.save(route)
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .plannedRouteSyncReceived, object: nil)
+            }
+
+            print("Successfully received planned route: \(name)")
+
+        } catch {
+            print("Error processing received planned route: \(error.localizedDescription)")
         }
     }
 

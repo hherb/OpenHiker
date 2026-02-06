@@ -19,15 +19,17 @@ import SwiftUI
 
 /// The root content view of the watchOS app.
 ///
-/// Presents a vertically-paged tab interface with three tabs:
+/// Presents a vertically-paged tab interface with four tabs:
 /// - **Map**: The SpriteKit-based offline map with GPS overlay (``MapView``)
+/// - **Routes**: List of planned routes for turn-by-turn navigation (``WatchPlannedRoutesView``)
 /// - **Regions**: List of available offline map regions (``RegionsListView``)
 /// - **Settings**: GPS mode and display preferences (``SettingsView``)
 struct WatchContentView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
+    @EnvironmentObject var routeGuidance: RouteGuidance
 
-    /// The currently selected tab index (0 = Map, 1 = Regions, 2 = Settings).
+    /// The currently selected tab index (0 = Map, 1 = Routes, 2 = Regions, 3 = Settings).
     @State private var selectedTab = 0
 
     var body: some View {
@@ -36,15 +38,120 @@ struct WatchContentView: View {
             MapView()
                 .tag(0)
 
+            // Planned Routes
+            WatchPlannedRoutesView(onStartNavigation: { route in
+                routeGuidance.start(route: route)
+                selectedTab = 0 // Switch to map view for guidance
+            })
+            .tag(1)
+
             // Regions List
             RegionsListView()
-                .tag(1)
+                .tag(2)
 
             // Settings
             SettingsView()
-                .tag(2)
+                .tag(3)
         }
         .tabViewStyle(.verticalPage)
+    }
+}
+
+// MARK: - Watch Planned Routes View
+
+/// Displays a list of planned routes received from the iPhone.
+///
+/// Each route shows its name, distance, and estimated duration. Tapping a route
+/// starts active turn-by-turn navigation and switches to the map tab. Routes
+/// can be deleted with swipe-to-delete.
+struct WatchPlannedRoutesView: View {
+    @ObservedObject private var routeStore = PlannedRouteStore.shared
+    @EnvironmentObject var routeGuidance: RouteGuidance
+
+    /// Callback invoked when the user taps a route to start navigation.
+    let onStartNavigation: (PlannedRoute) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if routeStore.routes.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.turn.up.right.diamond")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text("No Routes")
+                            .font(.headline)
+                        Text("Plan routes on your iPhone and send them here")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                } else {
+                    routesList
+                }
+            }
+            .navigationTitle("Routes")
+            .onAppear {
+                routeStore.loadAll()
+            }
+        }
+    }
+
+    /// The scrollable list of planned routes.
+    private var routesList: some View {
+        List {
+            // Active navigation stop button
+            if routeGuidance.isNavigating {
+                Button(role: .destructive) {
+                    routeGuidance.stop()
+                } label: {
+                    Label("Stop Navigation", systemImage: "xmark.circle.fill")
+                }
+            }
+
+            ForEach(routeStore.routes) { route in
+                Button {
+                    onStartNavigation(route)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(route.name)
+                            .font(.headline)
+                            .lineLimit(1)
+
+                        HStack {
+                            Label(formatDistance(route.totalDistance), systemImage: "ruler")
+                            Spacer()
+                            Label(route.formattedDuration, systemImage: "clock")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .onDelete(perform: deleteRoutes)
+        }
+    }
+
+    /// Deletes planned routes at the given index offsets.
+    ///
+    /// - Parameter offsets: The index positions of the routes to delete.
+    private func deleteRoutes(at offsets: IndexSet) {
+        for index in offsets {
+            let route = routeStore.routes[index]
+            try? PlannedRouteStore.shared.delete(id: route.id)
+        }
+    }
+
+    /// Formats a distance in metres for compact display on the watch.
+    ///
+    /// - Parameter metres: Distance in metres.
+    /// - Returns: Formatted string like "12.4 km" or "800 m".
+    private func formatDistance(_ metres: Double) -> String {
+        if metres >= 1000 {
+            return String(format: "%.1f km", metres / 1000)
+        }
+        return "\(Int(metres)) m"
     }
 }
 
@@ -221,4 +328,5 @@ struct SettingsView: View {
         .environmentObject(LocationManager())
         .environmentObject(WatchConnectivityReceiver.shared)
         .environmentObject(HealthKitManager())
+        .environmentObject(RouteGuidance())
 }

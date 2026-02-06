@@ -39,6 +39,7 @@ struct OpenHikerApp: App {
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
+                    initializePlannedRouteStore()
                 }
         }
     }
@@ -65,5 +66,13 @@ struct OpenHikerApp: App {
         } catch {
             print("Error opening RouteStore: \(error.localizedDescription)")
         }
+    }
+
+    /// Loads all saved planned routes into the ``PlannedRouteStore`` cache.
+    ///
+    /// Called once on app launch. Planned routes are stored as JSON files
+    /// and loaded into memory for display in the Routes tab.
+    private func initializePlannedRouteStore() {
+        PlannedRouteStore.shared.loadAll()
     }
 }

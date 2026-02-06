@@ -150,6 +150,14 @@ class RegionStorage: ObservableObject {
         regionsDirectory.appendingPathComponent(region.mbtilesFilename)
     }
 
+    /// Returns the file URL for a region's routing graph database.
+    ///
+    /// - Parameter region: The ``Region`` whose routing database file URL is needed.
+    /// - Returns: The full file URL to the `.routing.db` file in the `regions/` directory.
+    func routingDbURL(for region: Region) -> URL {
+        regionsDirectory.appendingPathComponent(region.routingDbFilename)
+    }
+
     /// Creates a ``Region`` object from a completed download.
     ///
     /// Extracts the file size from the downloaded MBTiles file and constructs a

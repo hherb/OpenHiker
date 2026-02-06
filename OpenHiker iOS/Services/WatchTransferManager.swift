@@ -187,6 +187,41 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         print("Started routing database transfer: \(url.lastPathComponent)")
     }
 
+    /// Transfers a planned route JSON file to the Apple Watch.
+    ///
+    /// The file is sent via `WCSession.transferFile()` with metadata containing
+    /// a `type: "plannedRoute"` marker, the route ID, and the route name.
+    /// The watch's ``WatchConnectivityReceiver`` decodes the JSON and stores
+    /// it in the local ``PlannedRouteStore``.
+    ///
+    /// - Parameters:
+    ///   - fileURL: The local file URL of the JSON-encoded ``PlannedRoute``.
+    ///   - route: The ``PlannedRoute`` being transferred (for metadata).
+    func sendPlannedRouteToWatch(fileURL: URL, route: PlannedRoute) {
+        guard let session = session, session.activationState == .activated else {
+            print("WCSession not activated")
+            return
+        }
+
+        guard session.isPaired && session.isWatchAppInstalled else {
+            print("No watch paired or watch app not installed")
+            return
+        }
+
+        let metadataDict: [String: Any] = [
+            "type": "plannedRoute",
+            "routeId": route.id.uuidString,
+            "name": route.name
+        ]
+
+        let transfer = session.transferFile(fileURL, metadata: metadataDict)
+        DispatchQueue.main.async {
+            self.pendingTransfers.append(transfer)
+        }
+
+        print("Started planned route transfer: \(route.name) (\(route.id.uuidString))")
+    }
+
     /// Transfers a GPX route file to the Apple Watch.
     ///
     /// - Parameters:
