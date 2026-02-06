@@ -18,6 +18,19 @@
 import Foundation
 import CoreLocation
 
+// MARK: - Elevation Point
+
+/// A single point in an elevation profile, pairing cumulative distance with elevation.
+///
+/// Used by ``PlannedRoute`` to store a pre-computed elevation profile that can be
+/// rendered by ``ElevationProfileView`` without needing the original routing database.
+struct ElevationPoint: Codable, Sendable, Equatable {
+    /// Cumulative horizontal distance from the route start in metres.
+    let distance: Double
+    /// Elevation above sea level in metres (from SRTM/Copernicus data).
+    let elevation: Double
+}
+
 /// Notification posted when a planned route is received via WatchConnectivity sync.
 ///
 /// Views observing this notification should reload their planned routes from the store.
@@ -102,6 +115,13 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
     /// UUID of the map region used for routing, or `nil` if not associated.
     let regionId: UUID?
 
+    /// Pre-computed elevation profile for rendering a chart.
+    ///
+    /// Each point pairs cumulative distance (metres) with elevation (metres above sea level).
+    /// Generated from routing node elevations at route creation time.
+    /// `nil` for routes created before this feature was added.
+    let elevationProfile: [ElevationPoint]?
+
     /// Creates a new planned route with the given properties.
     ///
     /// - Parameters:
@@ -133,7 +153,8 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
         elevationGain: Double,
         elevationLoss: Double,
         createdAt: Date = Date(),
-        regionId: UUID? = nil
+        regionId: UUID? = nil,
+        elevationProfile: [ElevationPoint]? = nil
     ) {
         self.id = id
         self.name = name
@@ -149,6 +170,7 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
         self.elevationLoss = elevationLoss
         self.createdAt = createdAt
         self.regionId = regionId
+        self.elevationProfile = elevationProfile
     }
 
     /// Creates a ``PlannedRoute`` from a ``ComputedRoute`` and auto-generated turn instructions.
@@ -175,6 +197,8 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
         let endCoord = computedRoute.coordinates.last
             ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
 
+        let profile = Self.buildElevationProfile(from: computedRoute)
+
         return PlannedRoute(
             name: name,
             mode: mode,
@@ -187,8 +211,37 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
             estimatedDuration: computedRoute.estimatedDuration,
             elevationGain: computedRoute.elevationGain,
             elevationLoss: computedRoute.elevationLoss,
-            regionId: regionId
+            regionId: regionId,
+            elevationProfile: profile
         )
+    }
+
+    /// Builds an elevation profile from the routing nodes of a computed route.
+    ///
+    /// Iterates through each junction node on the route, pairing its SRTM elevation
+    /// (if available) with the cumulative horizontal distance from the start.
+    /// Nodes without elevation data are skipped.
+    ///
+    /// - Parameter computedRoute: The route with ordered nodes and edges.
+    /// - Returns: An array of ``ElevationPoint``s, or `nil` if no elevation data exists.
+    private static func buildElevationProfile(from computedRoute: ComputedRoute) -> [ElevationPoint]? {
+        var profile: [ElevationPoint] = []
+        var cumulativeDistance: Double = 0
+
+        for (index, node) in computedRoute.nodes.enumerated() {
+            if let elevation = node.elevation {
+                profile.append(ElevationPoint(
+                    distance: cumulativeDistance,
+                    elevation: elevation
+                ))
+            }
+
+            if index < computedRoute.edges.count {
+                cumulativeDistance += computedRoute.edges[index].distance
+            }
+        }
+
+        return profile.count >= 2 ? profile : nil
     }
 
     /// Formatted estimated duration for display (e.g., "4h 23m").

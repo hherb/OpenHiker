@@ -273,11 +273,25 @@ When the user goes off-route, you could:
 4. Replace `activeRoute` with the new `PlannedRoute` and call `start(route:)`
 5. This requires the routing database to be available on the watch
 
-### Adding elevation profile to RouteDetailView
+### Elevation Profile (implemented)
 
-1. Extract altitudes from `PlannedRoute.coordinates` (requires storing elevation in the coordinate sequence)
-2. Alternatively, use the edge-level `elevationGain`/`elevationLoss` from the original `ComputedRoute`
-3. Render using SwiftUI Charts or a custom canvas drawing
+`PlannedRoute` stores an optional `elevationProfile: [ElevationPoint]?` array generated at route
+creation time from the `RoutingNode.elevation` (SRTM/Copernicus) data in `ComputedRoute`. The
+`RouteDetailView` renders this using the existing `ElevationProfileView` Swift Charts component.
+
+- `ElevationPoint` struct: `(distance: Double, elevation: Double)` — Codable, in metres
+- `PlannedRoute.buildElevationProfile(from:)` walks the `ComputedRoute.nodes` accumulating per-edge distances
+- Backward-compatible: existing JSON files without this field decode with `elevationProfile: nil`
+- If `nil` or fewer than 2 points, the chart section is hidden
+
+### Pin Repositioning (implemented)
+
+`RoutePlanningView` supports long-press-to-reposition:
+
+1. Long-press (0.5s) on any pin → enters reposition mode (pin highlights with yellow ring + scale)
+2. Instruction text changes to "Tap the map to reposition [pin name]" (orange)
+3. Next map tap moves the pin to the new coordinate and re-computes the route
+4. Tapping any pin or pressing "Cancel" exits reposition mode without changes
 
 ### Supporting GPX import as planned routes
 

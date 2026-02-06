@@ -76,6 +76,9 @@ struct RoutePlanningView: View {
     /// Whether the directions list is expanded.
     @State private var showDirections = false
 
+    /// The annotation currently being repositioned via long-press, or `nil` if not active.
+    @State private var repositioningAnnotation: RouteAnnotation?
+
     /// The map camera position.
     @State private var cameraPosition: MapCameraPosition = .automatic
 
@@ -112,7 +115,9 @@ struct RoutePlanningView: View {
 
     /// Instruction text shown below the map guiding the user's next action.
     private var instructionText: String {
-        if startCoordinate == nil {
+        if let annotation = repositioningAnnotation {
+            return "Tap the map to reposition \(annotation.label)"
+        } else if startCoordinate == nil {
             return "Tap the map to set a start point"
         } else if endCoordinate == nil {
             return "Tap the map to set your destination"
@@ -129,10 +134,21 @@ struct RoutePlanningView: View {
                     .frame(maxHeight: .infinity)
 
                 // Instruction hint
-                Text(instructionText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+                HStack {
+                    Text(instructionText)
+                        .font(.caption)
+                        .foregroundStyle(repositioningAnnotation != nil ? .orange : .secondary)
+
+                    if repositioningAnnotation != nil {
+                        Button("Cancel") {
+                            repositioningAnnotation = nil
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+                }
+                .padding(.vertical, 4)
 
                 // Mode toggle
                 modeToggle
@@ -203,19 +219,33 @@ struct RoutePlanningView: View {
 
     /// Returns the appropriate pin view for a route annotation.
     ///
+    /// Tap removes the pin. Long-press enters reposition mode, which highlights the pin
+    /// with a pulsing ring and makes the next map tap reposition this pin.
+    ///
     /// - Parameter annotation: The annotation to render.
-    /// - Returns: A colored circle view.
+    /// - Returns: A colored circle view with tap and long-press gestures.
     @ViewBuilder
     private func annotationView(for annotation: RouteAnnotation) -> some View {
+        let isRepositioning = repositioningAnnotation?.id == annotation.id
+
         Circle()
             .fill(annotation.color)
             .frame(width: 28, height: 28)
             .overlay(
-                Circle().stroke(.white, lineWidth: 2)
+                Circle().stroke(isRepositioning ? .yellow : .white, lineWidth: isRepositioning ? 3 : 2)
             )
-            .shadow(radius: 2)
+            .shadow(color: isRepositioning ? .yellow.opacity(0.6) : .black.opacity(0.2), radius: isRepositioning ? 6 : 2)
+            .scaleEffect(isRepositioning ? 1.3 : 1.0)
+            .animation(.easeInOut(duration: 0.3), value: isRepositioning)
             .onTapGesture {
-                removeAnnotation(annotation)
+                if repositioningAnnotation != nil {
+                    repositioningAnnotation = nil
+                } else {
+                    removeAnnotation(annotation)
+                }
+            }
+            .onLongPressGesture(minimumDuration: 0.5) {
+                repositioningAnnotation = annotation
             }
     }
 
@@ -307,12 +337,22 @@ struct RoutePlanningView: View {
 
     // MARK: - Actions
 
-    /// Handles a tap on the map by placing the next pin in sequence.
+    /// Handles a tap on the map by placing the next pin or repositioning a selected pin.
     ///
-    /// First tap sets start, second sets end (triggers compute), subsequent taps add via-points.
+    /// If a pin is selected for repositioning (via long-press), the tap moves that pin
+    /// to the new coordinate and re-computes the route. Otherwise, taps place pins in
+    /// sequence: first tap = start, second = end, subsequent = via-points.
     ///
     /// - Parameter coordinate: The tapped geographic coordinate.
     private func handleMapTap(_ coordinate: CLLocationCoordinate2D) {
+        // Handle reposition mode
+        if let annotation = repositioningAnnotation {
+            repositionAnnotation(annotation, to: coordinate)
+            repositioningAnnotation = nil
+            return
+        }
+
+        // Normal pin placement
         if startCoordinate == nil {
             startCoordinate = coordinate
         } else if endCoordinate == nil {
@@ -322,6 +362,25 @@ struct RoutePlanningView: View {
             viaPoints.append(coordinate)
             computeRouteIfReady()
         }
+    }
+
+    /// Moves an existing annotation to a new coordinate and re-computes the route.
+    ///
+    /// - Parameters:
+    ///   - annotation: The annotation to reposition.
+    ///   - coordinate: The new geographic coordinate.
+    private func repositionAnnotation(_ annotation: RouteAnnotation, to coordinate: CLLocationCoordinate2D) {
+        switch annotation.type {
+        case .start:
+            startCoordinate = coordinate
+        case .end:
+            endCoordinate = coordinate
+        case .via:
+            if annotation.index < viaPoints.count {
+                viaPoints[annotation.index] = coordinate
+            }
+        }
+        computeRouteIfReady()
     }
 
     /// Removes an annotation (start, end, or via-point) and re-computes the route.

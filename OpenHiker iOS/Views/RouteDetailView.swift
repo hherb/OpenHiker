@@ -17,6 +17,7 @@
 
 import SwiftUI
 import MapKit
+import Charts
 
 // MARK: - Route Detail View
 
@@ -48,6 +49,11 @@ struct RouteDetailView: View {
 
                 // Statistics
                 statsSection
+
+                // Elevation profile
+                if let profile = route.elevationProfile, profile.count >= 2 {
+                    elevationProfileSection(profile)
+                }
 
                 // Send to Watch button
                 sendToWatchButton
@@ -168,6 +174,25 @@ struct RouteDetailView: View {
                     value: "\(route.turnInstructions.count)"
                 )
             }
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial))
+    }
+
+    // MARK: - Elevation Profile
+
+    /// Elevation profile chart rendered from the route's pre-computed elevation data.
+    ///
+    /// - Parameter profile: Array of ``ElevationPoint``s with distance and elevation.
+    /// - Returns: A chart view wrapped in a card container.
+    private func elevationProfileSection(_ profile: [ElevationPoint]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Elevation Profile")
+                .font(.headline)
+
+            let data = profile.map { (distance: $0.distance, elevation: $0.elevation) }
+            ElevationProfileView(elevationData: data, useMetric: true)
+                .frame(height: 160)
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial))
