@@ -116,6 +116,24 @@ final class LocationManager: NSObject, ObservableObject {
         print("Stopped GPS tracking. Recorded \(trackPoints.count) points")
     }
 
+    /// Start continuous location and heading updates without recording a track
+    func startLocationUpdates() {
+        guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {
+            requestPermission()
+            return
+        }
+
+        locationManager.startUpdatingLocation()
+        locationManager.startUpdatingHeading()
+    }
+
+    /// Stop continuous location and heading updates (if not tracking a hike)
+    func stopLocationUpdates() {
+        guard !isTracking else { return }
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+    }
+
     /// Get a single location update
     func requestSingleLocation() {
         guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {

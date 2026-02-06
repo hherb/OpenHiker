@@ -39,6 +39,15 @@ struct RegionSelectorView: View {
                             .foregroundStyle(.blue.opacity(0.2))
                             .stroke(.blue, lineWidth: 2)
                     }
+
+                    // Track trail breadcrumb
+                    if locationManager.trackPoints.count >= 2 {
+                        MapPolyline(coordinates: locationManager.trackPoints.map(\.coordinate))
+                            .stroke(.orange, lineWidth: 4)
+                    }
+
+                    // User position marker
+                    UserAnnotation()
                 }
                 .mapStyle(.standard(elevation: .realistic, emphasis: .muted))
                 .mapControls {
@@ -75,6 +84,22 @@ struct RegionSelectorView: View {
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundStyle(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            // Track recording toggle
+                            Button {
+                                if locationManager.isTracking {
+                                    locationManager.stopTracking()
+                                } else {
+                                    locationManager.requestLocationPermission()
+                                    locationManager.startTracking()
+                                }
+                            } label: {
+                                Image(systemName: locationManager.isTracking ? "record.circle.fill" : "record.circle")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(locationManager.isTracking ? .red : .blue)
                                     .frame(width: 44, height: 44)
                                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                             }
@@ -497,12 +522,17 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
 
     @Published var currentLocation: CLLocation?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var isTracking = false
+    @Published var trackPoints: [CLLocation] = []
     var shouldCenterOnNextUpdate = false
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 5
+        manager.showsBackgroundLocationIndicator = true
+        manager.activityType = .fitness
         authorizationStatus = manager.authorizationStatus
     }
 
@@ -511,14 +541,36 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
-            manager.requestLocation()
+            manager.startUpdatingLocation()
         default:
             break
         }
     }
 
+    func startTracking() {
+        trackPoints.removeAll()
+        isTracking = true
+        manager.startUpdatingLocation()
+    }
+
+    func stopTracking() {
+        isTracking = false
+    }
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        currentLocation = locations.last
+        guard let location = locations.last else { return }
+        currentLocation = location
+
+        if isTracking {
+            if let lastPoint = trackPoints.last {
+                let distance = location.distance(from: lastPoint)
+                if distance >= 5 {
+                    trackPoints.append(location)
+                }
+            } else {
+                trackPoints.append(location)
+            }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -528,7 +580,7 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
-            manager.requestLocation()
+            manager.startUpdatingLocation()
         }
     }
 }

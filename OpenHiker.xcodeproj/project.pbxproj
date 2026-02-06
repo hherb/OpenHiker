@@ -26,7 +26,32 @@
 		1B0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1B0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
 		1B0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
+		1A0000010000000000000020 /* OpenHiker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 3B0000010000000000000001 /* OpenHiker Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CA0000010000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A0000010000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6B0000010000000000000001;
+			remoteInfo = "OpenHiker Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		DA0000010000000000000001 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				1A0000010000000000000020 /* OpenHiker Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2A0000010000000000000001 /* OpenHikerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerApp.swift; sourceTree = "<group>"; };
@@ -213,10 +238,12 @@
 				6A0000010000000000000002 /* Sources */,
 				4A0000010000000000000001 /* Frameworks */,
 				6A0000010000000000000003 /* Resources */,
+				DA0000010000000000000001 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EA0000010000000000000001 /* PBXTargetDependency */,
 			);
 			name = OpenHiker;
 			productName = OpenHiker;
@@ -241,6 +268,14 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		EA0000010000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6B0000010000000000000001 /* OpenHiker Watch App */;
+			targetProxy = CA0000010000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		8A0000010000000000000001 /* Project object */ = {
@@ -535,7 +570,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -566,7 +601,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;

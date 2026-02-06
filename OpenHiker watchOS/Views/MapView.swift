@@ -55,12 +55,21 @@ struct MapView: View {
         }
         .onAppear {
             loadSavedRegion()
+            locationManager.startLocationUpdates()
         }
         .onChange(of: mapRenderer.currentZoom) { _, _ in
             mapScene?.updateVisibleTiles()
+            if locationManager.isTracking {
+                mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
+            }
         }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             updateUserPosition(newLocation)
+        }
+        .onChange(of: locationManager.heading) { _, newHeading in
+            if let heading = newHeading {
+                mapScene?.updateHeading(trueHeading: heading.trueHeading)
+            }
         }
         .sheet(isPresented: $showingRegionPicker, onDismiss: {
             if let region = pickedRegion {
@@ -208,6 +217,11 @@ struct MapView: View {
 
         // Update position marker on map
         mapScene?.updatePositionMarker(coordinate: location.coordinate)
+
+        // Update track trail if recording
+        if locationManager.isTracking {
+            mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
+        }
 
         // Center map on user if enabled
         if isCenteredOnUser {

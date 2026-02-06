@@ -128,6 +128,15 @@ final class MapScene: SKScene {
     /// Current user position marker
     private var positionMarker: SKShapeNode?
 
+    /// Heading direction cone on position marker
+    private var headingCone: SKShapeNode?
+
+    /// North indicator compass
+    private var compassNode: SKNode?
+
+    /// Track trail breadcrumb line
+    private var trackNode: SKShapeNode?
+
     /// Cache of loaded tile textures
     private var textureCache: [TileCoordinate: SKTexture] = [:]
 
@@ -147,6 +156,7 @@ final class MapScene: SKScene {
         addChild(overlaysNode)
 
         setupPositionMarker()
+        setupCompass()
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -157,20 +167,89 @@ final class MapScene: SKScene {
 
     private func setupPositionMarker() {
         let marker = SKShapeNode(circleOfRadius: 8)
-        marker.fillColor = .blue
+        marker.fillColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
         marker.strokeColor = .white
         marker.lineWidth = 2
         marker.zPosition = 100
         marker.isHidden = true
 
+        // Heading direction cone (triangle pointing in travel direction)
+        let conePath = CGMutablePath()
+        conePath.move(to: CGPoint(x: 0, y: 18))     // tip
+        conePath.addLine(to: CGPoint(x: -7, y: 4))   // bottom-left
+        conePath.addLine(to: CGPoint(x: 7, y: 4))    // bottom-right
+        conePath.closeSubpath()
+
+        let cone = SKShapeNode(path: conePath)
+        cone.fillColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 0.6)
+        cone.strokeColor = .white
+        cone.lineWidth = 1
+        cone.zPosition = 99
+        cone.isHidden = true
+        self.headingCone = cone
+        marker.addChild(cone)
+
         // Pulsing animation
-        let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
-        let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+        let scaleUp = SKAction.scale(to: 1.15, duration: 0.8)
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.8)
         let pulse = SKAction.sequence([scaleUp, scaleDown])
         marker.run(SKAction.repeatForever(pulse))
 
         self.positionMarker = marker
         overlaysNode.addChild(marker)
+    }
+
+    private func setupCompass() {
+        let compass = SKNode()
+        compass.zPosition = 200
+
+        // Background circle
+        let bg = SKShapeNode(circleOfRadius: 14)
+        bg.fillColor = UIColor(white: 0.15, alpha: 0.8)
+        bg.strokeColor = UIColor(white: 0.4, alpha: 0.8)
+        bg.lineWidth = 1
+        compass.addChild(bg)
+
+        // North arrow (red triangle pointing up)
+        let northPath = CGMutablePath()
+        northPath.move(to: CGPoint(x: 0, y: 11))
+        northPath.addLine(to: CGPoint(x: -4, y: -2))
+        northPath.addLine(to: CGPoint(x: 4, y: -2))
+        northPath.closeSubpath()
+
+        let northArrow = SKShapeNode(path: northPath)
+        northArrow.fillColor = UIColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
+        northArrow.strokeColor = .white
+        northArrow.lineWidth = 0.5
+        compass.addChild(northArrow)
+
+        // South half (white triangle pointing down)
+        let southPath = CGMutablePath()
+        southPath.move(to: CGPoint(x: 0, y: -11))
+        southPath.addLine(to: CGPoint(x: -4, y: 2))
+        southPath.addLine(to: CGPoint(x: 4, y: 2))
+        southPath.closeSubpath()
+
+        let southArrow = SKShapeNode(path: southPath)
+        southArrow.fillColor = UIColor(white: 0.85, alpha: 1.0)
+        southArrow.strokeColor = UIColor(white: 0.5, alpha: 0.5)
+        southArrow.lineWidth = 0.5
+        compass.addChild(southArrow)
+
+        // "N" label
+        let nLabel = SKLabelNode(text: "N")
+        nLabel.fontSize = 7
+        nLabel.fontName = "Helvetica-Bold"
+        nLabel.fontColor = .white
+        nLabel.verticalAlignmentMode = .center
+        nLabel.position = CGPoint(x: 0, y: -8)
+        compass.addChild(nLabel)
+
+        // Position in top-right corner
+        compass.position = CGPoint(x: size.width - 22, y: size.height - 22)
+
+        self.compassNode = compass
+        overlaysNode.addChild(compass)
     }
 
     // MARK: - Scene Lifecycle
@@ -353,18 +432,6 @@ final class MapScene: SKScene {
         let zoom = renderer.currentZoom
         let tileSize = MapRenderer.tileSize
 
-        // Convert coordinate to screen position
-        let centerTile = TileCoordinate(
-            latitude: center.latitude,
-            longitude: center.longitude,
-            zoom: zoom
-        )
-        let positionTile = TileCoordinate(
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude,
-            zoom: zoom
-        )
-
         // Calculate pixel offset
         let n = Double(1 << zoom)
 
@@ -383,9 +450,73 @@ final class MapScene: SKScene {
         positionMarker?.isHidden = false
     }
 
+    /// Update heading direction on the position marker
+    func updateHeading(trueHeading: Double) {
+        guard let cone = headingCone else { return }
+        // SpriteKit rotation is counter-clockwise in radians; heading is clockwise degrees from north
+        // In SpriteKit, 0 radians = pointing right, positive = counter-clockwise
+        // Our cone points up (north) by default. To rotate it to the heading:
+        // Convert heading (clockwise from north) to SpriteKit rotation (counter-clockwise from up)
+        let rotation = -trueHeading * .pi / 180.0
+        cone.zRotation = CGFloat(rotation)
+        cone.isHidden = false
+    }
+
     /// Hide the position marker
     func hidePositionMarker() {
         positionMarker?.isHidden = true
+        headingCone?.isHidden = true
+    }
+
+    // MARK: - Track Trail
+
+    /// Update the track trail breadcrumb line from recorded track points
+    func updateTrackTrail(trackPoints: [CLLocation]) {
+        // Remove old track node
+        trackNode?.removeFromParent()
+        trackNode = nil
+
+        guard let renderer = renderer,
+              let center = renderer.centerCoordinate,
+              trackPoints.count >= 2 else { return }
+
+        let zoom = renderer.currentZoom
+        let tileSize = MapRenderer.tileSize
+        let n = Double(1 << zoom)
+
+        let centerX = (center.longitude + 180.0) / 360.0 * n
+        let centerLatRad = center.latitude * .pi / 180.0
+        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+
+        let path = CGMutablePath()
+        var started = false
+
+        for point in trackPoints {
+            let posX = (point.coordinate.longitude + 180.0) / 360.0 * n
+            let posLatRad = point.coordinate.latitude * .pi / 180.0
+            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
+
+            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
+            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+
+            if !started {
+                path.move(to: CGPoint(x: screenX, y: screenY))
+                started = true
+            } else {
+                path.addLine(to: CGPoint(x: screenX, y: screenY))
+            }
+        }
+
+        let trail = SKShapeNode(path: path)
+        trail.strokeColor = UIColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 0.9)
+        trail.lineWidth = 3
+        trail.lineCap = .round
+        trail.lineJoin = .round
+        trail.zPosition = 50
+        trail.isAntialiased = true
+
+        self.trackNode = trail
+        overlaysNode.addChild(trail)
     }
 
     // MARK: - Helpers
