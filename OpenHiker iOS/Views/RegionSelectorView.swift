@@ -11,6 +11,9 @@ struct RegionSelectorView: View {
     @State private var showDownloadSheet = false
     @State private var regionName = ""
     @State private var showSearchSheet = false
+    @State private var isDownloading = false
+    @State private var downloadProgress: RegionDownloadProgress?
+    @State private var downloadError: Error?
     @StateObject private var locationManager = LocationManageriOS()
     @StateObject private var searchCompleter = LocationSearchCompleter()
 
@@ -18,6 +21,8 @@ struct RegionSelectorView: View {
     @AppStorage("lastLatitude") private var lastLatitude: Double = 37.8651  // Yosemite default
     @AppStorage("lastLongitude") private var lastLongitude: Double = -119.5383
     @AppStorage("lastSpan") private var lastSpan: Double = 0.5
+
+    private let tileDownloader = TileDownloader()
 
     var body: some View {
         NavigationStack {
@@ -76,7 +81,9 @@ struct RegionSelectorView: View {
 
                     Spacer()
 
-                    if selectedRegion != nil {
+                    if isDownloading, let progress = downloadProgress {
+                        downloadProgressCard(progress)
+                    } else if selectedRegion != nil {
                         selectedRegionInfo
                     } else {
                         instructionsCard
@@ -166,6 +173,40 @@ struct RegionSelectorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func downloadProgressCard(_ progress: RegionDownloadProgress) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Downloading...")
+                        .font(.headline)
+
+                    Text(progress.status.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("Zoom level \(progress.currentZoom) • \(progress.downloadedTiles)/\(progress.totalTiles) tiles")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer()
+
+                if progress.isComplete {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(.green)
+                } else {
+                    ProgressView()
+                }
+            }
+
+            ProgressView(value: progress.progress)
+                .tint(.blue)
         }
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -261,12 +302,32 @@ struct RegionSelectorView: View {
             boundingBox: boundingBox
         )
 
-        // TODO: Start download with TileDownloader
-        print("Starting download for region: \(request.name)")
-        print("Estimated size: \(request.estimatedSizeFormatted)")
-
         showDownloadSheet = false
+        isDownloading = true
         selectedRegion = nil
+
+        Task {
+            do {
+                let mbtilesURL = try await tileDownloader.downloadRegion(request) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress
+                    }
+                }
+
+                await MainActor.run {
+                    isDownloading = false
+                    downloadProgress = nil
+                    print("Download complete: \(mbtilesURL.path)")
+                    // TODO: Transfer to Watch via WatchTransferManager
+                }
+            } catch {
+                await MainActor.run {
+                    isDownloading = false
+                    downloadError = error
+                    print("Download failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private func centerOnUserLocation() {
