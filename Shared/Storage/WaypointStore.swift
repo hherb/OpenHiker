@@ -545,6 +545,28 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
         try executeSQL(createTableSQL, on: db)
         try executeSQL(createHikeIndexSQL, on: db)
         try executeSQL(createLocationIndexSQL, on: db)
+        migrateSchema(db: db)
+    }
+
+    /// Adds columns introduced in Phase 6 (iCloud sync) if they don't already exist.
+    ///
+    /// Uses `ALTER TABLE ... ADD COLUMN` which silently fails if the column
+    /// already exists (caught and ignored). This avoids needing a version table
+    /// or user_version pragma for this simple migration.
+    private func migrateSchema(db: OpaquePointer) {
+        let migrations = [
+            "ALTER TABLE waypoints ADD COLUMN modified_at TEXT",
+            "ALTER TABLE waypoints ADD COLUMN cloudkit_record_id TEXT"
+        ]
+
+        for sql in migrations {
+            var errorMessage: UnsafeMutablePointer<CChar>?
+            let result = sqlite3_exec(db, sql, nil, nil, &errorMessage)
+            if result != SQLITE_OK {
+                // "duplicate column name" is expected when migration already applied
+                sqlite3_free(errorMessage)
+            }
+        }
     }
 
     /// Executes a raw SQL statement (DDL or DML without result set).

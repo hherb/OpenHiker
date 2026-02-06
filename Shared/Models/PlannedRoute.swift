@@ -122,6 +122,17 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
     /// `nil` for routes created before this feature was added.
     let elevationProfile: [ElevationPoint]?
 
+    /// Timestamp of the most recent modification (name edit).
+    ///
+    /// Used by ``CloudSyncManager`` to detect local changes that need to be
+    /// pushed to iCloud. `nil` for routes created before iCloud sync was added.
+    var modifiedAt: Date?
+
+    /// The CloudKit record ID for this planned route, populated after the first successful sync.
+    ///
+    /// `nil` for routes that have not yet been synced to iCloud.
+    var cloudKitRecordID: String?
+
     /// Creates a new planned route with the given properties.
     ///
     /// - Parameters:
@@ -139,6 +150,9 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
     ///   - elevationLoss: Total elevation loss in metres.
     ///   - createdAt: Creation timestamp (defaults to now).
     ///   - regionId: Associated map region UUID.
+    ///   - elevationProfile: Pre-computed elevation profile data.
+    ///   - modifiedAt: Last modification timestamp for iCloud sync (defaults to `nil`).
+    ///   - cloudKitRecordID: CloudKit record ID (defaults to `nil`).
     init(
         id: UUID = UUID(),
         name: String,
@@ -154,7 +168,9 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
         elevationLoss: Double,
         createdAt: Date = Date(),
         regionId: UUID? = nil,
-        elevationProfile: [ElevationPoint]? = nil
+        elevationProfile: [ElevationPoint]? = nil,
+        modifiedAt: Date? = nil,
+        cloudKitRecordID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -171,6 +187,8 @@ struct PlannedRoute: Identifiable, Codable, Sendable, Equatable {
         self.createdAt = createdAt
         self.regionId = regionId
         self.elevationProfile = elevationProfile
+        self.modifiedAt = modifiedAt
+        self.cloudKitRecordID = cloudKitRecordID
     }
 
     /// Creates a ``PlannedRoute`` from a ``ComputedRoute`` and auto-generated turn instructions.

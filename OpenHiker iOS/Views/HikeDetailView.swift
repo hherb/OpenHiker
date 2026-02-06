@@ -72,6 +72,9 @@ struct HikeDetailView: View {
     /// Whether the community upload sheet is presented.
     @State private var showUploadSheet = false
 
+    /// Whether the export sheet is presented.
+    @State private var showExportSheet = false
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -127,15 +130,28 @@ struct HikeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showUploadSheet = true
+                Menu {
+                    Button {
+                        showExportSheet = true
+                    } label: {
+                        Label("Export Hike...", systemImage: "doc.badge.arrow.up")
+                    }
+
+                    Button {
+                        showUploadSheet = true
+                    } label: {
+                        Label("Share to Community", systemImage: "square.and.arrow.up")
+                    }
                 } label: {
-                    Label("Share to Community", systemImage: "square.and.arrow.up")
+                    Image(systemName: "square.and.arrow.up")
                 }
             }
         }
         .sheet(isPresented: $showUploadSheet) {
             RouteUploadView(route: route, waypoints: waypoints)
+        }
+        .sheet(isPresented: $showExportSheet) {
+            ExportSheet(route: route, waypoints: waypoints)
         }
         .onAppear {
             decodeTrackData()

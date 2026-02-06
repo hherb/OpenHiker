@@ -19,20 +19,43 @@ import SwiftUI
 
 /// The root content view of the iOS companion app.
 ///
-/// Presents a tab-based interface with six main sections:
+/// Presents an adaptive interface that switches layout based on horizontal size class:
+/// - **iPhone** (compact width): ``TabView`` with six tabs (unchanged behaviour)
+/// - **iPad** (regular width): ``NavigationSplitView`` with a persistent sidebar
+///   and a detail column, following Apple's iPad navigation guidelines
+///
+/// Both layouts expose the same feature set:
 /// - **Regions**: Select and download new map regions from OpenTopoMap
 /// - **Downloaded**: View, manage, and transfer previously downloaded regions
 /// - **Hikes**: Review saved hikes with track overlay, elevation profile, and stats
 /// - **Routes**: Plan routes and manage planned routes for watch navigation
+/// - **Waypoints**: Browse all waypoints across hikes (iPad sidebar only, embedded in Hikes on iPhone)
 /// - **Community**: Browse and download shared routes from the OpenHikerRoutes repository
 /// - **Watch**: Monitor Apple Watch connectivity and manage file transfers
 struct ContentView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
+    /// The horizontal size class used to switch between iPhone (compact) and iPad (regular) layouts.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Routes, 4 = Community, 5 = Watch).
     @State private var selectedTab = 0
 
+    /// The currently selected sidebar section on iPad.
+    @State private var sidebarSelection: SidebarSection? = .regions
+
     var body: some View {
+        if horizontalSizeClass == .regular {
+            iPadLayout
+        } else {
+            iPhoneLayout
+        }
+    }
+
+    // MARK: - iPhone Layout (TabView)
+
+    /// The standard iPhone tab-based layout (unchanged from before iPad support was added).
+    private var iPhoneLayout: some View {
         TabView(selection: $selectedTab) {
             RegionSelectorView()
                 .tabItem {
@@ -69,6 +92,56 @@ struct ContentView: View {
                     Label("Watch", systemImage: "applewatch")
                 }
                 .tag(5)
+        }
+    }
+
+    // MARK: - iPad Layout (NavigationSplitView)
+
+    /// The iPad sidebar + detail layout using ``NavigationSplitView``.
+    ///
+    /// The sidebar lists all sections via ``SidebarView``. The detail column
+    /// renders the appropriate view for the selected section, each wrapped in
+    /// its own ``NavigationStack`` for independent navigation.
+    private var iPadLayout: some View {
+        NavigationSplitView {
+            SidebarView(selection: $sidebarSelection)
+        } detail: {
+            switch sidebarSelection {
+            case .regions:
+                NavigationStack {
+                    RegionSelectorView()
+                }
+            case .downloaded:
+                NavigationStack {
+                    RegionsListView()
+                }
+            case .hikes:
+                NavigationStack {
+                    HikesListView()
+                }
+            case .routes:
+                NavigationStack {
+                    PlannedRoutesListView()
+                }
+            case .waypoints:
+                NavigationStack {
+                    WaypointsListView()
+                }
+            case .community:
+                NavigationStack {
+                    CommunityBrowseView()
+                }
+            case .watch:
+                NavigationStack {
+                    WatchSyncView()
+                }
+            case nil:
+                ContentUnavailableView(
+                    "Select a Section",
+                    systemImage: "sidebar.left",
+                    description: Text("Choose a section from the sidebar.")
+                )
+            }
         }
     }
 }

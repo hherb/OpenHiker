@@ -197,8 +197,9 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 (id, name, start_latitude, start_longitude, end_latitude, end_longitude,
                  start_time, end_time, total_distance, elevation_gain, elevation_loss,
                  walking_time, resting_time, avg_heart_rate, max_heart_rate,
-                 estimated_calories, comment, region_id, track_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 estimated_calories, comment, region_id, track_data,
+                 modified_at, cloudkit_record_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
             var statement: OpaquePointer?
@@ -256,6 +257,19 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 sqlite3_bind_blob(statement, 19, ptr.baseAddress, Int32(route.trackData.count), Self.sqliteTransient)
             }
 
+            if let modifiedAt = route.modifiedAt {
+                let modifiedAtString = dateFormatter.string(from: modifiedAt)
+                sqlite3_bind_text(statement, 20, modifiedAtString, -1, Self.sqliteTransient)
+            } else {
+                sqlite3_bind_null(statement, 20)
+            }
+
+            if let cloudKitRecordID = route.cloudKitRecordID {
+                sqlite3_bind_text(statement, 21, cloudKitRecordID, -1, Self.sqliteTransient)
+            } else {
+                sqlite3_bind_null(statement, 21)
+            }
+
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
             }
@@ -264,12 +278,12 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
     // MARK: - Update
 
-    /// Updates a saved route's mutable fields (name, comment).
+    /// Updates a saved route's mutable fields (name, comment, sync metadata).
     ///
-    /// Only the `name` and `comment` fields are updated. All other fields are
-    /// immutable once the hike is saved.
+    /// Only the `name`, `comment`, `modified_at`, and `cloudkit_record_id` fields
+    /// are updated. All other fields are immutable once the hike is saved.
     ///
-    /// - Parameter route: The ``SavedRoute`` with updated `name` and/or `comment`.
+    /// - Parameter route: The ``SavedRoute`` with updated fields.
     /// - Throws: ``RouteStoreError`` if the update fails or the route doesn't exist.
     func update(_ route: SavedRoute) throws {
         try queue.sync {
@@ -277,7 +291,11 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 throw RouteStoreError.databaseNotOpen
             }
 
-            let sql = "UPDATE saved_routes SET name = ?, comment = ? WHERE id = ?"
+            let sql = """
+                UPDATE saved_routes SET name = ?, comment = ?,
+                    modified_at = ?, cloudkit_record_id = ?
+                WHERE id = ?
+            """
 
             var statement: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -289,7 +307,21 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
             sqlite3_bind_text(statement, 1, route.name, -1, Self.sqliteTransient)
             sqlite3_bind_text(statement, 2, route.comment, -1, Self.sqliteTransient)
-            sqlite3_bind_text(statement, 3, idString, -1, Self.sqliteTransient)
+
+            if let modifiedAt = route.modifiedAt {
+                let modifiedAtString = dateFormatter.string(from: modifiedAt)
+                sqlite3_bind_text(statement, 3, modifiedAtString, -1, Self.sqliteTransient)
+            } else {
+                sqlite3_bind_null(statement, 3)
+            }
+
+            if let cloudKitRecordID = route.cloudKitRecordID {
+                sqlite3_bind_text(statement, 4, cloudKitRecordID, -1, Self.sqliteTransient)
+            } else {
+                sqlite3_bind_null(statement, 4)
+            }
+
+            sqlite3_bind_text(statement, 5, idString, -1, Self.sqliteTransient)
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
@@ -460,6 +492,28 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
         try executeSQL(createTableSQL, on: db)
         try executeSQL(createTimeIndexSQL, on: db)
+        migrateSchema(db: db)
+    }
+
+    /// Adds columns introduced in Phase 6 (iCloud sync) if they don't already exist.
+    ///
+    /// Uses `ALTER TABLE ... ADD COLUMN` which silently fails if the column
+    /// already exists (caught and ignored). This approach avoids needing a
+    /// version table or user_version pragma for this simple migration.
+    private func migrateSchema(db: OpaquePointer) {
+        let migrations = [
+            "ALTER TABLE saved_routes ADD COLUMN modified_at TEXT",
+            "ALTER TABLE saved_routes ADD COLUMN cloudkit_record_id TEXT"
+        ]
+
+        for sql in migrations {
+            var errorMessage: UnsafeMutablePointer<CChar>?
+            let result = sqlite3_exec(db, sql, nil, nil, &errorMessage)
+            if result != SQLITE_OK {
+                // "duplicate column name" is expected when migration already applied
+                sqlite3_free(errorMessage)
+            }
+        }
     }
 
     /// Executes a raw SQL statement (DDL or DML without result set).
@@ -489,7 +543,8 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
     /// 5: end_longitude, 6: start_time, 7: end_time, 8: total_distance,
     /// 9: elevation_gain, 10: elevation_loss, 11: walking_time, 12: resting_time,
     /// 13: avg_heart_rate, 14: max_heart_rate, 15: estimated_calories,
-    /// 16: comment, 17: region_id, 18: track_data
+    /// 16: comment, 17: region_id, 18: track_data,
+    /// 19: modified_at, 20: cloudkit_record_id
     ///
     /// - Parameter statement: A stepped SQLite statement positioned on a row.
     /// - Returns: A parsed ``SavedRoute``, or `nil` if parsing fails.
@@ -569,6 +624,24 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             trackData = Data()
         }
 
+        // Read iCloud sync columns (may be NULL if migration hasn't added them or values aren't set)
+        let modifiedAt: Date?
+        let columnCount = sqlite3_column_count(statement)
+        if columnCount > 19, sqlite3_column_type(statement, 19) != SQLITE_NULL,
+           let modifiedAtText = sqlite3_column_text(statement, 19) {
+            modifiedAt = dateFormatter.date(from: String(cString: modifiedAtText))
+        } else {
+            modifiedAt = nil
+        }
+
+        let cloudKitRecordID: String?
+        if columnCount > 20, sqlite3_column_type(statement, 20) != SQLITE_NULL,
+           let recordIdText = sqlite3_column_text(statement, 20) {
+            cloudKitRecordID = String(cString: recordIdText)
+        } else {
+            cloudKitRecordID = nil
+        }
+
         return SavedRoute(
             id: id,
             name: name,
@@ -588,7 +661,9 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             estimatedCalories: estimatedCalories,
             comment: comment,
             regionId: regionId,
-            trackData: trackData
+            trackData: trackData,
+            modifiedAt: modifiedAt,
+            cloudKitRecordID: cloudKitRecordID
         )
     }
 }
