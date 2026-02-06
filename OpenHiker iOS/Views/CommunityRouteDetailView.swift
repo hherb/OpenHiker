@@ -64,16 +64,40 @@ struct CommunityRouteDetailView: View {
     /// Minimum coordinate span in degrees for the map region.
     private static let mapMinSpanDegrees = 0.005
 
+    /// Height in points for the map section.
+    private static let mapHeight: CGFloat = 280
+
+    /// Corner radius in points for rounded containers.
+    private static let containerCornerRadius: CGFloat = 12
+
+    /// Content spacing in points between major sections.
+    private static let sectionSpacing: CGFloat = 16
+
+    /// Spacing within stat card grids.
+    private static let statGridSpacing: CGFloat = 12
+
+    /// Padding inside stat cards.
+    private static let statCardPadding: CGFloat = 8
+
+    /// Corner radius for stat cards.
+    private static let statCardCornerRadius: CGFloat = 8
+
+    /// Width of a waypoint category icon.
+    private static let waypointIconWidth: CGFloat = 24
+
+    /// Stroke width for the track polyline on the map.
+    private static let trackLineWidth: CGFloat = 3
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 // Map
                 mapSection
-                    .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(height: Self.mapHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: Self.containerCornerRadius))
 
                 // Stats
                 statsSection
@@ -113,7 +137,7 @@ struct CommunityRouteDetailView: View {
         Map(position: $cameraPosition) {
             if trackCoordinates.count >= 2 {
                 MapPolyline(coordinates: trackCoordinates)
-                    .stroke(.orange, lineWidth: 3)
+                    .stroke(.orange, lineWidth: Self.trackLineWidth)
             }
 
             // Start pin
@@ -151,7 +175,7 @@ struct CommunityRouteDetailView: View {
             if isLoadingRoute {
                 ProgressView()
                     .padding(8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Self.statCardCornerRadius))
             }
         }
     }
@@ -178,7 +202,7 @@ struct CommunityRouteDetailView: View {
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible())
-            ], spacing: 12) {
+            ], spacing: Self.statGridSpacing) {
                 statCard(
                     icon: "figure.walk",
                     label: "Distance",
@@ -222,8 +246,8 @@ struct CommunityRouteDetailView: View {
                 .fontWeight(.medium)
         }
         .frame(maxWidth: .infinity)
-        .padding(8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .padding(Self.statCardPadding)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: Self.statCardCornerRadius))
     }
 
     // MARK: - Description Section
@@ -255,7 +279,7 @@ struct CommunityRouteDetailView: View {
                 HStack(spacing: 8) {
                     Image(systemName: WaypointCategory(rawValue: wp.category)?.iconName ?? "mappin")
                         .foregroundStyle(Color(hex: WaypointCategory(rawValue: wp.category)?.colorHex ?? "E67E22"))
-                        .frame(width: 24)
+                        .frame(width: Self.waypointIconWidth)
 
                     VStack(alignment: .leading) {
                         Text(wp.label.isEmpty ? wp.category : wp.label)

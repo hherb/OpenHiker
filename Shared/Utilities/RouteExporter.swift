@@ -37,6 +37,21 @@ enum RouteExporter {
     /// 5 decimal places gives ~1.1m precision, sufficient for hiking navigation.
     private static let coordinateDecimalPlaces = 5
 
+    /// Multiplier for rounding elevation to 0.1m precision.
+    private static let elevationRoundingMultiplier = 10.0
+
+    /// Meters per kilometer, used for formatting distance in Markdown output.
+    private static let metersPerKilometer = 1000.0
+
+    /// Seconds per hour, used for formatting duration in Markdown output.
+    private static let secondsPerHour = 3600
+
+    /// Seconds per minute, used for formatting duration in Markdown output.
+    private static let secondsPerMinute = 60
+
+    /// Fallback slug used when the route name contains no alphanumeric characters.
+    private static let fallbackSlug = "untitled"
+
     // MARK: - SavedRoute -> SharedRoute
 
     /// Converts a local saved route to the shared community format.
@@ -70,7 +85,7 @@ enum RouteExporter {
             TrackPoint(
                 lat: roundCoordinate(location.coordinate.latitude),
                 lon: roundCoordinate(location.coordinate.longitude),
-                ele: round(location.altitude * 10) / 10, // 0.1m precision for elevation
+                ele: round(location.altitude * elevationRoundingMultiplier) / elevationRoundingMultiplier,
                 time: location.timestamp
             )
         }
@@ -184,7 +199,7 @@ enum RouteExporter {
         // Track
         gpx += "  <trk>\n"
         gpx += "    <name>\(escapeXML(route.name))</name>\n"
-        gpx += "    <type>\(route.activityType.rawValue)</type>\n"
+        gpx += "    <type>\(escapeXML(route.activityType.rawValue))</type>\n"
         gpx += "    <trkseg>\n"
 
         for point in route.track {
@@ -216,9 +231,9 @@ enum RouteExporter {
         dateFormatter.dateStyle = .long
         dateFormatter.timeStyle = .none
 
-        let distanceKm = route.stats.distanceMeters / 1000.0
-        let durationHours = Int(route.stats.durationSeconds) / 3600
-        let durationMinutes = (Int(route.stats.durationSeconds) % 3600) / 60
+        let distanceKm = route.stats.distanceMeters / metersPerKilometer
+        let durationHours = Int(route.stats.durationSeconds) / secondsPerHour
+        let durationMinutes = (Int(route.stats.durationSeconds) % secondsPerHour) / secondsPerMinute
 
         var md = "# \(route.name)\n\n"
         md += "**\(route.activityType.displayName)** by \(route.author) "
@@ -273,6 +288,10 @@ enum RouteExporter {
     /// Re-encodes the track points as compressed binary data via ``TrackCompression``
     /// for efficient local storage.
     ///
+    /// - Note: The shared route format does not include separate walking/resting times.
+    ///   As an approximation, `walkingTime` is set to the full duration and `restingTime`
+    ///   to zero. Heart rate and calorie data are not available in shared routes.
+    ///
     /// - Parameter shared: The ``SharedRoute`` to import.
     /// - Returns: A ``SavedRoute`` ready for insertion into ``RouteStore``.
     static func toSavedRoute(_ shared: SharedRoute) -> SavedRoute {
@@ -314,10 +333,12 @@ enum RouteExporter {
     /// Generates a URL-safe slug from a route name for use as a directory name.
     ///
     /// Lowercases the name, replaces spaces and non-alphanumeric characters with hyphens,
-    /// collapses consecutive hyphens, and trims leading/trailing hyphens.
+    /// collapses consecutive hyphens, and trims leading/trailing hyphens. Returns
+    /// ``fallbackSlug`` if the name contains no alphanumeric characters.
     ///
     /// - Parameter name: The route name to slugify.
-    /// - Returns: A URL-safe slug (e.g., "mount-tamalpais-loop").
+    /// - Returns: A URL-safe slug (e.g., "mount-tamalpais-loop"), or ``fallbackSlug``
+    ///   if the name is empty or contains only special characters.
     static func slugify(_ name: String) -> String {
         let lowercased = name.lowercased()
         let alphanumeric = lowercased.unicodeScalars.map { scalar in
@@ -327,7 +348,7 @@ enum RouteExporter {
             .components(separatedBy: "-")
             .filter { !$0.isEmpty }
             .joined(separator: "-")
-        return collapsed
+        return collapsed.isEmpty ? fallbackSlug : collapsed
     }
 
     // MARK: - Private Helpers

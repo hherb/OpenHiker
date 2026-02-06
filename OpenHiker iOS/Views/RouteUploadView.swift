@@ -48,6 +48,21 @@ struct RouteUploadView: View {
     /// Persisted default area/state (reused across uploads).
     @AppStorage("communityDefaultArea") private var defaultArea = ""
 
+    /// Minimum height in points for the description text editor.
+    private static let descriptionMinHeight: CGFloat = 80
+
+    /// Trailing padding in points for the upload progress spinner.
+    private static let progressTrailingPadding: CGFloat = 8
+
+    /// Font size in points for the success checkmark icon.
+    private static let successIconSize: CGFloat = 64
+
+    /// Spacing in points between elements in the success view.
+    private static let successViewSpacing: CGFloat = 24
+
+    /// Vertical spacing in points between stat rows in the route summary.
+    private static let summaryRowSpacing: CGFloat = 8
+
     // MARK: - Form State
 
     /// The route name (editable, pre-filled from saved route).
@@ -143,7 +158,7 @@ struct RouteUploadView: View {
 
             Section("Description") {
                 TextEditor(text: $routeDescription)
-                    .frame(minHeight: 80)
+                    .frame(minHeight: Self.descriptionMinHeight)
             }
 
             Section {
@@ -157,7 +172,7 @@ struct RouteUploadView: View {
                     HStack {
                         if isUploading {
                             ProgressView()
-                                .padding(.trailing, 8)
+                                .padding(.trailing, Self.progressTrailingPadding)
                             Text("Uploading...")
                         } else {
                             Label("Share to Community", systemImage: "arrow.up.circle.fill")
@@ -188,9 +203,9 @@ struct RouteUploadView: View {
     ///
     /// - Parameter prURL: The URL of the created pull request.
     private func successView(prURL: String) -> some View {
-        VStack(spacing: 24) {
+        VStack(spacing: Self.successViewSpacing) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: Self.successIconSize))
                 .foregroundStyle(.green)
 
             Text("Route Submitted!")
@@ -222,7 +237,7 @@ struct RouteUploadView: View {
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
     private var routeSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Self.summaryRowSpacing) {
             HStack {
                 Label(
                     HikeStatsFormatter.formatDistance(route.totalDistance, useMetric: useMetricUnits),

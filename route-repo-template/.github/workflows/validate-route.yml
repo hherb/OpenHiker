@@ -29,64 +29,83 @@ jobs:
 
       - name: Validate route.json schema
         if: steps.changed.outputs.route_files != ''
+        env:
+          ROUTE_FILES: ${{ steps.changed.outputs.route_files }}
         run: |
-          for file in ${{ steps.changed.outputs.route_files }}; do
-            echo "Validating: $file"
+          python3 << 'PYEOF'
+          import json, sys, os
 
-            # Check it's valid JSON
-            if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
-              echo "ERROR: $file is not valid JSON"
-              exit 1
-            fi
+          route_files = os.environ.get('ROUTE_FILES', '').strip().split('\n')
+          route_files = [f.strip() for f in route_files if f.strip()]
 
-            # Check required fields exist
-            python3 -c "
-          import json, sys
-          with open('$file') as f:
-              data = json.load(f)
+          if not route_files:
+              print('No route files to validate')
+              sys.exit(0)
 
-          required = ['id', 'version', 'name', 'activityType', 'author', 'createdAt',
-                      'region', 'stats', 'boundingBox', 'track']
-          missing = [k for k in required if k not in data]
-          if missing:
-              print(f'ERROR: Missing required fields: {missing}')
+          errors = 0
+          for filepath in route_files:
+              print(f'Validating: {filepath}')
+
+              if not os.path.isfile(filepath):
+                  print(f'  ERROR: File not found: {filepath}')
+                  errors += 1
+                  continue
+
+              try:
+                  with open(filepath) as f:
+                      data = json.load(f)
+              except json.JSONDecodeError as e:
+                  print(f'  ERROR: Invalid JSON: {e}')
+                  errors += 1
+                  continue
+
+              required = ['id', 'version', 'name', 'activityType', 'author', 'createdAt',
+                          'region', 'stats', 'boundingBox', 'track']
+              missing = [k for k in required if k not in data]
+              if missing:
+                  print(f'  ERROR: Missing required fields: {missing}')
+                  errors += 1
+                  continue
+
+              stats_required = ['distanceMeters', 'elevationGainMeters', 'elevationLossMeters', 'durationSeconds']
+              missing_stats = [k for k in stats_required if k not in data.get('stats', {})]
+              if missing_stats:
+                  print(f'  ERROR: Missing stats fields: {missing_stats}')
+                  errors += 1
+                  continue
+
+              bbox_required = ['north', 'south', 'east', 'west']
+              missing_bbox = [k for k in bbox_required if k not in data.get('boundingBox', {})]
+              if missing_bbox:
+                  print(f'  ERROR: Missing boundingBox fields: {missing_bbox}')
+                  errors += 1
+                  continue
+
+              min_track_points = 2
+              if len(data.get('track', [])) < min_track_points:
+                  print(f'  ERROR: Track must have at least {min_track_points} points')
+                  errors += 1
+                  continue
+
+              valid_types = ['hiking', 'cycling', 'running', 'skiTouring', 'other']
+              if data['activityType'] not in valid_types:
+                  print(f'  ERROR: Invalid activityType: {data["activityType"]}. Must be one of {valid_types}')
+                  errors += 1
+                  continue
+
+              print(f'  OK: {data["name"]} by {data["author"]} ({len(data["track"])} track points)')
+
+          if errors > 0:
+              print(f'\n{errors} file(s) failed validation')
               sys.exit(1)
-
-          # Validate stats
-          stats_required = ['distanceMeters', 'elevationGainMeters', 'elevationLossMeters', 'durationSeconds']
-          missing_stats = [k for k in stats_required if k not in data.get('stats', {})]
-          if missing_stats:
-              print(f'ERROR: Missing stats fields: {missing_stats}')
-              sys.exit(1)
-
-          # Validate bounding box
-          bbox_required = ['north', 'south', 'east', 'west']
-          missing_bbox = [k for k in bbox_required if k not in data.get('boundingBox', {})]
-          if missing_bbox:
-              print(f'ERROR: Missing boundingBox fields: {missing_bbox}')
-              sys.exit(1)
-
-          # Validate track has points
-          if len(data.get('track', [])) < 2:
-              print('ERROR: Track must have at least 2 points')
-              sys.exit(1)
-
-          # Validate activity type
-          valid_types = ['hiking', 'cycling', 'running', 'skiTouring', 'other']
-          if data['activityType'] not in valid_types:
-              print(f'ERROR: Invalid activityType: {data[\"activityType\"]}. Must be one of {valid_types}')
-              sys.exit(1)
-
-          print(f'OK: {data[\"name\"]} by {data[\"author\"]} ({len(data[\"track\"])} track points)')
-          "
-          done
+          PYEOF
 
       - name: Check photo file sizes
         run: |
           # Ensure no individual photo exceeds 200KB (compressed 640x400 should be well under)
           MAX_SIZE=204800  # 200KB
           find routes/ waypoints/ -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' 2>/dev/null | while read -r photo; do
-            size=$(stat -f%z "$photo" 2>/dev/null || stat -c%s "$photo" 2>/dev/null || echo 0)
+            size=$(stat -c%s "$photo" 2>/dev/null || echo 0)
             if [ "$size" -gt "$MAX_SIZE" ]; then
               echo "WARNING: $photo is ${size} bytes (max ${MAX_SIZE})"
             fi
@@ -96,10 +115,12 @@ jobs:
       - name: Post validation summary
         if: always()
         uses: actions/github-script@v7
+        env:
+          ROUTE_FILES: ${{ steps.changed.outputs.route_files }}
         with:
           script: |
             const fs = require('fs');
-            const routeFiles = '${{ steps.changed.outputs.route_files }}'.split('\n').filter(f => f);
+            const routeFiles = (process.env.ROUTE_FILES || '').split('\n').filter(f => f.trim());
 
             if (routeFiles.length === 0) {
               return;

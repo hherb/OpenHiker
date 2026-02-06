@@ -19,6 +19,55 @@ import SwiftUI
 import CoreLocation
 import MapKit
 
+/// A lightweight wrapper around `CLLocationManager` for one-shot location requests.
+///
+/// Used by ``CommunityBrowseView`` to get the user's current location for proximity filtering.
+/// Handles authorization requests and provides the most recent location via a published property.
+///
+/// Must be a class (not struct) to serve as `CLLocationManagerDelegate`, and marked
+/// `@unchecked Sendable` because it manages thread safety via the main actor.
+final class SimpleLocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate, @unchecked Sendable {
+    /// The most recently obtained user location.
+    @Published var currentLocation: CLLocationCoordinate2D?
+
+    /// The underlying Core Location manager.
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    /// Requests location authorization and attempts to get the current location.
+    ///
+    /// If authorization has already been granted, reads the cached location immediately.
+    /// Otherwise, triggers an authorization prompt and waits for the delegate callback.
+    func requestLocation() {
+        let status = manager.authorizationStatus
+        if status == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+        } else if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        currentLocation = locations.last?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Location error: \(error.localizedDescription)")
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        }
+    }
+}
+
 /// Displays a browsable, filterable list of community-shared routes from the OpenHikerRoutes repository.
 ///
 /// The view fetches `index.json` from GitHub on appear and presents routes in a searchable list.
@@ -51,20 +100,26 @@ struct CommunityBrowseView: View {
     /// Whether the error alert is displayed.
     @State private var showError = false
 
-    /// The user's current location for proximity filtering.
-    @State private var userLocation: CLLocationCoordinate2D?
-
     /// Whether to filter by proximity to the user's location.
     @State private var filterByProximity = false
 
     /// Search radius in kilometers for proximity filtering.
     private static let searchRadiusKm: Double = 100
 
+    /// Width in points for the activity type icon in route list rows.
+    private static let activityIconWidth: CGFloat = 20
+
+    /// Vertical padding in points for route list rows.
+    private static let rowVerticalPadding: CGFloat = 4
+
+    /// Horizontal spacing in points between stat labels in route list rows.
+    private static let rowStatSpacing: CGFloat = 12
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
-    /// Location manager for getting the user's current position.
-    private let locationManager = CLLocationManager()
+    /// Location provider for getting the user's current position (survives view recreation).
+    @StateObject private var locationProvider = SimpleLocationProvider()
 
     var body: some View {
         NavigationStack {
@@ -199,8 +254,8 @@ struct CommunityBrowseView: View {
             let filtered = await GitHubRouteService.shared.filterRoutes(
                 allRoutes,
                 activityType: selectedActivityType,
-                nearLatitude: filterByProximity ? userLocation?.latitude : nil,
-                nearLongitude: filterByProximity ? userLocation?.longitude : nil,
+                nearLatitude: filterByProximity ? locationProvider.currentLocation?.latitude : nil,
+                nearLongitude: filterByProximity ? locationProvider.currentLocation?.longitude : nil,
                 radiusKm: Self.searchRadiusKm
             )
 
@@ -222,10 +277,7 @@ struct CommunityBrowseView: View {
 
     /// Requests the user's current location for proximity filtering.
     private func requestLocation() {
-        locationManager.requestWhenInUseAuthorization()
-        if let location = locationManager.location {
-            userLocation = location.coordinate
-        }
+        locationProvider.requestLocation()
     }
 }
 
@@ -242,11 +294,11 @@ struct CommunityRouteRow: View {
     let useMetric: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: CommunityBrowseView.rowVerticalPadding) {
             HStack {
                 Image(systemName: entry.activityType.iconName)
                     .foregroundStyle(.blue)
-                    .frame(width: 20)
+                    .frame(width: CommunityBrowseView.activityIconWidth)
 
                 Text(entry.name)
                     .font(.headline)
@@ -258,7 +310,7 @@ struct CommunityRouteRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            HStack(spacing: 12) {
+            HStack(spacing: CommunityBrowseView.rowStatSpacing) {
                 Label(
                     HikeStatsFormatter.formatDistance(entry.stats.distanceMeters, useMetric: useMetric),
                     systemImage: "figure.walk"
@@ -280,6 +332,6 @@ struct CommunityRouteRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, CommunityBrowseView.rowVerticalPadding)
     }
 }

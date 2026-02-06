@@ -89,6 +89,10 @@ jobs:
           import glob
           import os
 
+          def _escape_xml(s):
+              """Escapes XML special characters (& must be first to avoid double-escaping)."""
+              return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
           for route_file in glob.glob('routes/**/route.json', recursive=True):
               gpx_file = os.path.join(os.path.dirname(route_file), 'route.gpx')
 
@@ -116,7 +120,7 @@ jobs:
                   # Track
                   gpx += '  <trk>\n'
                   gpx += f'    <name>{_escape_xml(data["name"])}</name>\n'
-                  gpx += f'    <type>{data["activityType"]}</type>\n'
+                  gpx += f'    <type>{_escape_xml(data["activityType"])}</type>\n'
                   gpx += '    <trkseg>\n'
 
                   for pt in data.get('track', []):
@@ -133,9 +137,6 @@ jobs:
 
               except Exception as e:
                   print(f'WARNING: Could not generate GPX for {route_file}: {e}')
-
-          def _escape_xml(s):
-              return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
           SCRIPT
 
       - name: Generate missing README files

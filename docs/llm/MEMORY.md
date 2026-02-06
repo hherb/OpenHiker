@@ -8,7 +8,7 @@
 - AGPL-3.0 license; all files need copyright header
 
 ## Key Patterns
-- **Models**: `Codable + Sendable + Identifiable` convention
+- **Models**: `Codable + Sendable + Identifiable + Equatable` convention
 - **SQLite pattern**: `TileStore`, `WaypointStore`, and `RouteStore` all use `@unchecked Sendable` + `DispatchQueue(label:)` serial queue + `queue.sync {}` for thread safety
 - **Singleton pattern**: `WatchConnectivityManager.shared`, `RegionStorage.shared`, `WatchConnectivityReceiver.shared`, `WaypointStore.shared`, `RouteStore.shared`
 - **Environment injection**: Singletons injected via `@StateObject` in App entry point -> `.environmentObject()` -> `@EnvironmentObject` in views
@@ -21,6 +21,9 @@
 - `sqlite3_bind_text` uses `unsafeBitCast(-1, to: sqlite3_destructor_type.self)` for SQLITE_TRANSIENT — in RouteStore, extracted as named `sqliteTransient` constant
 - **Track compression**: `TrackCompression` uses 20 bytes/point binary format (Float32 lat/lon/alt + Float64 timestamp) + zlib; constants `bytesPerPoint`, `compressionBufferMargin`, `decompressionBufferMultiplier`
 - **Walking/resting time**: Pure static function `LocationManager.computeWalkingAndRestingTime(from:)` + `classifyRestPeriod()` helper; thresholds in `HikeStatisticsConfig` (`restingSpeedThreshold`, `minRestDurationSec`)
+- **GitHub API**: `GitHubRouteService` is a Swift Actor for thread safety; uses Git Data API (blobs/trees/commits/refs) for uploads
+- **Token obfuscation**: XOR-based obfuscation for embedded GitHub bot token (placeholder — needs real token before deploy)
+- **Location in SwiftUI**: Use `@StateObject` + `CLLocationManagerDelegate` class (not plain `CLLocationManager` property — views are recreated)
 
 ## Xcode Project (pbxproj)
 - ID format: `2A...` for iOS file refs, `2B...` for watchOS, `1A...` for iOS build files, `1B...` for watchOS
@@ -30,16 +33,19 @@
 - iOS target: `6A0000010000000000000001`
 
 ## Key Files
-- `Shared/Models/`: Region.swift, TileCoordinate.swift, HikeStatistics.swift, Waypoint.swift, SavedRoute.swift
+- `Shared/Models/`: Region.swift, TileCoordinate.swift, HikeStatistics.swift, Waypoint.swift, SavedRoute.swift, SharedRoute.swift, ActivityType.swift
 - `Shared/Storage/`: TileStore.swift (+ WritableTileStore), WaypointStore.swift, RouteStore.swift
-- `Shared/Utilities/`: TrackCompression.swift (binary pack + zlib for GPS tracks)
+- `Shared/Services/`: GitHubRouteService.swift (actor — GitHub API for community route sharing)
+- `Shared/Utilities/`: TrackCompression.swift (binary pack + zlib for GPS tracks), RouteExporter.swift (SavedRoute ↔ SharedRoute ↔ GPX ↔ Markdown), PhotoCompressor.swift
+- `OpenHiker iOS/Views/`: RouteUploadView.swift, CommunityBrowseView.swift, CommunityRouteDetailView.swift
+- `route-repo-template/`: GitHub Actions workflows + repo setup for OpenHikerRoutes
 - SpriteKit map: `MapRenderer.swift` manages `MapScene` (SKScene with tilesNode + overlaysNode)
 
 ## Phase Status
 - Phase 1 (Hike Metrics + HealthKit): Completed and merged
 - Phase 2 (Waypoints & Pins): Implemented on `claude/implement-phase2-waypoints-soKPD`
 - Phase 3 (Save Routes & Review Past Hikes): Implemented on `claude/phase3-save-routes-review-oogwp`
-- Phase 4+ (Route Import, Offline Search): Not started
+- Phase 4 (Community Route Sharing): Implemented on `claude/add-route-upload-feature-47R66`
 
 ### Phase 1 Details
 - `HikeStatistics` shared model, `HikeStatsFormatter`, `CalorieEstimator`
@@ -68,6 +74,21 @@
 - WatchConnectivity: JSON-encoded SavedRoute via `transferFile` with `["type": "savedRoute"]` metadata
 - Walking/resting classification: speed-based state machine (< 0.3 m/s threshold, 60s min rest)
 - Developer docs at `docs/developer/phase3-save-routes-developer-guide.md`
+
+### Phase 4 Details
+- Community route sharing via GitHub repo `hherb/OpenHikerRoutes` with PR-based moderation
+- `SharedRoute` model: canonical JSON format with `route.json` + `route.gpx` + `README.md` + `photos/`
+- `ActivityType` enum: hiking, cycling, running, skiTouring, other (with SF Symbol icons)
+- `RouteExporter`: bidirectional SavedRoute ↔ SharedRoute + GPX 1.1 + Markdown export
+- `GitHubRouteService` (actor): upload via Git Data API (blob → tree → commit → ref → PR), browse via raw `index.json`
+- `PhotoCompressor`: downsample to 640x400 JPEG at 70% quality (~30-80 KB each)
+- `index.json` at repo root: master index rebuilt by GitHub Actions on merge to main
+- Browse: `CommunityBrowseView` with activity type and proximity filtering (Haversine distance)
+- Upload: `RouteUploadView` sheet from HikeDetailView toolbar
+- Download: `CommunityRouteDetailView` with MapKit polyline preview and offline save
+- `SimpleLocationProvider`: `@StateObject` + `CLLocationManagerDelegate` for location in CommunityBrowseView
+- Bot token: XOR-obfuscated, embedded in binary (placeholder — needs real token before deploy)
+- iOS `ContentView` now has 5 tabs: Regions, Downloaded, Hikes, Community, Watch
 
 ## Dev Rules (from docs/llm/general_golden_rules.md)
 1. Clean separation of concerns

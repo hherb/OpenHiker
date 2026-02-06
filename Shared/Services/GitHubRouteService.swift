@@ -97,6 +97,39 @@ actor GitHubRouteService {
     /// User-Agent header value for API requests (required by GitHub).
     private static let userAgent = "OpenHiker/1.0 (iOS; community route sharing)"
 
+    /// Timeout for individual API requests in seconds.
+    private static let requestTimeoutSec: TimeInterval = 30
+
+    /// Timeout for the entire resource download in seconds.
+    private static let resourceTimeoutSec: TimeInterval = 120
+
+    /// XOR key used for token obfuscation/deobfuscation.
+    private static let tokenObfuscationKey: UInt8 = 0xA5
+
+    /// Number of UUID characters used in branch name suffixes.
+    private static let branchNameUUIDPrefixLength = 8
+
+    /// Git file mode for regular (non-executable) files.
+    private static let gitBlobFileMode = "100644"
+
+    /// Default search radius in kilometers for proximity filtering.
+    static let defaultSearchRadiusKm: Double = 50
+
+    /// Conversion factor from degrees to radians.
+    private static let degreesToRadians: Double = .pi / 180.0
+
+    /// Meters per kilometer.
+    private static let metersPerKilometer: Double = 1000.0
+
+    /// Seconds per hour.
+    private static let secondsPerHour = 3600
+
+    /// Seconds per minute.
+    private static let secondsPerMinute = 60
+
+    /// Nanoseconds per second, used for `Task.sleep` calculations.
+    private static let nanosecondsPerSecond: UInt64 = 1_000_000_000
+
     // MARK: - State
 
     /// The URL session configured for GitHub API calls.
@@ -119,8 +152,8 @@ actor GitHubRouteService {
     /// Creates the service with a configured URL session.
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 120
+        config.timeoutIntervalForRequest = Self.requestTimeoutSec
+        config.timeoutIntervalForResource = Self.resourceTimeoutSec
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
     }
@@ -146,9 +179,7 @@ actor GitHubRouteService {
             // Placeholder — replace before deployment
             0x00
         ]
-        let key: UInt8 = 0xA5
-
-        let deobfuscated = obfuscatedBytes.map { $0 ^ key }
+        let deobfuscated = obfuscatedBytes.map { $0 ^ Self.tokenObfuscationKey }
         return String(bytes: deobfuscated, encoding: .utf8)
     }
 
@@ -183,15 +214,18 @@ actor GitHubRouteService {
         let slug = RouteExporter.slugify(route.name)
         let country = route.region.country.lowercased()
         let basePath = "routes/\(country)/\(slug)"
-        let branchName = "route/\(slug)-\(route.id.uuidString.prefix(8).lowercased())"
+        let branchName = "route/\(slug)-\(route.id.uuidString.prefix(Self.branchNameUUIDPrefixLength).lowercased())"
 
-        // Step 1: Get the SHA of the default branch HEAD
+        // Step 1: Get the SHA of the default branch HEAD commit
         let defaultBranchSHA = try await getDefaultBranchSHA(token: token)
 
-        // Step 2: Create a new branch from HEAD
+        // Step 2: Get the tree SHA from the HEAD commit (commits and trees have different SHAs)
+        let baseTreeSHA = try await getTreeSHA(forCommit: defaultBranchSHA, token: token)
+
+        // Step 3: Create a new branch from HEAD
         try await createBranch(name: branchName, fromSHA: defaultBranchSHA, token: token)
 
-        // Step 3: Build the file tree
+        // Step 4: Build the file tree
         var files: [(path: String, content: Data)] = []
 
         // route.json
@@ -211,22 +245,22 @@ actor GitHubRouteService {
             files.append((path: "\(basePath)/photos/\(filename)", content: data))
         }
 
-        // Step 4: Create blobs for each file
+        // Step 5: Create blobs for each file
         var treeEntries: [[String: String]] = []
         for file in files {
             let blobSHA = try await createBlob(content: file.content, token: token)
             treeEntries.append([
                 "path": file.path,
-                "mode": "100644",
+                "mode": Self.gitBlobFileMode,
                 "type": "blob",
                 "sha": blobSHA
             ])
         }
 
-        // Step 5: Create a tree
-        let treeSHA = try await createTree(entries: treeEntries, baseTreeSHA: defaultBranchSHA, token: token)
+        // Step 6: Create a tree (using the tree SHA, not the commit SHA)
+        let treeSHA = try await createTree(entries: treeEntries, baseTreeSHA: baseTreeSHA, token: token)
 
-        // Step 6: Create a commit
+        // Step 7: Create a commit
         let commitMessage = "Add route: \(route.name)\n\nActivity: \(route.activityType.displayName)\nRegion: \(route.region.area), \(route.region.country)\nAuthor: \(route.author)"
         let commitSHA = try await createCommit(
             message: commitMessage,
@@ -235,10 +269,10 @@ actor GitHubRouteService {
             token: token
         )
 
-        // Step 7: Update the branch ref to point to the new commit
+        // Step 8: Update the branch ref to point to the new commit
         try await updateRef(branch: branchName, sha: commitSHA, token: token)
 
-        // Step 8: Create the pull request
+        // Step 9: Create the pull request
         let prURL = try await createPullRequest(
             title: "Add route: \(route.name)",
             body: buildPRDescription(route),
@@ -302,7 +336,7 @@ actor GitHubRouteService {
         activityType: ActivityType?,
         nearLatitude latitude: Double?,
         nearLongitude longitude: Double?,
-        radiusKm: Double = 50
+        radiusKm: Double = Self.defaultSearchRadiusKm
     ) -> [RouteIndexEntry] {
         var filtered = entries
 
@@ -396,6 +430,27 @@ actor GitHubRouteService {
             throw GitHubRouteError.invalidResponse("Could not parse branch SHA")
         }
         return sha
+    }
+
+    /// Fetches the tree SHA from a commit object.
+    ///
+    /// Git commits and trees are different objects with different SHAs.
+    /// The GitHub Create Tree API requires a tree SHA for `base_tree`, not a commit SHA.
+    ///
+    /// - Parameters:
+    ///   - commitSHA: The commit SHA to look up.
+    ///   - token: GitHub API token.
+    /// - Returns: The tree SHA associated with the commit.
+    /// - Throws: ``GitHubRouteError`` on failure.
+    private func getTreeSHA(forCommit commitSHA: String, token: String) async throws -> String {
+        let url = apiURL("git/commits/\(commitSHA)")
+        let data = try await authenticatedRequest(url: url, method: "GET", token: token)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tree = json["tree"] as? [String: Any],
+              let treeSHA = tree["sha"] as? String else {
+            throw GitHubRouteError.invalidResponse("Could not parse tree SHA from commit")
+        }
+        return treeSHA
     }
 
     /// Creates a new branch from the given SHA.
@@ -613,7 +668,9 @@ actor GitHubRouteService {
             } catch let error as GitHubRouteError {
                 // Don't retry auth or client errors
                 switch error {
-                case .authenticationFailed, .httpError(statusCode: 400...499, _):
+                case .authenticationFailed:
+                    throw error
+                case .httpError(let statusCode, _) where (400...499).contains(statusCode):
                     throw error
                 default:
                     lastError = error
@@ -625,7 +682,7 @@ actor GitHubRouteService {
             // Exponential backoff: 2s, 4s, 8s, 16s
             if attempt < Self.maxRetryAttempts - 1 {
                 let delay = Self.baseRetryDelaySec * UInt64(1 << attempt)
-                try await Task.sleep(nanoseconds: delay * 1_000_000_000)
+                try await Task.sleep(nanoseconds: delay * Self.nanosecondsPerSecond)
             }
         }
 
@@ -642,9 +699,9 @@ actor GitHubRouteService {
     /// - Parameter route: The shared route being uploaded.
     /// - Returns: A Markdown string for the PR body.
     private func buildPRDescription(_ route: SharedRoute) -> String {
-        let distanceKm = route.stats.distanceMeters / 1000.0
-        let durationHours = Int(route.stats.durationSeconds) / 3600
-        let durationMinutes = (Int(route.stats.durationSeconds) % 3600) / 60
+        let distanceKm = route.stats.distanceMeters / Self.metersPerKilometer
+        let durationHours = Int(route.stats.durationSeconds) / Self.secondsPerHour
+        let durationMinutes = (Int(route.stats.durationSeconds) % Self.secondsPerHour) / Self.secondsPerMinute
 
         return """
         ## New Route: \(route.name)
@@ -683,10 +740,10 @@ actor GitHubRouteService {
     ///   - lon2: Longitude of the second point in degrees.
     /// - Returns: Distance in kilometers.
     private func haversineDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
-        let dLat = (lat2 - lat1) * .pi / 180.0
-        let dLon = (lon2 - lon1) * .pi / 180.0
-        let lat1Rad = lat1 * .pi / 180.0
-        let lat2Rad = lat2 * .pi / 180.0
+        let dLat = (lat2 - lat1) * Self.degreesToRadians
+        let dLon = (lon2 - lon1) * Self.degreesToRadians
+        let lat1Rad = lat1 * Self.degreesToRadians
+        let lat2Rad = lat2 * Self.degreesToRadians
 
         let a = sin(dLat / 2) * sin(dLat / 2) +
                 cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2)

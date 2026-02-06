@@ -42,7 +42,7 @@ let sharedRouteSchemaVersion = 1
 /// ``RouteExporter`` converts a local ``SavedRoute`` (with compressed binary track data)
 /// into a ``SharedRoute`` (with explicit coordinate arrays) for upload. The reverse
 /// conversion is used when downloading community routes for offline use.
-struct SharedRoute: Codable, Sendable, Identifiable {
+struct SharedRoute: Codable, Sendable, Equatable, Identifiable {
 
     /// Unique identifier for this shared route.
     let id: UUID
@@ -90,7 +90,7 @@ struct SharedRoute: Codable, Sendable, Identifiable {
 ///
 /// The `country` field uses ISO 3166-1 alpha-2 codes (e.g., "US", "DE", "AU").
 /// The `area` field is a freeform string for the sub-region (e.g., "California", "Bavaria").
-struct RouteRegion: Codable, Sendable {
+struct RouteRegion: Codable, Sendable, Equatable {
     /// ISO 3166-1 alpha-2 country code (e.g., "US", "DE").
     let country: String
     /// Freeform area or state name within the country.
@@ -101,7 +101,7 @@ struct RouteRegion: Codable, Sendable {
 ///
 /// All values use SI units (meters, seconds) for consistency. The UI layer
 /// handles locale-aware formatting via ``HikeStatsFormatter``.
-struct RouteStats: Codable, Sendable {
+struct RouteStats: Codable, Sendable, Equatable {
     /// Total distance along the track in meters.
     let distanceMeters: Double
     /// Total cumulative elevation gained in meters.
@@ -117,7 +117,7 @@ struct RouteStats: Codable, Sendable {
 /// Used in `index.json` for client-side spatial filtering ("find routes near me").
 /// Kept separate from the app's internal ``BoundingBox`` type to decouple the
 /// shared JSON schema from the internal model.
-struct SharedBoundingBox: Codable, Sendable {
+struct SharedBoundingBox: Codable, Sendable, Equatable {
     /// Northern boundary latitude in degrees.
     let north: Double
     /// Southern boundary latitude in degrees.
@@ -147,7 +147,7 @@ struct SharedBoundingBox: Codable, Sendable {
 /// A single GPS track point with coordinates, elevation, and timestamp.
 ///
 /// Uses 5 decimal places for lat/lon (~1.1m precision) when serialized to JSON.
-struct TrackPoint: Codable, Sendable {
+struct TrackPoint: Codable, Sendable, Equatable {
     /// Latitude in WGS84 degrees.
     let lat: Double
     /// Longitude in WGS84 degrees.
@@ -162,7 +162,7 @@ struct TrackPoint: Codable, Sendable {
 ///
 /// Maps closely to the app's internal ``Waypoint`` model but uses simple string
 /// types for the category to allow forward-compatible extensibility in the JSON schema.
-struct SharedWaypoint: Codable, Sendable, Identifiable {
+struct SharedWaypoint: Codable, Sendable, Equatable, Identifiable {
     /// Unique identifier for this waypoint.
     let id: UUID
     /// Latitude in WGS84 degrees.
@@ -183,7 +183,7 @@ struct SharedWaypoint: Codable, Sendable, Identifiable {
 ///
 /// Photos are downsampled to 640x400 JPEG before upload to keep repository size manageable.
 /// The GPS coordinates allow the app to display photos on the map at their capture location.
-struct RoutePhoto: Codable, Sendable {
+struct RoutePhoto: Codable, Sendable, Equatable {
     /// Filename of the photo in the `photos/` directory (e.g., "summit_view.jpg").
     let filename: String
     /// Latitude where the photo was taken, or `nil` if unknown.
@@ -203,7 +203,7 @@ struct RoutePhoto: Codable, Sendable {
 /// The index is fetched by the app on launch to populate the community browse view.
 /// It contains just enough data for list display and spatial/activity-type filtering,
 /// without the full track or photo data.
-struct RouteIndexEntry: Codable, Sendable, Identifiable {
+struct RouteIndexEntry: Codable, Sendable, Equatable, Identifiable {
     /// Unique identifier matching the full ``SharedRoute/id``.
     let id: UUID
     /// Route name for display in list rows.
@@ -234,7 +234,7 @@ struct RouteIndexEntry: Codable, Sendable, Identifiable {
 ///
 /// Contains metadata about the index itself and the array of route entries.
 /// The app fetches this single file to populate the entire community browse view.
-struct RouteIndex: Codable, Sendable {
+struct RouteIndex: Codable, Sendable, Equatable {
     /// ISO 8601 timestamp of when the index was last regenerated.
     let updatedAt: Date
     /// Total number of routes in the repository.
