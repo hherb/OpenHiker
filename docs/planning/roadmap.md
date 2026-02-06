@@ -1,6 +1,6 @@
 # OpenHiker Feature Roadmap
 
-**Last updated:** 2026-02-06
+**Last updated:** 2026-02-07
 **License:** AGPL-3.0
 **Target audience:** Worldwide — primarily European, Australian, and New Zealand hikers
 
@@ -28,7 +28,11 @@ Phase 2: Waypoints & Pins                       [~3 weeks]
 Phase 3: Save Routes & Review Past Hikes        [~3 weeks]
 Phase 4: Custom Offline Routing Engine           [~5 weeks, parallel with 1–3]
 Phase 5: Route Planning & Active Guidance        [~4 weeks]
-Phase 6: Multi-Platform & Export                 [~3 weeks]
+Phase 6: Multi-Platform & Export                 [~8-11 weeks]
+  6.3 Export (PDF/Markdown/Share)                 [~2 weeks]
+  6.2 iPad Adaptive Layouts                      [~1-2 weeks]
+  6.4 iCloud Sync                                [~2-3 weeks]
+  6.1 Native macOS App                           [~3-4 weeks]
 ```
 
 ## Dependency Graph
@@ -56,8 +60,10 @@ Phase 5 (Planning + Guidance)
   5.2 Route Guidance (Watch)     ← 4.1, 5.1
 
 Phase 6 (Platform + Export)
-  6.1 macOS/iPad Hub             ← All phases
-  6.2 PDF/Markdown Export        ← 3.3, 2.1
+  6.3 Export (PDF/Markdown)      ← 3.3, 2.1
+  6.2 iPad Adaptive Layouts      ← All phases
+  6.4 iCloud Sync                ← 3.1, 2.1
+  6.1 Native macOS App           ← 6.2, 6.3, 6.4
 ```
 
 ## Phase Summaries
@@ -91,8 +97,8 @@ Route planning UI on iPhone (tap start/end/via-points, compute path, view stats)
 
 **Details:** [phase5-route-planning-guidance.md](phase5-route-planning-guidance.md)
 
-### Phase 6: Multi-Platform & Export
-Adaptive layouts for iPad/Mac (NavigationSplitView planning+review hub). Export hikes as quick Markdown summary cards or detailed multi-page PDF reports with map snapshots, elevation profiles, and photo galleries.
+### Phase 6: Multi-Platform & Export (Revised)
+Four sub-features in recommended order: (6.3) Export completed hikes as personal Markdown summaries and multi-page PDF reports with map snapshots and elevation profiles. (6.2) Adaptive NavigationSplitView layouts for iPad. (6.4) iCloud sync for routes, waypoints, and regions between devices. (6.1) First-class native macOS app (separate Xcode target, NOT Mac Catalyst) as a full planning/review hub with menu bar, keyboard shortcuts, drag-and-drop GPX import, and table-style views.
 
 **Details:** [phase6-multiplatform-export.md](phase6-multiplatform-export.md)
 
