@@ -1,6 +1,7 @@
 import SwiftUI
 import SpriteKit
 import CoreLocation
+import WatchKit
 
 /// SwiftUI wrapper for the SpriteKit map scene
 struct MapView: View {
@@ -11,13 +12,15 @@ struct MapView: View {
     @State private var showingRegionPicker = false
     @State private var selectedRegion: RegionMetadata?
     @State private var isCenteredOnUser = true
+    @State private var mapScene: MapScene?
+    @State private var pickedRegion: RegionMetadata?
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Map Scene
-                if selectedRegion != nil {
-                    SpriteView(scene: mapRenderer.createScene(size: geometry.size))
+                if let scene = mapScene {
+                    SpriteView(scene: scene)
                         .ignoresSafeArea()
                         .gesture(dragGesture)
                         .focusable()
@@ -53,13 +56,21 @@ struct MapView: View {
         .onAppear {
             loadSavedRegion()
         }
+        .onChange(of: mapRenderer.currentZoom) { _, _ in
+            mapScene?.updateVisibleTiles()
+        }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             updateUserPosition(newLocation)
         }
-        .sheet(isPresented: $showingRegionPicker) {
+        .sheet(isPresented: $showingRegionPicker, onDismiss: {
+            if let region = pickedRegion {
+                loadRegion(region)
+                pickedRegion = nil
+            }
+        }) {
             RegionPickerSheet(
                 regions: connectivityManager.availableRegions,
-                selectedRegion: $selectedRegion
+                selectedRegion: $pickedRegion
             )
         }
     }
@@ -185,6 +196,8 @@ struct MapView: View {
         do {
             try mapRenderer.loadRegion(region)
             selectedRegion = region
+            // Create the scene once after loading; SpriteView will reuse it
+            mapScene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
         } catch {
             print("Error loading region: \(error.localizedDescription)")
         }
@@ -194,9 +207,7 @@ struct MapView: View {
         guard let location = location else { return }
 
         // Update position marker on map
-        if let scene = mapRenderer.scene as? MapScene {
-            scene.updatePositionMarker(coordinate: location.coordinate)
-        }
+        mapScene?.updatePositionMarker(coordinate: location.coordinate)
 
         // Center map on user if enabled
         if isCenteredOnUser {
@@ -251,14 +262,6 @@ struct RegionPickerSheet: View {
     }
 }
 
-// MARK: - MapRenderer Extension for Scene Access
-
-extension MapRenderer {
-    var scene: SKScene? {
-        // This is a simplified accessor - in production you'd want better state management
-        return nil
-    }
-}
 
 #Preview {
     MapView()
