@@ -175,6 +175,23 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
+    /// Formats the waypoint's coordinate as a compact string (e.g., "47.38291, 11.09431").
+    ///
+    /// Uses 5 decimal places, which gives ~1.1m precision — sufficient for hiking.
+    var formattedCoordinate: String {
+        Self.formatCoordinate(latitude: latitude, longitude: longitude)
+    }
+
+    /// Formats a latitude/longitude pair as a compact string to 5 decimal places.
+    ///
+    /// - Parameters:
+    ///   - latitude: Latitude in degrees.
+    ///   - longitude: Longitude in degrees.
+    /// - Returns: A string like "47.38291, 11.09431".
+    static func formatCoordinate(latitude: Double, longitude: Double) -> String {
+        String(format: "%.5f, %.5f", latitude, longitude)
+    }
+
     /// Creates a waypoint from a Core Location object with the given category and label.
     ///
     /// Extracts latitude, longitude, and altitude from the ``CLLocation``.

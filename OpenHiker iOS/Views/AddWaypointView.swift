@@ -163,7 +163,7 @@ struct AddWaypointView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .disabled(true)
         .overlay(alignment: .bottomTrailing) {
-            Text(String(format: "%.5f, %.5f", latitude, longitude))
+            Text(Waypoint.formatCoordinate(latitude: latitude, longitude: longitude))
                 .font(.caption2)
                 .padding(4)
                 .background(.ultraThinMaterial, in: Capsule())
@@ -294,11 +294,30 @@ struct AddWaypointView: View {
         guard let item = item else { return }
 
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    await MainActor.run {
+                        errorMessage = "Could not load the selected photo."
+                        showError = true
+                    }
+                    return
+                }
+                guard let image = UIImage(data: data) else {
+                    await MainActor.run {
+                        errorMessage = "The selected image format is not supported."
+                        showError = true
+                    }
+                    return
+                }
                 await MainActor.run {
                     processPhoto(image)
                 }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to load photo: \(error.localizedDescription)"
+                    showError = true
+                }
+                print("Error loading photo: \(error.localizedDescription)")
             }
         }
     }

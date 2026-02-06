@@ -744,46 +744,62 @@ final class MapScene: SKScene {
     ///
     /// - Parameter waypoint: The waypoint to create a marker for.
     /// - Returns: A configured `SKNode` representing the waypoint on the map.
+    // MARK: - Waypoint Marker Layout Constants
+
+    /// Radius of the circular pin head (10pt: large enough to tap on watch, small enough to not obscure map).
+    private let pinCircleRadius: CGFloat = 10
+    /// Height of the triangular pin stem below the circle.
+    private let pinStemHeight: CGFloat = 6
+    /// Half-width of the pin stem base.
+    private let pinStemHalfWidth: CGFloat = 4
+    /// Stroke width for the pin circle border.
+    private let pinCircleStrokeWidth: CGFloat = 1.5
+    /// Stroke width for the pin stem border.
+    private let pinStemStrokeWidth: CGFloat = 1.0
+    /// SF Symbol rendering point size for the category icon.
+    private let pinIconPointSize: CGFloat = 11
+    /// Display size of the icon sprite (2pt larger than pointSize to avoid clipping rounded symbols).
+    private let pinIconSpriteSize: CGFloat = 13
+    /// Vertical offset to visually center the icon within the circle.
+    private let pinIconVerticalOffset: CGFloat = 1
+    /// Z-position for waypoint markers (between track trail at 50 and position marker at 100).
+    private let waypointZPosition: CGFloat = 75
+
     private func createWaypointMarkerNode(for waypoint: Waypoint) -> SKNode {
         let container = SKNode()
-        // Between track trail (z=50) and position marker (z=100)
-        container.zPosition = 75
+        container.zPosition = waypointZPosition
 
-        // Pin circle: 10pt radius chosen to be large enough to tap on the
-        // watch's small screen but small enough not to obscure nearby tiles
-        let circleRadius: CGFloat = 10
-        let circle = SKShapeNode(circleOfRadius: circleRadius)
-        circle.fillColor = colorFromHex(waypoint.category.colorHex)
+        let pinColor = colorFromHex(waypoint.category.colorHex)
+
+        // Pin circle
+        let circle = SKShapeNode(circleOfRadius: pinCircleRadius)
+        circle.fillColor = pinColor
         circle.strokeColor = .white
-        circle.lineWidth = 1.5
+        circle.lineWidth = pinCircleStrokeWidth
 
-        // Pin stem (triangle pointing down) — 6pt tall, 8pt wide at base
+        // Pin stem (triangle pointing down)
         let stemPath = CGMutablePath()
-        stemPath.move(to: CGPoint(x: -4, y: -circleRadius))
-        stemPath.addLine(to: CGPoint(x: 0, y: -circleRadius - 6))
-        stemPath.addLine(to: CGPoint(x: 4, y: -circleRadius))
+        stemPath.move(to: CGPoint(x: -pinStemHalfWidth, y: -pinCircleRadius))
+        stemPath.addLine(to: CGPoint(x: 0, y: -pinCircleRadius - pinStemHeight))
+        stemPath.addLine(to: CGPoint(x: pinStemHalfWidth, y: -pinCircleRadius))
         stemPath.closeSubpath()
 
         let stem = SKShapeNode(path: stemPath)
-        stem.fillColor = colorFromHex(waypoint.category.colorHex)
+        stem.fillColor = pinColor
         stem.strokeColor = .white
-        stem.lineWidth = 1
+        stem.lineWidth = pinStemStrokeWidth
 
         container.addChild(stem)
         container.addChild(circle)
 
-        // Category icon: rendered at 11pt and displayed at 13x13pt for crisp
-        // rendering — the 2pt padding avoids clipping on rounded SF Symbols
-        let iconPointSize: CGFloat = 11
-        let iconSpriteSize: CGFloat = 13
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: iconPointSize, weight: .bold)
+        // Category icon rendered as SF Symbol texture
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: pinIconPointSize, weight: .bold)
         if let iconImage = UIImage(systemName: waypoint.category.iconName, withConfiguration: iconConfig)?
             .withTintColor(.white, renderingMode: .alwaysOriginal) {
             let iconTexture = SKTexture(image: iconImage)
             let iconSprite = SKSpriteNode(texture: iconTexture)
-            iconSprite.size = CGSize(width: iconSpriteSize, height: iconSpriteSize)
-            // Offset 1pt up to visually center within the circle
-            iconSprite.position = CGPoint(x: 0, y: 1)
+            iconSprite.size = CGSize(width: pinIconSpriteSize, height: pinIconSpriteSize)
+            iconSprite.position = CGPoint(x: 0, y: pinIconVerticalOffset)
             container.addChild(iconSprite)
         }
 

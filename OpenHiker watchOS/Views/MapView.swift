@@ -51,6 +51,12 @@ struct MapView: View {
     /// All waypoints loaded from the local store, displayed as map markers.
     @State private var waypoints: [Waypoint] = []
 
+    /// Whether an error alert is displayed.
+    @State private var showError = false
+
+    /// The error message for the alert.
+    @State private var errorMessage = ""
+
     /// The currently loaded region's metadata, or `nil` if no region is loaded.
     @State private var selectedRegion: RegionMetadata?
 
@@ -123,6 +129,11 @@ struct MapView: View {
             if let heading = newHeading {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
         }
         .sheet(isPresented: $showingAddWaypoint) {
             AddWaypointSheet(onSave: { waypoint in
@@ -293,6 +304,8 @@ struct MapView: View {
             mapScene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
             refreshWaypointMarkers()
         } catch {
+            errorMessage = "Failed to load map region: \(error.localizedDescription)"
+            showError = true
             print("Error loading region: \(error.localizedDescription)")
         }
     }
@@ -346,6 +359,8 @@ struct MapView: View {
             waypoints = try WaypointStore.shared.fetchAll()
             refreshWaypointMarkers()
         } catch {
+            errorMessage = "Could not load waypoints: \(error.localizedDescription)"
+            showError = true
             print("Error loading waypoints: \(error.localizedDescription)")
         }
     }

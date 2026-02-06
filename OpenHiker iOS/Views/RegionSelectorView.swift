@@ -106,6 +106,12 @@ struct RegionSelectorView: View {
     /// Whether the waypoint detail view is presented.
     @State private var showWaypointDetail = false
 
+    /// Whether an error alert is displayed for waypoint operations.
+    @State private var showWaypointError = false
+
+    /// The error message for the waypoint error alert.
+    @State private var waypointErrorMessage = ""
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -301,6 +307,11 @@ struct RegionSelectorView: View {
                         )
                     }
                 }
+            }
+            .alert("Waypoint Error", isPresented: $showWaypointError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(waypointErrorMessage)
             }
             .sheet(isPresented: $showSearchSheet) {
                 LocationSearchSheet(
@@ -609,6 +620,8 @@ struct RegionSelectorView: View {
         do {
             waypoints = try WaypointStore.shared.fetchAll()
         } catch {
+            waypointErrorMessage = "Could not load waypoints: \(error.localizedDescription)"
+            showWaypointError = true
             print("Error loading waypoints: \(error.localizedDescription)")
         }
     }

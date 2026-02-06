@@ -292,6 +292,9 @@ struct WaypointDetailView: View {
     // MARK: - Actions
 
     /// Loads the full-resolution photo from ``WaypointStore``.
+    ///
+    /// Falls back to the thumbnail if the full photo is unavailable. Shows an
+    /// error alert if both fetches fail.
     private func loadPhoto() {
         guard waypoint.hasPhoto else { return }
 
@@ -305,6 +308,8 @@ struct WaypointDetailView: View {
                 fullPhoto = image
             }
         } catch {
+            errorMessage = "Failed to load photo: \(error.localizedDescription)"
+            showError = true
             print("Error loading photo: \(error.localizedDescription)")
         }
     }

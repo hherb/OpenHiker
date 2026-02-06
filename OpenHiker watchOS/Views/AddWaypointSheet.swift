@@ -101,7 +101,10 @@ struct AddWaypointSheet: View {
         Group {
             if let location = locationManager.currentLocation {
                 VStack(spacing: 2) {
-                    Text(formatCoordinate(location.coordinate))
+                    Text(Waypoint.formatCoordinate(
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude
+                    ))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -198,13 +201,4 @@ struct AddWaypointSheet: View {
         }
     }
 
-    // MARK: - Helpers
-
-    /// Formats a coordinate as a compact string for display (e.g., "47.38291, 11.09431").
-    ///
-    /// - Parameter coordinate: The coordinate to format.
-    /// - Returns: A string with latitude and longitude to 5 decimal places.
-    private func formatCoordinate(_ coordinate: CLLocationCoordinate2D) -> String {
-        String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
-    }
 }
