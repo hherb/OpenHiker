@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Gradient for sky -->
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a365d"/>
+      <stop offset="100%" style="stop-color:#2d5a87"/>
+    </linearGradient>
+
+    <!-- Gradient for mountains -->
+    <linearGradient id="mountainGradient1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a6741"/>
+      <stop offset="100%" style="stop-color:#2d4a2d"/>
+    </linearGradient>
+
+    <linearGradient id="mountainGradient2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5d7a52"/>
+      <stop offset="100%" style="stop-color:#3d5a35"/>
+    </linearGradient>
+
+    <!-- Gradient for trail -->
+    <linearGradient id="trailGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#d4a574"/>
+      <stop offset="100%" style="stop-color:#c49a6c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="250" fill="url(#skyGradient)"/>
+
+  <!-- Contour lines (topographic effect) -->
+  <g stroke="#3a6a9a" stroke-width="1" fill="none" opacity="0.3">
+    <ellipse cx="256" cy="380" rx="200" ry="40"/>
+    <ellipse cx="256" cy="360" rx="180" ry="35"/>
+    <ellipse cx="256" cy="340" rx="160" ry="30"/>
+    <ellipse cx="256" cy="320" rx="140" ry="25"/>
+    <ellipse cx="256" cy="300" rx="120" ry="20"/>
+  </g>
+
+  <!-- Back mountain (darker) -->
+  <path d="M50 400 L180 180 L280 280 L350 160 L480 400 Z"
+        fill="url(#mountainGradient1)"/>
+
+  <!-- Snow cap on back mountain -->
+  <path d="M340 180 L350 160 L360 175 L355 185 Z"
+        fill="#ffffff" opacity="0.9"/>
+
+  <!-- Front mountain (lighter) -->
+  <path d="M20 420 L150 220 L256 320 L380 200 L500 420 Z"
+        fill="url(#mountainGradient2)"/>
+
+  <!-- Snow cap on front mountain -->
+  <path d="M370 220 L380 200 L390 215 L385 225 Z"
+        fill="#ffffff" opacity="0.9"/>
+
+  <!-- Hiking trail (winding path) -->
+  <path d="M256 480
+           Q 230 440, 260 400
+           Q 290 360, 250 320
+           Q 210 280, 256 240
+           Q 300 200, 280 160"
+        stroke="url(#trailGradient)"
+        stroke-width="8"
+        stroke-linecap="round"
+        fill="none"/>
+
+  <!-- Trail markers/dots -->
+  <circle cx="256" cy="240" r="6" fill="#d4a574"/>
+  <circle cx="270" cy="290" r="5" fill="#d4a574"/>
+  <circle cx="250" cy="350" r="5" fill="#d4a574"/>
+
+  <!-- GPS location pin -->
+  <g transform="translate(256, 160)">
+    <!-- Pin shadow -->
+    <ellipse cx="0" cy="45" rx="12" ry="4" fill="#000" opacity="0.2"/>
+
+    <!-- Pin body -->
+    <path d="M0 40 L-18 0 A 18 18 0 1 1 18 0 Z" fill="#e53e3e"/>
+
+    <!-- Pin highlight -->
+    <path d="M0 40 L-18 0 A 18 18 0 0 1 0 -18" fill="#fc8181" opacity="0.4"/>
+
+    <!-- Inner circle -->
+    <circle cx="0" cy="-4" r="8" fill="#ffffff"/>
+
+    <!-- Pulse rings -->
+    <circle cx="0" cy="-4" r="12" stroke="#e53e3e" stroke-width="2" fill="none" opacity="0.6">
+      <animate attributeName="r" values="12;24;12" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Compass rose (small, top-right) -->
+  <g transform="translate(420, 100)">
+    <circle cx="0" cy="0" r="35" fill="#1a365d" stroke="#ffffff" stroke-width="2" opacity="0.8"/>
+
+    <!-- North arrow -->
+    <polygon points="0,-25 -6,-8 0,-12 6,-8" fill="#e53e3e"/>
+    <!-- South arrow -->
+    <polygon points="0,25 -6,8 0,12 6,8" fill="#ffffff" opacity="0.7"/>
+    <!-- East arrow -->
+    <polygon points="25,0 8,-6 12,0 8,6" fill="#ffffff" opacity="0.7"/>
+    <!-- West arrow -->
+    <polygon points="-25,0 -8,-6 -12,0 -8,6" fill="#ffffff" opacity="0.7"/>
+
+    <!-- N label -->
+    <text x="0" y="-12" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="10" font-weight="bold">N</text>
+  </g>
+
+  <!-- Border ring -->
+  <circle cx="256" cy="256" r="248" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.2"/>
+</svg>
