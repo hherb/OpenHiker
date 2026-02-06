@@ -37,5 +37,9 @@
 	<true/>
 	<key>WKWatchOnly</key>
 	<false/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>OpenHiker reads your heart rate and blood oxygen during hikes to display live vitals and record workout data.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>OpenHiker saves your hikes as workouts in Apple Health with distance, elevation, route, and calorie data.</string>
 </dict>
 </plist>

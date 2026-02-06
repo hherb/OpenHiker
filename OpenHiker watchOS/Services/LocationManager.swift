@@ -287,6 +287,23 @@ final class LocationManager: NSObject, ObservableObject {
         return gain
     }
 
+    /// Total cumulative elevation loss in meters (positive value).
+    ///
+    /// Only negative altitude changes between consecutive points are summed
+    /// and returned as a positive value.
+    var elevationLoss: Double {
+        guard trackPoints.count > 1 else { return 0 }
+
+        var loss: Double = 0
+        for i in 1..<trackPoints.count {
+            let diff = trackPoints[i].altitude - trackPoints[i - 1].altitude
+            if diff < 0 {
+                loss -= diff
+            }
+        }
+        return loss
+    }
+
     /// Duration of the track from first to last recorded point.
     ///
     /// - Returns: The time interval in seconds, or `nil` if fewer than 2 points exist.

@@ -34,6 +34,10 @@ import WatchKit
 struct MapView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
+    @EnvironmentObject var healthKitManager: HealthKitManager
+
+    /// Whether to record hikes as workouts in Apple Health.
+    @AppStorage("recordWorkouts") private var recordWorkouts = true
 
     /// The map renderer that manages tile loading and coordinate calculations.
     @StateObject private var mapRenderer = MapRenderer()
@@ -74,6 +78,9 @@ struct MapView: View {
                 } else {
                     noMapView
                 }
+
+                // Hike stats overlay (distance, elevation, time, vitals)
+                HikeStatsOverlay()
 
                 // Overlays
                 VStack {
@@ -265,6 +272,8 @@ struct MapView: View {
 
     /// Updates the position marker and track trail when the user's GPS location changes.
     ///
+    /// Also feeds the new location to ``HealthKitManager`` for workout route recording.
+    ///
     /// - Parameter location: The new location, or `nil` if unavailable.
     private func updateUserPosition(_ location: CLLocation?) {
         guard let location = location else { return }
@@ -275,6 +284,11 @@ struct MapView: View {
         // Update track trail if recording
         if locationManager.isTracking {
             mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
+
+            // Feed location to HealthKit route builder if workout is active
+            if healthKitManager.workoutActive {
+                healthKitManager.addRoutePoints([location])
+            }
         }
 
         // Center map on user if enabled
@@ -297,11 +311,26 @@ struct MapView: View {
     }
 
     /// Toggles hike track recording on or off.
+    ///
+    /// When starting, also begins a HealthKit workout session (if enabled in
+    /// settings) for background runtime and vitals recording. When stopping,
+    /// ends the workout and saves it to Apple Health with distance and elevation data.
     private func toggleTracking() {
         if locationManager.isTracking {
             locationManager.stopTracking()
+            if healthKitManager.workoutActive {
+                Task {
+                    await healthKitManager.stopWorkout(
+                        totalDistance: locationManager.totalDistance,
+                        elevationGain: locationManager.elevationGain
+                    )
+                }
+            }
         } else {
             locationManager.startTracking()
+            if recordWorkouts {
+                healthKitManager.startWorkout()
+            }
         }
     }
 }
@@ -347,4 +376,5 @@ struct RegionPickerSheet: View {
     MapView()
         .environmentObject(LocationManager())
         .environmentObject(WatchConnectivityReceiver.shared)
+        .environmentObject(HealthKitManager())
 }

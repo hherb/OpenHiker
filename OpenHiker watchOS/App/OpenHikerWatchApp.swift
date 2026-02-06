@@ -17,6 +17,7 @@
 
 import SwiftUI
 import WatchConnectivity
+import HealthKit
 
 /// The main entry point for the OpenHiker watchOS app.
 ///
@@ -24,9 +25,10 @@ import WatchConnectivity
 /// map tiles rendered via SpriteKit. It receives map data from the iOS companion app
 /// through WatchConnectivity.
 ///
-/// Two environment objects are injected into the view hierarchy:
+/// Three environment objects are injected into the view hierarchy:
 /// - ``LocationManager``: Provides GPS location, heading, and track recording
 /// - ``WatchConnectivityReceiver``: Handles file reception from the iOS app
+/// - ``HealthKitManager``: Manages HealthKit workouts, heart rate, and SpO2
 @main
 struct OpenHikerWatchApp: App {
     /// GPS location and heading manager for the watch.
@@ -35,11 +37,15 @@ struct OpenHikerWatchApp: App {
     /// Singleton receiver for files and messages from the iOS companion app.
     @StateObject private var connectivityManager = WatchConnectivityReceiver.shared
 
+    /// HealthKit manager for workout sessions, heart rate, and SpO2.
+    @StateObject private var healthKitManager = HealthKitManager()
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()
                 .environmentObject(locationManager)
                 .environmentObject(connectivityManager)
+                .environmentObject(healthKitManager)
         }
     }
 }

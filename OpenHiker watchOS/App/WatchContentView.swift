@@ -96,14 +96,27 @@ struct RegionsListView: View {
 ///
 /// Currently supports:
 /// - **GPS Accuracy**: High / Balanced / Low Power modes affecting battery life
+/// - **Units**: Metric (km, m) or Imperial (mi, ft) for distance and elevation
 /// - **Display**: Toggle scale bar visibility
+/// - **HealthKit**: Authorization status, authorize button, workout recording toggle
 /// - **App info**: Version number
 struct SettingsView: View {
+    @EnvironmentObject var healthKitManager: HealthKitManager
+
     /// The GPS accuracy mode, persisted via `@AppStorage`.
     @AppStorage("gpsMode") private var gpsMode = "balanced"
 
     /// Whether to show the map scale bar, persisted via `@AppStorage`.
     @AppStorage("showScale") private var showScale = true
+
+    /// Whether to use metric units (km, m) or imperial (mi, ft).
+    @AppStorage("useMetricUnits") private var useMetricUnits = true
+
+    /// Whether to record hikes as workouts in Apple Health.
+    @AppStorage("recordWorkouts") private var recordWorkouts = true
+
+    /// Whether a HealthKit authorization request is in flight.
+    @State private var isRequestingAuth = false
 
     var body: some View {
         NavigationStack {
@@ -116,9 +129,18 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Units") {
+                    Picker("System", selection: $useMetricUnits) {
+                        Text("Metric").tag(true)
+                        Text("Imperial").tag(false)
+                    }
+                }
+
                 Section("Display") {
                     Toggle("Show Scale", isOn: $showScale)
                 }
+
+                healthKitSection
 
                 Section {
                     HStack {
@@ -132,10 +154,71 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
     }
+
+    // MARK: - HealthKit Settings Section
+
+    /// The HealthKit settings section showing authorization status and controls.
+    ///
+    /// Displays:
+    /// - Authorization status (Authorized / Not Authorized)
+    /// - An "Authorize" button when not yet authorized
+    /// - A toggle for recording workouts to Apple Health
+    /// - Any HealthKit errors
+    private var healthKitSection: some View {
+        Section("Health") {
+            // Authorization status
+            HStack {
+                Text("HealthKit")
+                Spacer()
+                if healthKitManager.isAuthorized {
+                    Text("Authorized")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                } else {
+                    Text("Not Authorized")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Authorize button (only when not yet authorized)
+            if !healthKitManager.isAuthorized {
+                Button {
+                    isRequestingAuth = true
+                    Task {
+                        do {
+                            try await healthKitManager.requestAuthorization()
+                        } catch {
+                            print("HealthKit auth error: \(error.localizedDescription)")
+                        }
+                        isRequestingAuth = false
+                    }
+                } label: {
+                    if isRequestingAuth {
+                        ProgressView()
+                    } else {
+                        Text("Authorize HealthKit")
+                    }
+                }
+                .disabled(isRequestingAuth)
+            }
+
+            // Workout recording toggle
+            Toggle("Record Workouts", isOn: $recordWorkouts)
+
+            // Error display
+            if let error = healthKitManager.healthKitError {
+                Text(error.localizedDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
 }
 
 #Preview {
     WatchContentView()
         .environmentObject(LocationManager())
         .environmentObject(WatchConnectivityReceiver.shared)
+        .environmentObject(HealthKitManager())
 }
