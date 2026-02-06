@@ -69,6 +69,18 @@
 		1A000001000000000000003C /* RouteUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003C /* RouteUploadView.swift */; };
 		1B0000010000000000000033 /* RouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000012 /* RouteGuidance.swift */; };
 		1B0000010000000000000034 /* NavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000013 /* NavigationOverlay.swift */; };
+		1A000001000000000000003D /* CommunityBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003D /* CommunityBrowseView.swift */; };
+		1A000001000000000000003E /* CommunityRouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003E /* CommunityRouteDetailView.swift */; };
+		1A0000010000000000000040 /* ActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000040 /* ActivityType.swift */; };
+		1A0000010000000000000041 /* SharedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000041 /* SharedRoute.swift */; };
+		1A0000010000000000000042 /* GitHubRouteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000042 /* GitHubRouteService.swift */; };
+		1A0000010000000000000043 /* PhotoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000043 /* PhotoCompressor.swift */; };
+		1A0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
+		1B0000010000000000000040 /* ActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000040 /* ActivityType.swift */; };
+		1B0000010000000000000041 /* SharedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000041 /* SharedRoute.swift */; };
+		1B0000010000000000000042 /* GitHubRouteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000042 /* GitHubRouteService.swift */; };
+		1B0000010000000000000043 /* PhotoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000043 /* PhotoCompressor.swift */; };
+		1B0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,6 +158,13 @@
 		2A000001000000000000003C /* RouteUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteUploadView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000012 /* RouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidance.swift; sourceTree = "<group>"; };
 		2B0000010000000000000013 /* NavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationOverlay.swift; sourceTree = "<group>"; };
+		2A000001000000000000003D /* CommunityBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityBrowseView.swift; sourceTree = "<group>"; };
+		2A000001000000000000003E /* CommunityRouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityRouteDetailView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000040 /* ActivityType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityType.swift; sourceTree = "<group>"; };
+		2A0000010000000000000041 /* SharedRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedRoute.swift; sourceTree = "<group>"; };
+		2A0000010000000000000042 /* GitHubRouteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubRouteService.swift; sourceTree = "<group>"; };
+		2A0000010000000000000043 /* PhotoCompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCompressor.swift; sourceTree = "<group>"; };
+		2A0000010000000000000044 /* RouteExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteExporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -218,6 +237,8 @@
 				2A000001000000000000003A /* RoutePlanningView.swift */,
 				2A000001000000000000003B /* RouteDetailView.swift */,
 				2A000001000000000000003C /* RouteUploadView.swift */,
+				2A000001000000000000003D /* CommunityBrowseView.swift */,
+				2A000001000000000000003E /* CommunityRouteDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -312,6 +333,7 @@
 			isa = PBXGroup;
 			children = (
 				2A0000010000000000000032 /* RoutingEngine.swift */,
+				2A0000010000000000000042 /* GitHubRouteService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -327,6 +349,8 @@
 				2A0000010000000000000030 /* RoutingGraph.swift */,
 				2A0000010000000000000038 /* TurnInstruction.swift */,
 				2A0000010000000000000039 /* PlannedRoute.swift */,
+				2A0000010000000000000040 /* ActivityType.swift */,
+				2A0000010000000000000041 /* SharedRoute.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -346,6 +370,8 @@
 			isa = PBXGroup;
 			children = (
 				2A0000010000000000000020 /* TrackCompression.swift */,
+				2A0000010000000000000043 /* PhotoCompressor.swift */,
+				2A0000010000000000000044 /* RouteExporter.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -491,6 +517,13 @@
 				1A000001000000000000003A /* RoutePlanningView.swift in Sources */,
 				1A000001000000000000003B /* RouteDetailView.swift in Sources */,
 				1A000001000000000000003C /* RouteUploadView.swift in Sources */,
+				1A000001000000000000003D /* CommunityBrowseView.swift in Sources */,
+				1A000001000000000000003E /* CommunityRouteDetailView.swift in Sources */,
+				1A0000010000000000000040 /* ActivityType.swift in Sources */,
+				1A0000010000000000000041 /* SharedRoute.swift in Sources */,
+				1A0000010000000000000042 /* GitHubRouteService.swift in Sources */,
+				1A0000010000000000000043 /* PhotoCompressor.swift in Sources */,
+				1A0000010000000000000044 /* RouteExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -523,6 +556,10 @@
 				1B0000010000000000000039 /* PlannedRoute.swift in Sources */,
 				1B0000010000000000000033 /* RouteGuidance.swift in Sources */,
 				1B0000010000000000000034 /* NavigationOverlay.swift in Sources */,
+				1B0000010000000000000040 /* ActivityType.swift in Sources */,
+				1B0000010000000000000041 /* SharedRoute.swift in Sources */,
+				1B0000010000000000000042 /* GitHubRouteService.swift in Sources */,
+				1B0000010000000000000044 /* RouteExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -336,7 +336,7 @@ actor GitHubRouteService {
         activityType: ActivityType?,
         nearLatitude latitude: Double?,
         nearLongitude longitude: Double?,
-        radiusKm: Double = Self.defaultSearchRadiusKm
+        radiusKm: Double = GitHubRouteService.defaultSearchRadiusKm
     ) -> [RouteIndexEntry] {
         var filtered = entries
 

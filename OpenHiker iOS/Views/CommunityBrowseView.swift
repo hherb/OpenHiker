@@ -107,13 +107,13 @@ struct CommunityBrowseView: View {
     private static let searchRadiusKm: Double = 100
 
     /// Width in points for the activity type icon in route list rows.
-    private static let activityIconWidth: CGFloat = 20
+    fileprivate static let activityIconWidth: CGFloat = 20
 
     /// Vertical padding in points for route list rows.
-    private static let rowVerticalPadding: CGFloat = 4
+    fileprivate static let rowVerticalPadding: CGFloat = 4
 
     /// Horizontal spacing in points between stat labels in route list rows.
-    private static let rowStatSpacing: CGFloat = 12
+    fileprivate static let rowStatSpacing: CGFloat = 12
 
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true

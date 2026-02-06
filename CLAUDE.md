@@ -54,6 +54,25 @@ The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with c
 - **Singletons for connectivity** — `WatchConnectivityManager.shared` (iOS) and `WatchConnectivityReceiver.shared` (watchOS) are injected as `@EnvironmentObject`.
 - **State persistence** — Region metadata as JSON files in Documents, tile data as MBTiles (SQLite), user preferences via `@AppStorage`.
 
+## Xcode Project File Management (CRITICAL)
+
+This project uses a **traditional Xcode project** (`project.pbxproj`) with explicit file references — NOT the newer folder-based auto-discovery. When creating or adding any new `.swift` file, you **MUST** also add it to `OpenHiker.xcodeproj/project.pbxproj` in all four required sections:
+
+1. **PBXBuildFile** — build file entry (prefix `1A...` for iOS target, `1B...` for watchOS target)
+2. **PBXFileReference** — file reference entry (prefix `2A...` for iOS/Shared files, `2B...` for watchOS-only files)
+3. **PBXGroup** — add to the appropriate group (Views, Services, Models, Storage, Utilities)
+4. **PBXSourcesBuildPhase** — add to the target's Sources list
+
+**Target membership rules:**
+- `OpenHiker iOS/` files → iOS target only (`1A...` build IDs)
+- `OpenHiker watchOS/` files → watchOS target only (`1B...` build IDs)
+- `Shared/` files → **both** targets (one `1A...` and one `1B...` build ID, same `2A...` file ref)
+- Exception: Shared files using iOS-only APIs (e.g., `UIGraphicsImageRenderer`) → iOS target only
+
+**ID convention:** Increment from the highest existing ID in each prefix series (check the file for current max).
+
+Forgetting to add files to `project.pbxproj` causes "Cannot find type in scope" build errors.
+
 ## Development Rules (from docs/llm/general_golden_rules.md)
 
 1. Clean separation of concerns in modules
