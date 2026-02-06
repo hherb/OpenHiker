@@ -66,7 +66,9 @@ final class LocationManager: NSObject, ObservableObject {
     private func setupLocationManager() {
         locationManager.delegate = self
         locationManager.allowsBackgroundLocationUpdates = true
+        #if os(iOS)
         locationManager.pausesLocationUpdatesAutomatically = false
+        #endif
         locationManager.activityType = .fitness
         updateLocationManagerSettings()
     }

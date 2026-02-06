@@ -15,7 +15,7 @@ final class MapRenderer: ObservableObject {
     // MARK: - Properties
 
     private var tileStore: TileStore?
-    private var scene: MapScene?
+    private var mapScene: MapScene?
     private var regionMetadata: RegionMetadata?
 
     /// Zoom level bounds
@@ -69,7 +69,7 @@ final class MapRenderer: ObservableObject {
     /// Create a SpriteKit scene for the map
     func createScene(size: CGSize) -> MapScene {
         let mapScene = MapScene(size: size, renderer: self)
-        self.scene = mapScene
+        self.mapScene = mapScene
         return mapScene
     }
 
@@ -82,21 +82,21 @@ final class MapRenderer: ObservableObject {
     /// Update the map center
     func setCenter(_ coordinate: CLLocationCoordinate2D) {
         centerCoordinate = coordinate
-        scene?.updateVisibleTiles()
+        mapScene?.updateVisibleTiles()
     }
 
     /// Zoom in
     func zoomIn() {
         guard currentZoom < maxZoom else { return }
         currentZoom += 1
-        scene?.updateVisibleTiles()
+        mapScene?.updateVisibleTiles()
     }
 
     /// Zoom out
     func zoomOut() {
         guard currentZoom > minZoom else { return }
         currentZoom -= 1
-        scene?.updateVisibleTiles()
+        mapScene?.updateVisibleTiles()
     }
 
     /// Set zoom level
@@ -104,7 +104,7 @@ final class MapRenderer: ObservableObject {
         let clampedZoom = max(minZoom, min(maxZoom, zoom))
         guard clampedZoom != currentZoom else { return }
         currentZoom = clampedZoom
-        scene?.updateVisibleTiles()
+        mapScene?.updateVisibleTiles()
     }
 
     /// Check if a coordinate is within the loaded region
@@ -157,7 +157,7 @@ final class MapScene: SKScene {
 
     private func setupPositionMarker() {
         let marker = SKShapeNode(circleOfRadius: 8)
-        marker.fillColor = .systemBlue
+        marker.fillColor = .blue
         marker.strokeColor = .white
         marker.lineWidth = 2
         marker.zPosition = 100
@@ -175,10 +175,17 @@ final class MapScene: SKScene {
 
     // MARK: - Scene Lifecycle
 
+    #if os(iOS) || os(macOS) || os(tvOS)
     override func didMove(to view: SKView) {
         super.didMove(to: view)
         updateVisibleTiles()
     }
+    #else
+    override func sceneDidLoad() {
+        super.sceneDidLoad()
+        updateVisibleTiles()
+    }
+    #endif
 
     // MARK: - Tile Management
 

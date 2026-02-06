@@ -1,3 +1,4 @@
+#if os(iOS)
 import SwiftUI
 import MapKit
 
@@ -162,12 +163,13 @@ struct RegionSelectorView: View {
     private func finalizeSelection() {
         // Convert screen rect to map coordinates
         // For now, use a simplified approach based on current camera
-        guard let rect = selectionRect else { return }
+        guard let _ = selectionRect else { return }
 
         // This is a placeholder - in a real implementation, we'd convert
         // the screen rectangle to geographic coordinates
         // For MVP, we'll use the visible region scaled down
-        if case .region(let visibleRegion) = cameraPosition {
+        // Use the region property from MapCameraPosition
+        if let visibleRegion = cameraPosition.region {
             selectedRegion = MKCoordinateRegion(
                 center: visibleRegion.center,
                 span: MKCoordinateSpan(
@@ -315,3 +317,4 @@ struct DownloadConfigSheet: View {
 #Preview {
     RegionSelectorView()
 }
+#endif

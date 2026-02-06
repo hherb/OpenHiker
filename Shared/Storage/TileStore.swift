@@ -302,7 +302,7 @@ final class WritableTileStore: @unchecked Sendable {
             sqlite3_bind_int(statement, 2, Int32(coordinate.x))
             sqlite3_bind_int(statement, 3, Int32(tmsY))
 
-            data.withUnsafeBytes { ptr in
+            _ = data.withUnsafeBytes { ptr in
                 sqlite3_bind_blob(statement, 4, ptr.baseAddress, Int32(data.count), nil)
             }
 
