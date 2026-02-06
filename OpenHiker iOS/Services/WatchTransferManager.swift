@@ -1,29 +1,75 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import Foundation
 import WatchConnectivity
 
-/// Manages Watch Connectivity for transferring map data to Apple Watch
+/// Manages WatchConnectivity on the iOS side for transferring map data to Apple Watch.
+///
+/// This singleton handles:
+/// - Activating and monitoring the ``WCSession``
+/// - Transferring MBTiles and GPX files to the watch
+/// - Tracking transfer status (queued, completed, failed)
+/// - Sending lightweight messages and application context updates
+/// - Receiving and responding to messages from the watch app
+///
+/// Transfer statuses are automatically cleaned up 5 seconds after successful completion.
 final class WatchConnectivityManager: NSObject, ObservableObject {
+    /// Shared singleton instance injected as an environment object throughout the app.
     static let shared = WatchConnectivityManager()
 
+    /// Represents the lifecycle state of a file transfer to the watch.
     enum TransferStatus: Equatable {
+        /// The transfer has been queued but not yet started by the system.
         case queued
+        /// The transfer completed successfully.
         case completed
+        /// The transfer failed with the given error message.
         case failed(String)
     }
 
+    /// Whether an Apple Watch is currently paired with this iPhone.
     @Published var isPaired = false
+
+    /// Whether the OpenHiker watch app is installed on the paired watch.
     @Published var isWatchAppInstalled = false
+
+    /// Whether the watch app is currently reachable for live messaging.
     @Published var isReachable = false
+
+    /// Currently active (in-progress) file transfers to the watch.
     @Published var pendingTransfers: [WCSessionFileTransfer] = []
+
+    /// Transfer status for each region, keyed by region UUID.
     @Published var transferStatuses: [UUID: TransferStatus] = [:]
 
+    /// The active WatchConnectivity session, or `nil` if not supported.
     private var session: WCSession?
 
+    /// Private initializer enforcing singleton pattern. Sets up and activates the WCSession.
     private override init() {
         super.init()
         setupSession()
     }
 
+    /// Configures and activates the WatchConnectivity session.
+    ///
+    /// Sets this manager as the session delegate and activates it.
+    /// Does nothing if WatchConnectivity is not supported on the current device.
     private func setupSession() {
         guard WCSession.isSupported() else {
             print("WatchConnectivity not supported on this device")
@@ -37,7 +83,18 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Transfer an MBTiles file to the watch
+    /// Transfers an MBTiles file to the Apple Watch.
+    ///
+    /// The file is sent via `WCSession.transferFile()` with metadata containing the
+    /// region ID, name, zoom levels, tile count, and bounding box. The transfer is
+    /// marked as `.queued` immediately.
+    ///
+    /// After successful transfer, ``sendAvailableRegions()`` is called to update
+    /// the watch's application context with the current list of available regions.
+    ///
+    /// - Parameters:
+    ///   - url: The local file URL of the MBTiles database to transfer.
+    ///   - metadata: The ``RegionMetadata`` describing the region being transferred.
     func transferMBTilesFile(at url: URL, metadata: RegionMetadata) {
         guard let session = session, session.activationState == .activated else {
             print("WCSession not activated")
@@ -73,7 +130,10 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         sendAvailableRegions()
     }
 
-    /// Transfer all downloaded regions to the watch
+    /// Transfers all downloaded regions to the Apple Watch.
+    ///
+    /// Loads all regions from ``RegionStorage``, then initiates a file transfer
+    /// for each one whose MBTiles file exists on disk.
     func syncAllRegionsToWatch() {
         guard let session = session, session.activationState == .activated,
               session.isPaired, session.isWatchAppInstalled else {
@@ -92,7 +152,11 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         }
     }
 
-    /// Transfer a GPX route file to the watch
+    /// Transfers a GPX route file to the Apple Watch.
+    ///
+    /// - Parameters:
+    ///   - url: The local file URL of the GPX file.
+    ///   - routeName: A human-readable name for the route.
     func transferGPXFile(at url: URL, routeName: String) {
         guard let session = session, session.activationState == .activated else {
             print("WCSession not activated")
@@ -110,7 +174,14 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         }
     }
 
-    /// Send a lightweight message (e.g., sync request)
+    /// Sends a lightweight dictionary message to the watch app.
+    ///
+    /// The watch must be reachable (app running in foreground) for this to succeed.
+    /// For background communication, use ``updateApplicationContext(_:)`` instead.
+    ///
+    /// - Parameters:
+    ///   - message: The message dictionary to send.
+    ///   - replyHandler: Optional callback for the watch's reply.
     func sendMessage(_ message: [String: Any], replyHandler: (([String: Any]) -> Void)? = nil) {
         guard let session = session, session.isReachable else {
             print("Watch not reachable")
@@ -122,7 +193,13 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         }
     }
 
-    /// Update app context with current state
+    /// Updates the watch's application context with the provided dictionary.
+    ///
+    /// Application context is delivered to the watch the next time it wakes,
+    /// even if the watch app is not currently running. Only the most recent
+    /// context is delivered (previous updates are replaced).
+    ///
+    /// - Parameter context: The context dictionary to send.
     func updateApplicationContext(_ context: [String: Any]) {
         guard let session = session, session.activationState == .activated,
               session.isWatchAppInstalled else {
@@ -140,6 +217,11 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 // MARK: - WCSessionDelegate
 
 extension WatchConnectivityManager: WCSessionDelegate {
+    /// Called when the WCSession activation completes.
+    ///
+    /// Updates published properties with the current watch state and recovers
+    /// any outstanding file transfers from previous sessions. If a watch is
+    /// paired with the app installed, sends the available regions context.
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         DispatchQueue.main.async {
             self.isPaired = session.isPaired
@@ -165,22 +247,29 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    /// Called when the session becomes inactive (e.g., during watch switching).
     func sessionDidBecomeInactive(_ session: WCSession) {
         print("WCSession became inactive")
     }
 
+    /// Called when the session deactivates. Re-activates to support watch switching.
     func sessionDidDeactivate(_ session: WCSession) {
         print("WCSession deactivated")
         // Reactivate for switching watches
         session.activate()
     }
 
+    /// Called when watch reachability changes (watch app enters/exits foreground).
     func sessionReachabilityDidChange(_ session: WCSession) {
         DispatchQueue.main.async {
             self.isReachable = session.isReachable
         }
     }
 
+    /// Called when watch pairing or app installation state changes.
+    ///
+    /// Updates published properties and sends available regions if the watch
+    /// is newly paired with the app installed.
     func sessionWatchStateDidChange(_ session: WCSession) {
         DispatchQueue.main.async {
             self.isPaired = session.isPaired
@@ -194,6 +283,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     // MARK: - File Transfer Callbacks
 
+    /// Called when a file transfer to the watch finishes (either successfully or with an error).
+    ///
+    /// Removes the transfer from ``pendingTransfers`` and updates ``transferStatuses``.
+    /// Successful transfers are automatically removed from the status dictionary after 5 seconds.
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
         let regionIdString = fileTransfer.file.metadata?["regionId"] as? String
         let regionId = regionIdString.flatMap { UUID(uuidString: $0) }
@@ -224,6 +317,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     // MARK: - Message Handling
 
+    /// Handles incoming messages from the watch (no reply expected).
+    ///
+    /// Currently supports:
+    /// - `"requestRegions"`: Responds by sending the available regions via application context.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         print("Received message from watch: \(message)")
 
@@ -239,6 +336,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    /// Handles incoming messages from the watch that expect a reply.
+    ///
+    /// Currently supports:
+    /// - `"ping"`: Replies with `["status": "ok", "timestamp": <current_time>]`.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
         print("Received message with reply handler: \(message)")
 
@@ -254,6 +355,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     // MARK: - Private Helpers
 
+    /// Sends the list of all downloaded regions to the watch via application context.
+    ///
+    /// Loads all regions from ``RegionStorage``, converts each to a dictionary
+    /// representation, and updates the application context so the watch can display
+    /// available regions even when the iOS app is not running.
     private func sendAvailableRegions() {
         let storage = RegionStorage.shared
         storage.loadRegions()

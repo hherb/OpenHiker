@@ -1,22 +1,78 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 #if os(iOS)
 import SwiftUI
 import MapKit
 import CoreLocation
 
+/// The main map view for selecting and downloading offline map regions on iOS.
+///
+/// Users interact with this view to:
+/// 1. Browse an interactive MapKit map of the world
+/// 2. Search for locations by name
+/// 3. Draw a selection rectangle over the area they want to download
+/// 4. Configure download options (zoom levels, region name)
+/// 5. Initiate tile downloads from OpenTopoMap
+///
+/// The view persists the last-viewed map position via `@AppStorage` so users
+/// return to their previous location on relaunch. Downloaded regions are automatically
+/// transferred to the paired Apple Watch if connected.
 struct RegionSelectorView: View {
+    /// The current map camera position (region, center, and zoom).
     @State private var cameraPosition: MapCameraPosition = .automatic
+
+    /// The rectangle drawn by the user during area selection (in screen coordinates).
     @State private var selectionRect: CGRect?
+
+    /// Whether the user is currently in "select area" mode.
     @State private var isSelecting = false
+
+    /// The map coordinate region derived from the user's selection.
     @State private var selectedRegion: MKCoordinateRegion?
+
+    /// Whether the download configuration sheet is currently presented.
     @State private var showDownloadSheet = false
+
+    /// The user-entered name for the region being downloaded.
     @State private var regionName = ""
+
+    /// Whether the location search sheet is currently presented.
     @State private var showSearchSheet = false
+
+    /// Whether a tile download is currently in progress.
     @State private var isDownloading = false
+
+    /// The current download progress, updated during active downloads.
     @State private var downloadProgress: RegionDownloadProgress?
+
+    /// Any error that occurred during the most recent download attempt.
     @State private var downloadError: Error?
+
+    /// The minimum zoom level for tile downloads.
     @State private var minZoom: Int = 12
+
+    /// The maximum zoom level for tile downloads.
     @State private var maxZoom: Int = 16
+
+    /// iOS location manager for centering the map on the user's position.
     @StateObject private var locationManager = LocationManageriOS()
+
+    /// Search completer for location name lookups.
     @StateObject private var searchCompleter = LocationSearchCompleter()
 
     // Persist the last viewed location
@@ -24,8 +80,13 @@ struct RegionSelectorView: View {
     @AppStorage("lastLongitude") private var lastLongitude: Double = -119.5383
     @AppStorage("lastSpan") private var lastSpan: Double = 0.5
 
+    /// The tile downloader actor used for downloading map tiles.
     private let tileDownloader = TileDownloader()
+
+    /// Shared region storage for saving downloaded regions.
     @ObservedObject private var regionStorage = RegionStorage.shared
+
+    /// Watch connectivity manager for auto-transferring downloaded regions.
     @EnvironmentObject private var watchConnectivity: WatchConnectivityManager
 
     var body: some View {
@@ -196,6 +257,7 @@ struct RegionSelectorView: View {
         }
     }
 
+    /// An instructional card shown when no region is selected and no download is in progress.
     private var instructionsCard: some View {
         HStack {
             Image(systemName: "hand.draw")
@@ -214,6 +276,13 @@ struct RegionSelectorView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// A progress card shown during active tile downloads.
+    ///
+    /// Displays the current zoom level, downloaded/total tile count, a progress bar,
+    /// and a completion checkmark when finished.
+    ///
+    /// - Parameter progress: The current ``RegionDownloadProgress``.
+    /// - Returns: A styled progress card view.
     private func downloadProgressCard(_ progress: RegionDownloadProgress) -> some View {
         VStack(spacing: 12) {
             HStack {
@@ -248,6 +317,10 @@ struct RegionSelectorView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// An info card shown when a region has been selected but not yet downloaded.
+    ///
+    /// Displays the selected area size, estimated tile count, estimated download size,
+    /// and a "Download" button to open the configuration sheet.
     private var selectedRegionInfo: some View {
         VStack(spacing: 12) {
             let boundingBox = BoundingBox(
@@ -285,11 +358,21 @@ struct RegionSelectorView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// Formats an estimated download size from a tile count.
+    ///
+    /// Uses an average tile size of 15 KB per tile for the estimate.
+    ///
+    /// - Parameter tileCount: The number of tiles.
+    /// - Returns: A human-readable file size string (e.g., "12.3 MB").
     private func estimatedSize(tileCount: Int) -> String {
         let bytes = Int64(tileCount) * 15_000
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
+    /// Calculates the four corner coordinates of a map region for polygon rendering.
+    ///
+    /// - Parameter region: The ``MKCoordinateRegion`` to convert.
+    /// - Returns: An array of four ``CLLocationCoordinate2D`` values (NW, NE, SE, SW).
     private func regionCorners(_ region: MKCoordinateRegion) -> [CLLocationCoordinate2D] {
         let latDelta = region.span.latitudeDelta / 2
         let lonDelta = region.span.longitudeDelta / 2
@@ -303,6 +386,11 @@ struct RegionSelectorView: View {
         ]
     }
 
+    /// Converts the user's screen-space selection into a map coordinate region.
+    ///
+    /// If the user drew a meaningful rectangle (width and height > 50pt), uses 50%
+    /// of the visible map region. Otherwise, uses 60% of the visible region centered
+    /// on the current map center.
     private func finalizeSelection() {
         // Use the visible region - if user drew a rectangle, scale it down
         // Otherwise use the center portion of the visible map
@@ -329,6 +417,11 @@ struct RegionSelectorView: View {
         selectionRect = nil
     }
 
+    /// Initiates a tile download for the currently selected region.
+    ///
+    /// Creates a ``RegionSelectionRequest`` from the selected region, then uses the
+    /// ``TileDownloader`` actor to download tiles. On completion, the region is saved
+    /// to ``RegionStorage`` and automatically transferred to the paired Apple Watch.
     private func startDownload() {
         guard let region = selectedRegion else { return }
 
@@ -388,6 +481,10 @@ struct RegionSelectorView: View {
         }
     }
 
+    /// Centers the map on the user's current GPS location.
+    ///
+    /// If a location is already available, centers immediately. Otherwise, sets a
+    /// flag so the map will center on the next location update from Core Location.
     private func centerOnUserLocation() {
         locationManager.shouldCenterOnNextUpdate = true
         locationManager.requestLocationPermission()
@@ -405,6 +502,11 @@ struct RegionSelectorView: View {
         }
     }
 
+    /// Persists the current map position to `@AppStorage` for restoration on next launch.
+    ///
+    /// - Parameters:
+    ///   - coordinate: The map center coordinate to save.
+    ///   - span: The map span (zoom level) to save.
     private func saveLastLocation(coordinate: CLLocationCoordinate2D, span: Double) {
         lastLatitude = coordinate.latitude
         lastLongitude = coordinate.longitude
@@ -414,19 +516,34 @@ struct RegionSelectorView: View {
 
 // MARK: - Location Search
 
+/// Provides location search auto-completion using MapKit's ``MKLocalSearchCompleter``.
+///
+/// As the user types, this class queries Apple's search API and returns matching
+/// place names and addresses. Selected completions can be resolved to geographic
+/// coordinates via ``getCoordinate(for:)``.
 class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    /// The current search query text.
     @Published var searchQuery = ""
+
+    /// The list of search completions matching the current query.
     @Published var completions: [MKLocalSearchCompletion] = []
+
+    /// Whether a search is currently in progress.
     @Published var isSearching = false
 
+    /// The underlying MapKit search completer.
     private let completer = MKLocalSearchCompleter()
 
+    /// Initializes the search completer and configures it for address and POI results.
     override init() {
         super.init()
         completer.delegate = self
         completer.resultTypes = [.address, .pointOfInterest]
     }
 
+    /// Updates the search query and triggers auto-completion.
+    ///
+    /// - Parameter query: The search text entered by the user. An empty string clears results.
     func search(_ query: String) {
         searchQuery = query
         if query.isEmpty {
@@ -438,16 +555,25 @@ class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchComplete
         }
     }
 
+    /// Called by MapKit when new search completions are available.
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
         completions = completer.results
         isSearching = false
     }
 
+    /// Called by MapKit when the search completer encounters an error.
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         print("Search completer error: \(error.localizedDescription)")
         isSearching = false
     }
 
+    /// Resolves a search completion to a geographic coordinate.
+    ///
+    /// Performs a ``MKLocalSearch`` using the completion and returns the coordinate
+    /// of the first matching map item.
+    ///
+    /// - Parameter completion: The ``MKLocalSearchCompletion`` to resolve.
+    /// - Returns: The coordinate of the first match, or `nil` if no results were found.
     func getCoordinate(for completion: MKLocalSearchCompletion) async -> CLLocationCoordinate2D? {
         let request = MKLocalSearch.Request(completion: completion)
         let search = MKLocalSearch(request: request)
@@ -462,11 +588,20 @@ class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchComplete
     }
 }
 
+/// A modal sheet displaying location search results with auto-completion.
+///
+/// Users type a place name or address, and matching results appear in a list.
+/// Tapping a result resolves it to a coordinate and calls the `onSelectLocation` callback.
 struct LocationSearchSheet: View {
+    /// The search completer providing auto-complete results.
     @ObservedObject var searchCompleter: LocationSearchCompleter
+
+    /// Callback invoked when the user selects a location from the search results.
     let onSelectLocation: (CLLocationCoordinate2D) -> Void
 
+    /// The current search text bound to the search bar.
     @State private var searchText = ""
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -517,15 +652,31 @@ struct LocationSearchSheet: View {
 
 // MARK: - Location Manager for iOS
 
+/// A simple Core Location manager for the iOS companion app.
+///
+/// Provides current location, authorization handling, and basic track recording
+/// for the map view. This is separate from the watchOS ``LocationManager`` because
+/// the iOS app has different requirements (e.g., `showsBackgroundLocationIndicator`).
 class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate {
+    /// The underlying Core Location manager.
     private let manager = CLLocationManager()
 
+    /// The most recent location update from Core Location.
     @Published var currentLocation: CLLocation?
+
+    /// The current location authorization status.
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    /// Whether track recording is currently active.
     @Published var isTracking = false
+
+    /// Recorded GPS points during an active tracking session.
     @Published var trackPoints: [CLLocation] = []
+
+    /// Flag indicating the map should center on the next location update.
     var shouldCenterOnNextUpdate = false
 
+    /// Initializes the location manager with high-accuracy settings optimized for hiking.
     override init() {
         super.init()
         manager.delegate = self
@@ -536,6 +687,10 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
         authorizationStatus = manager.authorizationStatus
     }
 
+    /// Requests location permission and starts location updates if already authorized.
+    ///
+    /// If authorization has not been determined, requests "when in use" permission.
+    /// If already authorized, immediately starts updating location.
     func requestLocationPermission() {
         switch manager.authorizationStatus {
         case .notDetermined:
@@ -547,16 +702,26 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
         }
     }
 
+    /// Starts recording a GPS track.
+    ///
+    /// Clears any previous track points and begins appending new locations as they arrive.
     func startTracking() {
         trackPoints.removeAll()
         isTracking = true
         manager.startUpdatingLocation()
     }
 
+    /// Stops recording the GPS track.
+    ///
+    /// Location updates continue (for map centering) but points are no longer recorded.
     func stopTracking() {
         isTracking = false
     }
 
+    /// Called by Core Location when new locations are available.
+    ///
+    /// Updates ``currentLocation`` and appends to ``trackPoints`` if tracking is active,
+    /// applying a minimum distance filter of 5 meters between points.
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentLocation = location
@@ -573,10 +738,14 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
         }
     }
 
+    /// Called by Core Location when a location update fails.
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error: \(error.localizedDescription)")
     }
 
+    /// Called when the user changes location authorization.
+    ///
+    /// Automatically starts location updates when permission is granted.
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
@@ -587,8 +756,16 @@ class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate 
 
 // MARK: - Selection Overlay
 
+/// A transparent overlay that captures drag gestures for drawing selection rectangles.
+///
+/// When the user drags on this overlay, a blue-outlined rectangle is drawn from the
+/// drag start point to the current touch position. The resulting rectangle is stored
+/// in the ``selectionRect`` binding for use by ``RegionSelectorView``.
 struct SelectionOverlay: View {
+    /// Binding to the selection rectangle (in screen coordinates).
     @Binding var selectionRect: CGRect?
+
+    /// The starting point of the current drag gesture.
     @State private var dragStart: CGPoint?
 
     var body: some View {
@@ -638,15 +815,34 @@ struct SelectionOverlay: View {
 
 // MARK: - Download Configuration Sheet
 
+/// A modal sheet for configuring download options before starting a tile download.
+///
+/// Allows the user to:
+/// - Name the region
+/// - Toggle contour line inclusion
+/// - Adjust minimum and maximum zoom levels via steppers
+/// - See estimated tile count and download size
+/// - Initiate the download
 struct DownloadConfigSheet: View {
+    /// The map region to download tiles for.
     let region: MKCoordinateRegion
+
+    /// Binding to the user-entered region name.
     @Binding var regionName: String
+
+    /// Binding to the minimum zoom level.
     @Binding var minZoom: Int
+
+    /// Binding to the maximum zoom level.
     @Binding var maxZoom: Int
+
+    /// Callback invoked when the user taps "Download Region".
     let onDownload: () -> Void
 
+    /// Whether to include contour lines in the download (currently informational only).
     @State private var includeContours = true
 
+    /// The bounding box derived from the selected map region.
     private var boundingBox: BoundingBox {
         BoundingBox(
             north: region.center.latitude + region.span.latitudeDelta / 2,
@@ -656,6 +852,7 @@ struct DownloadConfigSheet: View {
         )
     }
 
+    /// The estimated total number of tiles for the current zoom range.
     private var estimatedTiles: Int {
         boundingBox.estimateTileCount(zoomLevels: minZoom...maxZoom)
     }

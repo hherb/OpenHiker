@@ -1,31 +1,71 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import Foundation
 import CoreLocation
 
-/// Represents a downloaded map region stored on the device
+/// Represents a downloaded map region stored on the device.
+///
+/// A region captures all the metadata about a set of offline map tiles that have been
+/// downloaded for a specific geographic area. It tracks the bounding box, zoom levels,
+/// tile count, file size, and the filename of the MBTiles database on disk.
+///
+/// Regions are persisted as JSON and displayed in the iOS app's "Downloaded Regions" list.
 struct Region: Identifiable, Codable, Sendable {
+    /// Unique identifier for this region
     let id: UUID
+    /// User-provided name for the region (e.g., "Yosemite Valley")
     let name: String
+    /// Geographic bounding box of the downloaded area
     let boundingBox: BoundingBox
+    /// Range of zoom levels included in this download
     let zoomLevels: ClosedRange<Int>
+    /// Date when the region was downloaded
     let createdAt: Date
+    /// Total number of tiles in this region across all zoom levels
     let tileCount: Int
+    /// Size of the MBTiles file on disk in bytes
     let fileSizeBytes: Int64
 
-    /// The filename for the MBTiles database
+    /// The filename for the MBTiles database, derived from the region's UUID.
     var mbtilesFilename: String {
         "\(id.uuidString).mbtiles"
     }
 
-    /// Human-readable file size
+    /// Human-readable file size (e.g., "12.3 MB") formatted using the system's byte count formatter.
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
     }
 
-    /// Approximate area covered in square kilometers
+    /// Approximate area covered by this region in square kilometers.
     var areaCoveredKm2: Double {
         boundingBox.areaKm2
     }
 
+    /// Create a new region with the given properties.
+    ///
+    /// - Parameters:
+    ///   - id: Unique identifier (defaults to a new UUID).
+    ///   - name: User-provided name for the region.
+    ///   - boundingBox: Geographic bounding box of the downloaded area.
+    ///   - zoomLevels: Range of zoom levels included in the download.
+    ///   - createdAt: Timestamp of creation (defaults to now).
+    ///   - tileCount: Total number of tiles downloaded.
+    ///   - fileSizeBytes: Size of the MBTiles file on disk in bytes.
     init(
         id: UUID = UUID(),
         name: String,
@@ -47,14 +87,23 @@ struct Region: Identifiable, Codable, Sendable {
 
 // MARK: - Region Download Progress
 
-/// Tracks the progress of downloading a region
+/// Tracks the progress of downloading a region's map tiles.
+///
+/// Instances are created by `TileDownloader` and passed to progress callbacks so the UI
+/// can show a progress bar, current zoom level, and status messages to the user.
 struct RegionDownloadProgress: Sendable {
+    /// The UUID of the region being downloaded
     let regionId: UUID
+    /// Total number of tiles to download across all zoom levels
     let totalTiles: Int
+    /// Number of tiles downloaded so far
     let downloadedTiles: Int
+    /// The zoom level currently being downloaded
     let currentZoom: Int
+    /// Current status of the download pipeline
     let status: Status
 
+    /// The stages a region download passes through, from pending to completed.
     enum Status: Sendable {
         case pending
         case downloading
@@ -64,6 +113,7 @@ struct RegionDownloadProgress: Sendable {
         case completed
         case failed(Error)
 
+        /// A human-readable description of this status for display in the UI.
         var description: String {
             switch self {
             case .pending: return "Waiting..."
@@ -77,16 +127,19 @@ struct RegionDownloadProgress: Sendable {
         }
     }
 
+    /// Download progress as a fraction from 0.0 to 1.0.
     var progress: Double {
         guard totalTiles > 0 else { return 0 }
         return Double(downloadedTiles) / Double(totalTiles)
     }
 
+    /// Whether the download has completed successfully.
     var isComplete: Bool {
         if case .completed = status { return true }
         return false
     }
 
+    /// Whether the download has failed.
     var hasFailed: Bool {
         if case .failed = status { return true }
         return false
@@ -95,17 +148,28 @@ struct RegionDownloadProgress: Sendable {
 
 // MARK: - Region Selection Request
 
-/// Parameters for selecting a new region to download
+/// Parameters for selecting a new region to download.
+///
+/// Captures the user's choices from the download configuration sheet: the region name,
+/// geographic bounds, zoom levels, and whether to include contour lines. Also provides
+/// estimates of the download size to help the user make informed decisions.
 struct RegionSelectionRequest: Codable, Sendable {
+    /// User-provided name for the new region
     let name: String
+    /// Geographic bounding box defining the area to download
     let boundingBox: BoundingBox
+    /// Range of zoom levels to download tiles for
     let zoomLevels: ClosedRange<Int>
+    /// Whether to include contour line tiles (adds ~30% more data)
     let includeContours: Bool
 
-    /// Default zoom levels for hiking (enough detail for trail navigation)
+    /// Default zoom levels for hiking: 12-16 provides enough detail for trail navigation.
     static let defaultHikingZoomLevels: ClosedRange<Int> = 12...16
 
-    /// Estimate the download size in bytes
+    /// Estimate the download size in bytes.
+    ///
+    /// Uses an average tile size of ~15KB for raster tiles, with a 30% increase
+    /// when contour lines are included.
     var estimatedSizeBytes: Int64 {
         let tileCount = boundingBox.estimateTileCount(zoomLevels: zoomLevels)
         // Average tile size: ~15KB for raster tiles
@@ -120,11 +184,18 @@ struct RegionSelectionRequest: Codable, Sendable {
         return size
     }
 
-    /// Estimate download size formatted for display
+    /// Human-readable estimated download size for display in the UI.
     var estimatedSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: estimatedSizeBytes, countStyle: .file)
     }
 
+    /// Create a new region selection request.
+    ///
+    /// - Parameters:
+    ///   - name: User-provided name for the region.
+    ///   - boundingBox: Geographic area to download.
+    ///   - zoomLevels: Zoom levels to include (defaults to `12...16` for hiking).
+    ///   - includeContours: Whether to include contour line data (defaults to `true`).
     init(
         name: String,
         boundingBox: BoundingBox,
@@ -140,19 +211,35 @@ struct RegionSelectionRequest: Codable, Sendable {
 
 // MARK: - Region Metadata for Watch
 
-/// Lightweight region metadata for the watch app
+/// Lightweight region metadata for the watch app.
+///
+/// This is a slimmed-down version of `Region` that omits iOS-specific fields like
+/// file size and creation date. It is sent to the watch via WatchConnectivity along
+/// with the MBTiles file, and persisted as JSON on the watch for offline access.
 struct RegionMetadata: Identifiable, Codable, Sendable {
+    /// Unique identifier matching the corresponding `Region` on iOS
     let id: UUID
+    /// User-provided name for the region
     let name: String
+    /// Geographic bounding box of the region
     let boundingBox: BoundingBox
+    /// Minimum zoom level available in this region's tiles
     let minZoom: Int
+    /// Maximum zoom level available in this region's tiles
     let maxZoom: Int
+    /// Total number of tiles in the region
     let tileCount: Int
 
+    /// The range of available zoom levels as a `ClosedRange`.
     var zoomLevels: ClosedRange<Int> {
         minZoom...maxZoom
     }
 
+    /// Create metadata from a full `Region` object.
+    ///
+    /// Used on iOS when preparing to transfer a region to the watch.
+    ///
+    /// - Parameter region: The full region to extract metadata from.
     init(from region: Region) {
         self.id = region.id
         self.name = region.name
@@ -162,6 +249,17 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
         self.tileCount = region.tileCount
     }
 
+    /// Create metadata from explicit values.
+    ///
+    /// Used on the watch when reconstructing metadata from a received WatchConnectivity transfer.
+    ///
+    /// - Parameters:
+    ///   - id: Unique identifier for the region.
+    ///   - name: User-provided name for the region.
+    ///   - boundingBox: Geographic bounding box.
+    ///   - minZoom: Minimum available zoom level.
+    ///   - maxZoom: Maximum available zoom level.
+    ///   - tileCount: Total number of tiles.
     init(
         id: UUID,
         name: String,
@@ -178,7 +276,10 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
         self.tileCount = tileCount
     }
 
-    /// Check if a location is within this region
+    /// Check if a geographic coordinate is within this region's bounding box.
+    ///
+    /// - Parameter coordinate: The coordinate to test.
+    /// - Returns: `true` if the coordinate falls within the region.
     func contains(coordinate: CLLocationCoordinate2D) -> Bool {
         boundingBox.contains(coordinate)
     }

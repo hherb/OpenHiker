@@ -1,32 +1,80 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import Foundation
 import SpriteKit
 import CoreLocation
 
-/// SpriteKit-based map renderer for watchOS
-/// Displays pre-rendered raster tiles from an MBTiles database
+/// SpriteKit-based map renderer for watchOS.
+///
+/// Manages loading MBTiles databases and providing tile data to the ``MapScene``.
+/// Acts as the bridge between the SwiftUI view layer (``MapView``) and the SpriteKit
+/// scene that renders tiles.
+///
+/// ## Responsibilities
+/// - Opening/closing ``TileStore`` connections to MBTiles SQLite databases
+/// - Tracking the current zoom level and map center coordinate
+/// - Creating and managing the ``MapScene`` instance
+/// - Providing tile image data to the scene for rendering
+///
+/// The ``currentZoom`` property is bound to the Digital Crown via SwiftUI's
+/// `digitalCrownRotation` modifier, allowing smooth zoom control.
 final class MapRenderer: ObservableObject {
     // MARK: - Published Properties
 
+    /// Whether a region is currently being loaded.
     @Published var isLoading = false
+
+    /// Any error that occurred during the last load attempt.
     @Published var loadError: Error?
+
+    /// The current zoom level, bound to the Digital Crown. Defaults to 14.
     @Published var currentZoom: Int = 14
+
+    /// The current map center coordinate in WGS84, or `nil` if no region is loaded.
     @Published var centerCoordinate: CLLocationCoordinate2D?
 
     // MARK: - Properties
 
+    /// The currently open tile store for reading tile data.
     private var tileStore: TileStore?
+
+    /// The active SpriteKit scene, held weakly to avoid retain cycles.
     private var mapScene: MapScene?
+
+    /// Metadata for the currently loaded region.
     private var regionMetadata: RegionMetadata?
 
-    /// Zoom level bounds
+    /// The minimum allowed zoom level.
     let minZoom: Int
+
+    /// The maximum allowed zoom level.
     let maxZoom: Int
 
-    /// Tile size in points (for rendering)
+    /// The size of each tile in points (standard web mercator tile size).
     static let tileSize: CGFloat = 256
 
     // MARK: - Initialization
 
+    /// Creates a new map renderer with the specified zoom bounds.
+    ///
+    /// - Parameters:
+    ///   - minZoom: The minimum zoom level (default: 12).
+    ///   - maxZoom: The maximum zoom level (default: 16).
     init(minZoom: Int = 12, maxZoom: Int = 16) {
         self.minZoom = minZoom
         self.maxZoom = maxZoom
@@ -34,7 +82,14 @@ final class MapRenderer: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Load a region's MBTiles database
+    /// Loads a region's MBTiles database for tile rendering.
+    ///
+    /// Opens the SQLite database at the expected path in Documents/regions/,
+    /// sets the initial zoom to the region's midpoint zoom (clamped to available range),
+    /// and centers on the region's bounding box center.
+    ///
+    /// - Parameter metadata: The ``RegionMetadata`` describing the region to load.
+    /// - Throws: ``TileStoreError`` if the database cannot be opened.
     func loadRegion(_ metadata: RegionMetadata) throws {
         isLoading = true
         loadError = nil
@@ -58,7 +113,7 @@ final class MapRenderer: ObservableObject {
         isLoading = false
     }
 
-    /// Unload current region
+    /// Unloads the current region and releases the tile store connection.
     func unloadRegion() {
         tileStore?.close()
         tileStore = nil
@@ -66,40 +121,56 @@ final class MapRenderer: ObservableObject {
         centerCoordinate = nil
     }
 
-    /// Create a SpriteKit scene for the map
+    /// Creates a new SpriteKit scene for displaying map tiles.
+    ///
+    /// The scene is sized to the provided dimensions (typically the watch screen size)
+    /// and configured with a reference to this renderer for tile data access.
+    ///
+    /// - Parameter size: The size of the scene in points.
+    /// - Returns: A configured ``MapScene`` ready for display in a `SpriteView`.
     func createScene(size: CGSize) -> MapScene {
         let mapScene = MapScene(size: size, renderer: self)
         self.mapScene = mapScene
         return mapScene
     }
 
-    /// Get tile image data for a coordinate
+    /// Retrieves tile image data (PNG) for the given tile coordinate.
+    ///
+    /// Reads from the currently open ``TileStore``. Returns `nil` if no region
+    /// is loaded or the tile doesn't exist in the database.
+    ///
+    /// - Parameter coordinate: The ``TileCoordinate`` specifying zoom, x, and y.
+    /// - Returns: The tile's PNG image data, or `nil`.
     func getTileData(for coordinate: TileCoordinate) -> Data? {
         guard let store = tileStore else { return nil }
         return try? store.getTile(coordinate)
     }
 
-    /// Update the map center
+    /// Updates the map center coordinate and refreshes visible tiles.
+    ///
+    /// - Parameter coordinate: The new center coordinate in WGS84.
     func setCenter(_ coordinate: CLLocationCoordinate2D) {
         centerCoordinate = coordinate
         mapScene?.updateVisibleTiles()
     }
 
-    /// Zoom in
+    /// Increases the zoom level by one step (if not at maximum).
     func zoomIn() {
         guard currentZoom < maxZoom else { return }
         currentZoom += 1
         mapScene?.updateVisibleTiles()
     }
 
-    /// Zoom out
+    /// Decreases the zoom level by one step (if not at minimum).
     func zoomOut() {
         guard currentZoom > minZoom else { return }
         currentZoom -= 1
         mapScene?.updateVisibleTiles()
     }
 
-    /// Set zoom level
+    /// Sets the zoom level to the specified value, clamped to the valid range.
+    ///
+    /// - Parameter zoom: The desired zoom level.
     func setZoom(_ zoom: Int) {
         let clampedZoom = max(minZoom, min(maxZoom, zoom))
         guard clampedZoom != currentZoom else { return }
@@ -107,7 +178,10 @@ final class MapRenderer: ObservableObject {
         mapScene?.updateVisibleTiles()
     }
 
-    /// Check if a coordinate is within the loaded region
+    /// Checks whether a coordinate falls within the currently loaded region's bounds.
+    ///
+    /// - Parameter coordinate: The coordinate to check.
+    /// - Returns: `true` if the coordinate is within the region, `false` otherwise.
     func isCoordinateInRegion(_ coordinate: CLLocationCoordinate2D) -> Bool {
         regionMetadata?.contains(coordinate: coordinate) ?? false
     }
@@ -115,36 +189,66 @@ final class MapRenderer: ObservableObject {
 
 // MARK: - SpriteKit Map Scene
 
-/// SpriteKit scene that displays map tiles
+/// A SpriteKit scene that renders offline map tiles with GPS overlays.
+///
+/// This scene manages:
+/// - A grid of tile sprites loaded from the ``MapRenderer``'s tile store
+/// - A blue pulsing position marker showing the user's GPS location
+/// - A directional cone showing the compass heading
+/// - A compass indicator in the top-right corner
+/// - A track trail polyline showing recorded hike points
+///
+/// Tiles are organized in a 3x3 grid around the center tile, repositioned
+/// using Web Mercator math to achieve sub-tile-precision scrolling.
+///
+/// ## Node hierarchy
+/// ```
+/// Scene
+///   ├── tilesNode        ← Contains tile sprites (z=0)
+///   └── overlaysNode     ← Contains markers and compass (z>0)
+///         ├── positionMarker (z=100)
+///         │     └── headingCone (z=99)
+///         ├── compassNode (z=200)
+///         └── trackNode (z=50)
+/// ```
 final class MapScene: SKScene {
+    /// Weak reference to the renderer that provides tile data and coordinate state.
     private weak var renderer: MapRenderer?
 
-    /// Node containing all tile sprites
+    /// Parent node containing all tile sprites.
     private let tilesNode = SKNode()
 
-    /// Node for overlays (current position, route, etc.)
+    /// Parent node for overlay elements (position marker, compass, track trail).
     private let overlaysNode = SKNode()
 
-    /// Current user position marker
+    /// The blue circle marking the user's current GPS position.
     private var positionMarker: SKShapeNode?
 
-    /// Heading direction cone on position marker
+    /// A triangular cone on the position marker indicating compass heading.
     private var headingCone: SKShapeNode?
 
-    /// North indicator compass
+    /// A compass indicator showing north direction, positioned in the top-right corner.
     private var compassNode: SKNode?
 
-    /// Track trail breadcrumb line
+    /// A polyline shape node showing the recorded hike track.
     private var trackNode: SKShapeNode?
 
-    /// Cache of loaded tile textures
+    /// In-memory cache of tile textures to avoid re-creating them from PNG data.
     private var textureCache: [TileCoordinate: SKTexture] = [:]
 
-    /// Maximum cache size
+    /// Maximum number of textures to keep in the cache before evicting old entries.
     private let maxCacheSize = 100
 
     // MARK: - Initialization
 
+    /// Creates a new map scene with the given size and renderer.
+    ///
+    /// Sets up the node hierarchy, position marker with pulsing animation,
+    /// and compass indicator.
+    ///
+    /// - Parameters:
+    ///   - size: The scene size in points (typically the watch screen size).
+    ///   - renderer: The ``MapRenderer`` providing tile data and map state.
     init(size: CGSize, renderer: MapRenderer) {
         self.renderer = renderer
         super.init(size: size)
@@ -165,6 +269,11 @@ final class MapScene: SKScene {
 
     // MARK: - Setup
 
+    /// Creates the blue GPS position marker with a heading cone and pulsing animation.
+    ///
+    /// The marker is an 8pt radius circle in iOS-blue with a white border. A triangular
+    /// heading cone is added as a child node. The marker pulses between 1.0x and 1.15x
+    /// scale to draw attention.
     private func setupPositionMarker() {
         let marker = SKShapeNode(circleOfRadius: 8)
         marker.fillColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
@@ -199,6 +308,10 @@ final class MapScene: SKScene {
         overlaysNode.addChild(marker)
     }
 
+    /// Creates the compass indicator in the top-right corner of the scene.
+    ///
+    /// The compass consists of a semi-transparent background circle, a red north
+    /// arrow, a white south arrow, and an "N" label.
     private func setupCompass() {
         let compass = SKNode()
         compass.zPosition = 200
@@ -268,7 +381,14 @@ final class MapScene: SKScene {
 
     // MARK: - Tile Management
 
-    /// Update the visible tiles based on current center and zoom
+    /// Recalculates which tiles should be visible and updates the scene.
+    ///
+    /// This is called whenever the map center or zoom level changes. It:
+    /// 1. Determines the center tile from the current coordinate and zoom
+    /// 2. Calculates a 3x3 grid of tiles around the center
+    /// 3. Removes tiles that are no longer visible
+    /// 4. Adds sprites for newly visible tiles
+    /// 5. Repositions all tiles with sub-tile precision
     func updateVisibleTiles() {
         guard let renderer = renderer,
               let center = renderer.centerCoordinate else {
@@ -309,6 +429,12 @@ final class MapScene: SKScene {
         updateTilePositions(centerTile: centerTile)
     }
 
+    /// Returns all valid tiles within a radius of the center tile.
+    ///
+    /// - Parameters:
+    ///   - center: The center tile coordinate.
+    ///   - radius: The number of tiles to include in each direction (1 = 3x3 grid).
+    /// - Returns: An array of valid ``TileCoordinate`` values.
     private func getVisibleTiles(around center: TileCoordinate, radius: Int) -> [TileCoordinate] {
         var tiles: [TileCoordinate] = []
 
@@ -328,6 +454,13 @@ final class MapScene: SKScene {
         return tiles
     }
 
+    /// Creates a SpriteKit sprite node for a tile and adds it to the scene.
+    ///
+    /// Attempts to load tile data from the renderer's tile store. If the tile
+    /// exists, creates a textured sprite and caches the texture. If not,
+    /// creates a placeholder tile with coordinate labels.
+    ///
+    /// - Parameter tile: The ``TileCoordinate`` to create a sprite for.
     private func addTileSprite(for tile: TileCoordinate) {
         guard let renderer = renderer,
               let tileData = renderer.getTileData(for: tile) else {
@@ -367,6 +500,9 @@ final class MapScene: SKScene {
         tilesNode.addChild(sprite)
     }
 
+    /// Creates a gray placeholder tile with coordinate labels for debugging.
+    ///
+    /// - Parameter tile: The ``TileCoordinate`` to create a placeholder for.
     private func addPlaceholderTile(for tile: TileCoordinate) {
         let placeholder = SKShapeNode(rectOf: CGSize(
             width: MapRenderer.tileSize,
@@ -387,6 +523,13 @@ final class MapScene: SKScene {
         tilesNode.addChild(placeholder)
     }
 
+    /// Repositions all tile sprites based on the current center coordinate.
+    ///
+    /// Uses Web Mercator math to calculate the fractional pixel offset within the
+    /// center tile, providing smooth sub-tile scrolling. Each tile is positioned
+    /// relative to the screen center based on its offset from the center tile.
+    ///
+    /// - Parameter centerTile: The tile coordinate at the map center.
     private func updateTilePositions(centerTile: TileCoordinate) {
         guard let renderer = renderer,
               let center = renderer.centerCoordinate else { return }
@@ -421,7 +564,12 @@ final class MapScene: SKScene {
 
     // MARK: - Position Marker
 
-    /// Update the current position marker
+    /// Updates the position marker to show the user's current GPS location.
+    ///
+    /// Converts the geographic coordinate to screen position using Web Mercator
+    /// projection math, relative to the current map center.
+    ///
+    /// - Parameter coordinate: The user's current GPS coordinate.
     func updatePositionMarker(coordinate: CLLocationCoordinate2D) {
         guard let renderer = renderer,
               let center = renderer.centerCoordinate else {
@@ -450,7 +598,12 @@ final class MapScene: SKScene {
         positionMarker?.isHidden = false
     }
 
-    /// Update heading direction on the position marker
+    /// Rotates the heading cone to point in the compass direction.
+    ///
+    /// Converts the true heading (clockwise degrees from north) to SpriteKit's
+    /// rotation system (counter-clockwise radians).
+    ///
+    /// - Parameter trueHeading: The compass heading in degrees (0 = north, 90 = east).
     func updateHeading(trueHeading: Double) {
         guard let cone = headingCone else { return }
         // SpriteKit rotation is counter-clockwise in radians; heading is clockwise degrees from north
@@ -462,7 +615,7 @@ final class MapScene: SKScene {
         cone.isHidden = false
     }
 
-    /// Hide the position marker
+    /// Hides both the position marker and heading cone.
     func hidePositionMarker() {
         positionMarker?.isHidden = true
         headingCone?.isHidden = true
@@ -470,7 +623,14 @@ final class MapScene: SKScene {
 
     // MARK: - Track Trail
 
-    /// Update the track trail breadcrumb line from recorded track points
+    /// Renders a polyline trail showing the recorded hike track.
+    ///
+    /// Removes any existing trail and creates a new one from the given track points.
+    /// Each point is projected from geographic coordinates to screen position using
+    /// Web Mercator math. The trail is drawn as an orange 3pt line with rounded
+    /// caps and joins.
+    ///
+    /// - Parameter trackPoints: The array of ``CLLocation`` points to render.
     func updateTrackTrail(trackPoints: [CLLocation]) {
         // Remove old track node
         trackNode?.removeFromParent()
@@ -521,10 +681,18 @@ final class MapScene: SKScene {
 
     // MARK: - Helpers
 
+    /// Creates a unique node name for a tile coordinate (e.g., "tile_14_8192_5461").
+    ///
+    /// - Parameter tile: The tile coordinate.
+    /// - Returns: A string name for the SpriteKit node.
     private func makeTileName(_ tile: TileCoordinate) -> String {
         "tile_\(tile.z)_\(tile.x)_\(tile.y)"
     }
 
+    /// Parses a tile node name back into a ``TileCoordinate``.
+    ///
+    /// - Parameter name: The node name string (e.g., "tile_14_8192_5461").
+    /// - Returns: The parsed ``TileCoordinate``, or `nil` if the format is invalid.
     private func parseTileName(_ name: String) -> TileCoordinate? {
         let parts = name.split(separator: "_")
         guard parts.count == 4,

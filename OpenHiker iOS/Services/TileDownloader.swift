@@ -1,17 +1,53 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import Foundation
 import UIKit
 
-/// Downloads map tiles from OpenStreetMap tile servers
+/// Downloads map tiles from OpenStreetMap-compatible tile servers and packages them
+/// into MBTiles (SQLite) databases for offline use on Apple Watch.
+///
+/// This is a Swift Actor ensuring thread-safe concurrent downloads. It respects the
+/// OSM tile usage policy by rate-limiting requests (100ms delay per tile in each batch)
+/// and setting a proper User-Agent header.
+///
+/// ## Download flow
+/// 1. Calculate required tiles from the bounding box and zoom levels
+/// 2. Create an MBTiles database via ``WritableTileStore``
+/// 3. Download tiles in batches of 50, checking the local cache first
+/// 4. Insert downloaded tiles into the MBTiles database
+/// 5. Report progress via the callback after each tile
 actor TileDownloader {
+    /// The URL session configured for tile downloads with rate limiting.
     private let session: URLSession
+
+    /// Local file cache directory for downloaded tiles, avoiding re-downloads.
     private let cacheDirectory: URL
 
-    /// Supported tile server configurations
+    /// Supported tile server configurations.
+    ///
+    /// Each server provides a URL template for tile retrieval and an attribution
+    /// string to comply with the server's usage policy.
     enum TileServer: String, CaseIterable {
         case osmStandard = "OpenStreetMap"
         case osmTopo = "OpenTopoMap"
         case cyclosm = "CyclOSM"
 
+        /// The URL template with `{z}`, `{x}`, `{y}` placeholders for zoom, column, and row.
         var urlTemplate: String {
             switch self {
             case .osmStandard:
@@ -23,6 +59,7 @@ actor TileDownloader {
             }
         }
 
+        /// Attribution text required by the tile server's usage policy.
         var attribution: String {
             switch self {
             case .osmStandard:
@@ -35,6 +72,12 @@ actor TileDownloader {
         }
     }
 
+    /// Creates a new tile downloader with a configured URL session and cache directory.
+    ///
+    /// The URL session is configured with:
+    /// - Maximum 4 connections per host
+    /// - 30-second request timeout, 300-second resource timeout
+    /// - A User-Agent header identifying this app (required by OSM tile usage policy)
     init() {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 4
@@ -56,7 +99,18 @@ actor TileDownloader {
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
 
-    /// Download tiles for a region and create an MBTiles file
+    /// Downloads all tiles for a region and writes them into an MBTiles database.
+    ///
+    /// Tiles are downloaded zoom level by zoom level, in batches of 50 tiles each.
+    /// Each batch is followed by a rate-limiting delay to respect OSM tile usage policy
+    /// (100ms per tile). Progress is reported after each individual tile download.
+    ///
+    /// - Parameters:
+    ///   - request: The ``RegionSelectionRequest`` specifying the area and zoom levels.
+    ///   - server: The tile server to download from. Defaults to `.osmTopo`.
+    ///   - progress: A callback invoked after each tile to report download progress.
+    /// - Returns: The file URL of the completed MBTiles database.
+    /// - Throws: Errors from file system operations, database writes, or network failures.
     func downloadRegion(
         _ request: RegionSelectionRequest,
         server: TileServer = .osmTopo,
@@ -152,7 +206,16 @@ actor TileDownloader {
         return URL(fileURLWithPath: mbtilesPath)
     }
 
-    /// Download a single tile
+    /// Downloads a single tile from the server, checking the local cache first.
+    ///
+    /// If the tile is already cached on disk, the cached data is returned without
+    /// making a network request. Otherwise, the tile is downloaded and saved to the cache.
+    ///
+    /// - Parameters:
+    ///   - tile: The ``TileCoordinate`` specifying zoom, column, and row.
+    ///   - server: The ``TileServer`` to download from.
+    /// - Returns: A tuple of the tile coordinate and its PNG data, or `nil` if the download failed.
+    /// - Throws: Network errors from the URL session.
     private func downloadTile(_ tile: TileCoordinate, server: TileServer) async throws -> (TileCoordinate, Data)? {
         // Check cache first
         let cacheFile = cacheDirectory
@@ -194,7 +257,13 @@ actor TileDownloader {
         return (tile, data)
     }
 
-    /// Estimate download size for a region
+    /// Estimates the download size in bytes for a region request.
+    ///
+    /// Uses the ``RegionSelectionRequest/estimatedSizeBytes`` calculation based on
+    /// an average tile size assumption.
+    ///
+    /// - Parameter request: The ``RegionSelectionRequest`` to estimate.
+    /// - Returns: The estimated download size in bytes.
     func estimateDownloadSize(for request: RegionSelectionRequest) -> Int64 {
         request.estimatedSizeBytes
     }
@@ -203,6 +272,13 @@ actor TileDownloader {
 // MARK: - Array Extension for Chunking
 
 extension Array {
+    /// Splits an array into sub-arrays of the specified size.
+    ///
+    /// The last chunk may contain fewer elements if the array length is not
+    /// evenly divisible by the chunk size.
+    ///
+    /// - Parameter size: The maximum number of elements in each chunk.
+    /// - Returns: An array of sub-arrays, each containing at most `size` elements.
     func chunked(into size: Int) -> [[Element]] {
         stride(from: 0, to: count, by: size).map {
             Array(self[$0..<Swift.min($0 + size, count)])

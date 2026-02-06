@@ -1,9 +1,38 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import SwiftUI
 import WatchConnectivity
 
+/// The main entry point for the OpenHiker watchOS app.
+///
+/// This standalone watch app provides offline hiking navigation using pre-downloaded
+/// map tiles rendered via SpriteKit. It receives map data from the iOS companion app
+/// through WatchConnectivity.
+///
+/// Two environment objects are injected into the view hierarchy:
+/// - ``LocationManager``: Provides GPS location, heading, and track recording
+/// - ``WatchConnectivityReceiver``: Handles file reception from the iOS app
 @main
 struct OpenHikerWatchApp: App {
+    /// GPS location and heading manager for the watch.
     @StateObject private var locationManager = LocationManager()
+
+    /// Singleton receiver for files and messages from the iOS companion app.
     @StateObject private var connectivityManager = WatchConnectivityReceiver.shared
 
     var body: some Scene {
@@ -17,21 +46,46 @@ struct OpenHikerWatchApp: App {
 
 // MARK: - Watch Connectivity Receiver
 
-/// Receives files and messages from the iOS companion app
+/// Receives files and messages from the iOS companion app via WatchConnectivity.
+///
+/// This singleton handles:
+/// - Receiving MBTiles map databases transferred from the iPhone
+/// - Receiving GPX route files
+/// - Processing application context updates (available regions list)
+/// - Persisting received region metadata as JSON in the Documents directory
+///
+/// ## File storage layout on watch
+/// ```
+/// Documents/
+///   regions_metadata.json       ← JSON array of RegionMetadata
+///   regions/
+///     <uuid>.mbtiles            ← SQLite MBTiles databases
+///   routes/
+///     <name>.gpx                ← GPX route files
+/// ```
 final class WatchConnectivityReceiver: NSObject, ObservableObject {
+    /// Shared singleton instance injected as an environment object.
     static let shared = WatchConnectivityReceiver()
 
+    /// All regions available on the watch (locally saved + known from phone).
     @Published var availableRegions: [RegionMetadata] = []
+
+    /// Whether a file transfer from the iPhone is currently in progress.
     @Published var isReceivingFile = false
+
+    /// The name of the most recently received region (for UI feedback).
     @Published var lastReceivedRegion: String?
 
+    /// The active WatchConnectivity session, or `nil` if not supported.
     private var session: WCSession?
 
+    /// Private initializer enforcing singleton pattern. Sets up and activates the WCSession.
     private override init() {
         super.init()
         setupSession()
     }
 
+    /// Configures and activates the WatchConnectivity session with this receiver as delegate.
     private func setupSession() {
         guard WCSession.isSupported() else { return }
 
@@ -40,7 +94,10 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         session?.activate()
     }
 
-    /// Request the iOS app to send available regions
+    /// Sends a message to the iOS app requesting the list of available regions.
+    ///
+    /// The iOS app responds by updating the application context with region metadata.
+    /// Requires the watch to be reachable (iOS app in foreground).
     func requestRegionsFromPhone() {
         guard let session = session, session.isReachable else { return }
 
@@ -51,6 +108,9 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
 }
 
 extension WatchConnectivityReceiver: WCSessionDelegate {
+    /// Called when the WCSession activation completes on the watch.
+    ///
+    /// Processes any application context that was received while the app wasn't running.
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         if let error = error {
             print("WCSession activation error: \(error.localizedDescription)")
@@ -65,6 +125,11 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
 
     // MARK: - File Receiving
 
+    /// Called when a file transfer from the iOS app completes.
+    ///
+    /// Routes the file to the appropriate handler based on the `type` field in metadata:
+    /// - `"mbtiles"`: Saves the MBTiles database and updates region metadata
+    /// - `"gpx"`: Saves the GPX route file
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         DispatchQueue.main.async {
             self.isReceivingFile = true
@@ -91,6 +156,14 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Processes a received MBTiles file from the iOS companion app.
+    ///
+    /// Moves the file to the `Documents/regions/` directory, creates a ``RegionMetadata``
+    /// object from the transfer metadata, and persists it to the JSON metadata file.
+    ///
+    /// - Parameters:
+    ///   - file: The received WCSession file containing the MBTiles database.
+    ///   - metadata: The transfer metadata dictionary with region details.
     private func handleReceivedMBTiles(file: WCSessionFile, metadata: [String: Any]) {
         guard let regionIdString = metadata["regionId"] as? String,
               let regionId = UUID(uuidString: regionIdString),
@@ -147,6 +220,13 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Processes a received GPX route file from the iOS companion app.
+    ///
+    /// Moves the file to the `Documents/routes/` directory.
+    ///
+    /// - Parameters:
+    ///   - file: The received WCSession file containing GPX data.
+    ///   - metadata: The transfer metadata dictionary with the route name.
     private func handleReceivedGPX(file: WCSessionFile, metadata: [String: Any]) {
         guard let name = metadata["name"] as? String else {
             print("Invalid GPX metadata")
@@ -174,6 +254,12 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Persists a ``RegionMetadata`` object to the JSON metadata file.
+    ///
+    /// If a region with the same ID already exists, it is replaced. The full
+    /// metadata array is then re-encoded and written to disk.
+    ///
+    /// - Parameter metadata: The ``RegionMetadata`` to save.
     private func saveRegionMetadata(_ metadata: RegionMetadata) {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let metadataURL = documentsDir.appendingPathComponent("regions_metadata.json")
@@ -190,6 +276,10 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Loads all saved region metadata from the JSON file on disk.
+    ///
+    /// - Returns: An array of ``RegionMetadata`` objects, or an empty array if
+    ///   the file doesn't exist or can't be decoded.
     func loadAllRegionMetadata() -> [RegionMetadata] {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let metadataURL = documentsDir.appendingPathComponent("regions_metadata.json")
@@ -205,6 +295,11 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
 
     // MARK: - Application Context
 
+    /// Processes an application context update from the iOS app.
+    ///
+    /// The context contains an `"availableRegions"` key with an array of region
+    /// dictionaries. This is merged with locally saved regions: local regions take
+    /// priority, and any new regions from the phone are appended.
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         print("Received application context update")
 

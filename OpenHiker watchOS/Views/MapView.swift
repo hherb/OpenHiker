@@ -1,18 +1,56 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import SwiftUI
 import SpriteKit
 import CoreLocation
 import WatchKit
 
-/// SwiftUI wrapper for the SpriteKit map scene
+/// The main map view for the watchOS app, wrapping a SpriteKit-based tile map.
+///
+/// This view manages:
+/// - Displaying offline map tiles via ``MapScene`` (SpriteKit)
+/// - Digital Crown zoom control (bound to ``MapRenderer/currentZoom``)
+/// - GPS position marker and compass heading indicator
+/// - Track trail rendering during active hike recording
+/// - Region selection and loading from received MBTiles databases
+///
+/// The map is rendered using SpriteKit rather than SwiftUI for efficient tile
+/// positioning and smooth scrolling on watchOS hardware.
 struct MapView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
 
+    /// The map renderer that manages tile loading and coordinate calculations.
     @StateObject private var mapRenderer = MapRenderer()
+
+    /// Whether the region picker sheet is currently displayed.
     @State private var showingRegionPicker = false
+
+    /// The currently loaded region's metadata, or `nil` if no region is loaded.
     @State private var selectedRegion: RegionMetadata?
+
+    /// Whether the map should auto-center on the user's GPS position.
     @State private var isCenteredOnUser = true
+
+    /// The SpriteKit scene displaying map tiles, or `nil` if no region is loaded.
     @State private var mapScene: MapScene?
+
+    /// The region selected in the picker sheet (used for dismiss callback).
     @State private var pickedRegion: RegionMetadata?
 
     var body: some View {
@@ -86,6 +124,12 @@ struct MapView: View {
 
     // MARK: - Subviews
 
+    /// A placeholder view shown when no map region is loaded.
+    ///
+    /// Displays contextual messages based on the current state:
+    /// - A progress indicator if a file transfer is in progress
+    /// - A "Select Region" button if local regions are available
+    /// - An instruction to download from iPhone otherwise
     private var noMapView: some View {
         VStack(spacing: 12) {
             Image(systemName: "map")
@@ -121,6 +165,7 @@ struct MapView: View {
         .padding()
     }
 
+    /// The top overlay bar showing the current zoom level and GPS tracking status.
     private var topInfoBar: some View {
         HStack {
             // Zoom level
@@ -141,6 +186,7 @@ struct MapView: View {
         .padding(.top, 4)
     }
 
+    /// The bottom control bar with center-on-user, tracking toggle, and region picker buttons.
     private var bottomControls: some View {
         HStack(spacing: 16) {
             // Center on user button
@@ -182,6 +228,7 @@ struct MapView: View {
 
     // MARK: - Gestures
 
+    /// A drag gesture that disables auto-centering when the user pans the map.
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
@@ -193,6 +240,7 @@ struct MapView: View {
 
     // MARK: - Actions
 
+    /// Attempts to load the most recently used map region from local storage.
     private func loadSavedRegion() {
         // Try to load the most recently used region
         let regions = connectivityManager.loadAllRegionMetadata()
@@ -201,6 +249,9 @@ struct MapView: View {
         }
     }
 
+    /// Loads a map region by opening its MBTiles database and creating the SpriteKit scene.
+    ///
+    /// - Parameter region: The ``RegionMetadata`` of the region to load.
     private func loadRegion(_ region: RegionMetadata) {
         do {
             try mapRenderer.loadRegion(region)
@@ -212,6 +263,9 @@ struct MapView: View {
         }
     }
 
+    /// Updates the position marker and track trail when the user's GPS location changes.
+    ///
+    /// - Parameter location: The new location, or `nil` if unavailable.
     private func updateUserPosition(_ location: CLLocation?) {
         guard let location = location else { return }
 
@@ -229,6 +283,9 @@ struct MapView: View {
         }
     }
 
+    /// Centers the map on the user's current GPS position.
+    ///
+    /// If no location is available yet, requests a single location update.
     private func centerOnUser() {
         guard let location = locationManager.currentLocation else {
             locationManager.requestSingleLocation()
@@ -239,6 +296,7 @@ struct MapView: View {
         mapRenderer.setCenter(location.coordinate)
     }
 
+    /// Toggles hike track recording on or off.
     private func toggleTracking() {
         if locationManager.isTracking {
             locationManager.stopTracking()
@@ -250,9 +308,17 @@ struct MapView: View {
 
 // MARK: - Region Picker Sheet
 
+/// A modal sheet for selecting which offline map region to display.
+///
+/// Presents a list of all available ``RegionMetadata`` objects. Tapping a region
+/// sets the binding and dismisses the sheet, triggering the parent view to load it.
 struct RegionPickerSheet: View {
+    /// The list of available regions to choose from.
     let regions: [RegionMetadata]
+
+    /// Binding to the selected region (set when the user taps a row).
     @Binding var selectedRegion: RegionMetadata?
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

@@ -1,3 +1,20 @@
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This file is part of OpenHiker.
+//
+// OpenHiker is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// OpenHiker is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
+
 import Foundation
 import SQLite3
 #if canImport(UIKit)
@@ -6,12 +23,20 @@ import UIKit
 import WatchKit
 #endif
 
-/// Errors that can occur when working with the tile store
+/// Errors that can occur when working with the tile store.
+///
+/// Each case provides a human-readable `errorDescription` via `LocalizedError`
+/// so that error messages can be displayed directly to the user.
 enum TileStoreError: Error, LocalizedError {
+    /// The SQLite database connection has not been opened yet
     case databaseNotOpen
+    /// A SQLite operation failed with the given error message
     case databaseError(String)
+    /// The requested tile was not found in the database
     case tileNotFound
+    /// The tile data in the database is corrupted or unreadable
     case invalidTileData
+    /// The MBTiles file does not exist at the given path
     case fileNotFound(String)
 
     var errorDescription: String? {
@@ -30,25 +55,49 @@ enum TileStoreError: Error, LocalizedError {
     }
 }
 
-/// MBTiles-compatible tile storage using SQLite
-/// Supports reading pre-rendered raster tiles from an MBTiles file
+/// Read-only MBTiles-compatible tile storage using SQLite.
+///
+/// Opens an MBTiles file (a SQLite database following the MBTiles specification) and provides
+/// tile lookup by `TileCoordinate`. The MBTiles format stores tiles with TMS y-coordinates
+/// (inverted compared to the standard "slippy map" XYZ convention), so this class handles
+/// the y-coordinate flipping internally.
+///
+/// All database operations are dispatched on a serial queue for thread safety.
+/// The class is marked `@unchecked Sendable` because it manages its own synchronization.
+///
+/// Used by the watch app's `MapRenderer` to read pre-downloaded tiles for offline display.
 final class TileStore: @unchecked Sendable {
+    /// The underlying SQLite database connection (nil when closed)
     private var db: OpaquePointer?
+    /// File path to the MBTiles database
     private let path: String
+    /// Serial dispatch queue ensuring thread-safe database access
     private let queue = DispatchQueue(label: "com.openhiker.tilestore", qos: .userInitiated)
 
-    /// Metadata about the tileset
+    /// Metadata about the tileset as read from the MBTiles `metadata` table.
     struct Metadata: Sendable {
+        /// Name of the tileset (from the `name` metadata key)
         let name: String?
-        let format: String  // "png", "jpg", "pbf"
+        /// Tile image format: "png", "jpg", or "pbf"
+        let format: String
+        /// Minimum zoom level available
         let minZoom: Int
+        /// Maximum zoom level available
         let maxZoom: Int
+        /// Geographic bounds of the tileset, if specified
         let bounds: BoundingBox?
+        /// Default center view (latitude, longitude, zoom), if specified
         let center: (lat: Double, lon: Double, zoom: Int)?
     }
 
+    /// Cached metadata loaded when the database is opened
     private(set) var metadata: Metadata?
 
+    /// Create a tile store for the MBTiles file at the given path.
+    ///
+    /// The database is not opened until `open()` is called.
+    ///
+    /// - Parameter path: File system path to the MBTiles SQLite database.
     init(path: String) {
         self.path = path
     }
@@ -57,7 +106,13 @@ final class TileStore: @unchecked Sendable {
         close()
     }
 
-    /// Open the MBTiles database
+    /// Open the MBTiles database for reading.
+    ///
+    /// Verifies the file exists, opens it in read-only mode with full-mutex threading,
+    /// and loads the tileset metadata from the `metadata` table.
+    ///
+    /// - Throws: `TileStoreError.fileNotFound` if the file doesn't exist,
+    ///   or `TileStoreError.databaseError` if SQLite fails to open the file.
     func open() throws {
         try queue.sync {
             guard FileManager.default.fileExists(atPath: path) else {
@@ -85,7 +140,9 @@ final class TileStore: @unchecked Sendable {
         }
     }
 
-    /// Close the database connection
+    /// Close the database connection and release resources.
+    ///
+    /// Safe to call multiple times; subsequent calls are no-ops.
     func close() {
         queue.sync {
             if let db = db {
@@ -95,7 +152,16 @@ final class TileStore: @unchecked Sendable {
         }
     }
 
-    /// Get a tile image for the given coordinates
+    /// Retrieve tile image data for the given coordinates.
+    ///
+    /// Looks up the tile in the MBTiles `tiles` table, converting from XYZ to TMS
+    /// y-coordinates internally (TMS flips the y-axis: `tmsY = 2^z - 1 - y`).
+    ///
+    /// - Parameter coordinate: The tile coordinate (in standard XYZ / slippy map convention).
+    /// - Returns: The raw tile image data (typically PNG).
+    /// - Throws: `TileStoreError.databaseNotOpen` if the database hasn't been opened,
+    ///   `TileStoreError.tileNotFound` if no tile exists at these coordinates,
+    ///   or `TileStoreError.invalidTileData` if the stored blob is null.
     func getTile(_ coordinate: TileCoordinate) throws -> Data {
         try queue.sync {
             guard let db = db else {
@@ -130,7 +196,12 @@ final class TileStore: @unchecked Sendable {
         }
     }
 
-    /// Check if a tile exists
+    /// Check if a tile exists in the database.
+    ///
+    /// Attempts to retrieve the tile and returns `true` if it exists, `false` otherwise.
+    ///
+    /// - Parameter coordinate: The tile coordinate to check.
+    /// - Returns: `true` if the tile exists in the store.
     func hasTile(_ coordinate: TileCoordinate) -> Bool {
         do {
             _ = try getTile(coordinate)
@@ -140,7 +211,14 @@ final class TileStore: @unchecked Sendable {
         }
     }
 
-    /// Get all tiles in a range
+    /// Retrieve all tiles within a tile range.
+    ///
+    /// Iterates over every tile in the range and returns those that exist in the database.
+    /// Tiles that are missing are silently skipped.
+    ///
+    /// - Parameter range: The tile range to query.
+    /// - Returns: An array of (coordinate, data) tuples for each found tile.
+    /// - Throws: Rethrows any unexpected database errors.
     func getTiles(in range: TileRange) throws -> [(TileCoordinate, Data)] {
         var results: [(TileCoordinate, Data)] = []
 
@@ -155,6 +233,14 @@ final class TileStore: @unchecked Sendable {
 
     // MARK: - Private Methods
 
+    /// Load and parse metadata from the MBTiles `metadata` table.
+    ///
+    /// Reads all key-value pairs from the `metadata` table and extracts known fields
+    /// (name, format, minzoom, maxzoom, bounds, center). Returns sensible defaults
+    /// if the metadata table doesn't exist.
+    ///
+    /// - Returns: A `Metadata` struct with the parsed values.
+    /// - Throws: `TileStoreError.databaseNotOpen` if the database isn't open.
     private func loadMetadata() throws -> Metadata {
         guard let db = db else {
             throw TileStoreError.databaseNotOpen
@@ -223,18 +309,45 @@ final class TileStore: @unchecked Sendable {
 
 #if os(iOS)
 extension TileStore {
-    /// Create a new MBTiles database for writing tiles
+    /// Create a new MBTiles database for writing tiles.
+    ///
+    /// This is a convenience factory method that creates a `WritableTileStore` at the
+    /// given path with the specified metadata entries.
+    ///
+    /// - Parameters:
+    ///   - path: File system path for the new MBTiles file.
+    ///   - metadata: Key-value pairs to write into the MBTiles `metadata` table.
+    /// - Returns: A `WritableTileStore` ready for inserting tiles.
+    /// - Throws: `TileStoreError.databaseError` if the database cannot be created.
     static func create(at path: String, metadata: [String: String]) throws -> WritableTileStore {
         try WritableTileStore(path: path, metadata: metadata)
     }
 }
 
-/// A writable tile store for creating MBTiles files on iOS
+/// A writable tile store for creating MBTiles files on iOS.
+///
+/// Used by `TileDownloader` to build an MBTiles database as tiles are downloaded from
+/// OpenTopoMap. Supports transactional bulk inserts for efficient writing.
+///
+/// The database is opened in read-write mode with full-mutex threading. All operations
+/// are dispatched on a serial queue for thread safety.
 final class WritableTileStore: @unchecked Sendable {
+    /// The underlying SQLite database connection (nil when closed)
     private var db: OpaquePointer?
+    /// File path to the MBTiles database
     private let path: String
+    /// Serial dispatch queue ensuring thread-safe database access
     private let queue = DispatchQueue(label: "com.openhiker.writabletilestore", qos: .userInitiated)
 
+    /// Create a new MBTiles database at the given path.
+    ///
+    /// Creates the parent directory if needed, removes any existing file at the path,
+    /// opens a new SQLite database, creates the MBTiles schema, and inserts the metadata.
+    ///
+    /// - Parameters:
+    ///   - path: File system path for the new database.
+    ///   - metadata: Key-value pairs to write into the `metadata` table.
+    /// - Throws: `TileStoreError.databaseError` if the database cannot be created.
     init(path: String, metadata: [String: String]) throws {
         self.path = path
 
@@ -271,6 +384,9 @@ final class WritableTileStore: @unchecked Sendable {
         close()
     }
 
+    /// Close the database connection and release resources.
+    ///
+    /// Safe to call multiple times; subsequent calls are no-ops.
     func close() {
         queue.sync {
             if let db = db {
@@ -280,7 +396,15 @@ final class WritableTileStore: @unchecked Sendable {
         }
     }
 
-    /// Insert a tile into the database
+    /// Insert a tile into the database, replacing any existing tile at the same coordinates.
+    ///
+    /// Converts from standard XYZ coordinates to the TMS y-coordinate convention used
+    /// by MBTiles (`tmsY = 2^z - 1 - y`).
+    ///
+    /// - Parameters:
+    ///   - coordinate: The tile coordinate (in standard XYZ convention).
+    ///   - data: The raw tile image data (typically PNG).
+    /// - Throws: `TileStoreError.databaseNotOpen` or `TileStoreError.databaseError`.
     func insertTile(_ coordinate: TileCoordinate, data: Data) throws {
         try queue.sync {
             guard let db = db else {
@@ -312,21 +436,33 @@ final class WritableTileStore: @unchecked Sendable {
         }
     }
 
-    /// Begin a transaction for bulk inserts
+    /// Begin a SQLite transaction for efficient bulk inserts.
+    ///
+    /// Call this before inserting a batch of tiles, then call `commitTransaction()` when done.
+    /// Wrapping bulk inserts in a transaction dramatically improves write performance.
+    ///
+    /// - Throws: `TileStoreError.databaseError` if the transaction cannot be started.
     func beginTransaction() throws {
         try execute("BEGIN TRANSACTION")
     }
 
-    /// Commit the current transaction
+    /// Commit the current SQLite transaction, persisting all changes since `beginTransaction()`.
+    ///
+    /// - Throws: `TileStoreError.databaseError` if the commit fails.
     func commitTransaction() throws {
         try execute("COMMIT")
     }
 
-    /// Rollback the current transaction
+    /// Rollback the current SQLite transaction, discarding all changes since `beginTransaction()`.
+    ///
+    /// - Throws: `TileStoreError.databaseError` if the rollback fails.
     func rollbackTransaction() throws {
         try execute("ROLLBACK")
     }
 
+    /// Create the MBTiles database schema (metadata and tiles tables plus index).
+    ///
+    /// - Throws: `TileStoreError.databaseError` if schema creation fails.
     private func createSchema() throws {
         // MBTiles schema
         try execute("""
@@ -352,6 +488,10 @@ final class WritableTileStore: @unchecked Sendable {
         """)
     }
 
+    /// Insert metadata key-value pairs into the `metadata` table.
+    ///
+    /// - Parameter metadata: Dictionary of metadata entries to insert.
+    /// - Throws: `TileStoreError.databaseNotOpen` or `TileStoreError.databaseError`.
     private func insertMetadata(_ metadata: [String: String]) throws {
         guard let db = db else {
             throw TileStoreError.databaseNotOpen
@@ -375,6 +515,12 @@ final class WritableTileStore: @unchecked Sendable {
         }
     }
 
+    /// Execute a raw SQL statement.
+    ///
+    /// Used for DDL statements (CREATE TABLE) and transaction control (BEGIN, COMMIT, ROLLBACK).
+    ///
+    /// - Parameter sql: The SQL statement to execute.
+    /// - Throws: `TileStoreError.databaseNotOpen` or `TileStoreError.databaseError`.
     private func execute(_ sql: String) throws {
         try queue.sync {
             guard let db = db else {
