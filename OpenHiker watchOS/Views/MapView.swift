@@ -75,16 +75,27 @@ struct MapView: View {
             Text("No Map Loaded")
                 .font(.headline)
 
-            if connectivityManager.availableRegions.isEmpty {
-                Text("Transfer a region from your iPhone")
+            if connectivityManager.isReceivingFile {
+                ProgressView("Receiving map...")
+                    .font(.caption)
+            } else if !connectivityManager.availableRegions.isEmpty {
+                let localRegions = connectivityManager.loadAllRegionMetadata()
+                if !localRegions.isEmpty {
+                    Button("Select Region") {
+                        showingRegionPicker = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Text("Maps transferring from iPhone...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            } else {
+                Text("Download a region on your iPhone to get started")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-            } else {
-                Button("Select Region") {
-                    showingRegionPicker = true
-                }
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding()

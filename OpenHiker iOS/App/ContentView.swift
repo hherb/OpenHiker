@@ -77,6 +77,11 @@ struct RegionsListView: View {
 struct RegionRowView: View {
     let region: Region
     let onTransfer: () -> Void
+    @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+
+    private var transferStatus: WatchConnectivityManager.TransferStatus? {
+        watchConnectivity.transferStatuses[region.id]
+    }
 
     var body: some View {
         HStack {
@@ -97,13 +102,27 @@ struct RegionRowView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            Button {
-                onTransfer()
-            } label: {
-                Image(systemName: "arrow.up.to.line")
-                    .font(.title3)
+            if let status = transferStatus {
+                switch status {
+                case .queued:
+                    Image(systemName: "clock")
+                        .foregroundStyle(.orange)
+                case .completed:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .failed:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
+            } else {
+                Button {
+                    onTransfer()
+                } label: {
+                    Image(systemName: "arrow.up.to.line")
+                        .font(.title3)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
         }
         .padding(.vertical, 4)
     }
@@ -113,22 +132,33 @@ struct RegionRowView: View {
 
 struct WatchSyncView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+    @ObservedObject private var storage = RegionStorage.shared
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack {
-                        Image(systemName: watchConnectivity.isReachable ? "applewatch.radiowaves.left.and.right" : "applewatch.slash")
-                            .foregroundStyle(watchConnectivity.isReachable ? .green : .secondary)
+                        Image(systemName: watchConnectivity.isPaired
+                            ? (watchConnectivity.isReachable ? "applewatch.radiowaves.left.and.right" : "applewatch")
+                            : "applewatch.slash")
+                            .foregroundStyle(watchConnectivity.isPaired ? .green : .secondary)
                             .font(.title2)
 
                         VStack(alignment: .leading) {
                             Text(watchConnectivity.isPaired ? "Watch Paired" : "No Watch Paired")
                                 .font(.headline)
-                            Text(watchConnectivity.isReachable ? "Connected and reachable" : "Not reachable")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if watchConnectivity.isPaired {
+                                Text(watchConnectivity.isReachable
+                                    ? "Watch app active"
+                                    : "Background transfers available")
+                                    .font(.caption)
+                                    .foregroundStyle(watchConnectivity.isReachable ? .green : .secondary)
+                            } else {
+                                Text("Pair an Apple Watch to sync maps")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .padding(.vertical, 8)
@@ -136,16 +166,47 @@ struct WatchSyncView: View {
                     Text("Connection Status")
                 }
 
+                if watchConnectivity.isPaired && !storage.regions.isEmpty {
+                    Section {
+                        Button {
+                            watchConnectivity.syncAllRegionsToWatch()
+                        } label: {
+                            Label("Send All Regions to Watch", systemImage: "arrow.up.circle.fill")
+                        }
+                    }
+                }
+
                 Section {
-                    if watchConnectivity.pendingTransfers.isEmpty {
+                    if watchConnectivity.pendingTransfers.isEmpty && watchConnectivity.transferStatuses.isEmpty {
                         Text("No pending transfers")
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(watchConnectivity.pendingTransfers, id: \.self) { transfer in
                             HStack {
                                 ProgressView()
-                                Text("Transferring...")
+                                Text("Transferring \(transfer.file.metadata?["name"] as? String ?? "file")...")
                                     .font(.caption)
+                            }
+                        }
+                        ForEach(Array(watchConnectivity.transferStatuses), id: \.key) { regionId, status in
+                            HStack {
+                                switch status {
+                                case .queued:
+                                    Image(systemName: "clock")
+                                        .foregroundStyle(.orange)
+                                    Text("Queued")
+                                        .font(.caption)
+                                case .completed:
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                    Text("Transfer complete")
+                                        .font(.caption)
+                                case .failed(let msg):
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.red)
+                                    Text("Failed: \(msg)")
+                                        .font(.caption)
+                                }
                             }
                         }
                     }

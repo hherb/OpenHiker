@@ -5,9 +5,16 @@ import WatchConnectivity
 final class WatchConnectivityManager: NSObject, ObservableObject {
     static let shared = WatchConnectivityManager()
 
+    enum TransferStatus: Equatable {
+        case queued
+        case completed
+        case failed(String)
+    }
+
     @Published var isPaired = false
     @Published var isReachable = false
     @Published var pendingTransfers: [WCSessionFileTransfer] = []
+    @Published var transferStatuses: [UUID: TransferStatus] = [:]
 
     private var session: WCSession?
 
@@ -58,9 +65,28 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         let transfer = session.transferFile(url, metadata: metadataDict)
         DispatchQueue.main.async {
             self.pendingTransfers.append(transfer)
+            self.transferStatuses[metadata.id] = .queued
         }
 
         print("Started transfer: \(url.lastPathComponent)")
+        sendAvailableRegions()
+    }
+
+    /// Transfer all downloaded regions to the watch
+    func syncAllRegionsToWatch() {
+        guard let session = session, session.activationState == .activated, session.isPaired else {
+            return
+        }
+
+        let storage = RegionStorage.shared
+        storage.loadRegions()
+
+        for region in storage.regions {
+            let mbtilesURL = storage.mbtilesURL(for: region)
+            guard FileManager.default.fileExists(atPath: mbtilesURL.path) else { continue }
+            let metadata = storage.metadata(for: region)
+            transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+        }
     }
 
     /// Transfer a GPX route file to the watch
@@ -120,6 +146,9 @@ extension WatchConnectivityManager: WCSessionDelegate {
             print("WCSession activation error: \(error.localizedDescription)")
         } else {
             print("WCSession activated: \(activationState.rawValue)")
+            if session.isPaired {
+                sendAvailableRegions()
+            }
         }
     }
 
@@ -143,13 +172,32 @@ extension WatchConnectivityManager: WCSessionDelegate {
         DispatchQueue.main.async {
             self.isPaired = session.isPaired
         }
+        if session.isPaired {
+            sendAvailableRegions()
+        }
     }
 
     // MARK: - File Transfer Callbacks
 
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        let regionIdString = fileTransfer.file.metadata?["regionId"] as? String
+        let regionId = regionIdString.flatMap { UUID(uuidString: $0) }
+
         DispatchQueue.main.async {
             self.pendingTransfers.removeAll { $0 === fileTransfer }
+
+            if let regionId = regionId {
+                if let error = error {
+                    self.transferStatuses[regionId] = .failed(error.localizedDescription)
+                } else {
+                    self.transferStatuses[regionId] = .completed
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                        if self.transferStatuses[regionId] == .completed {
+                            self.transferStatuses.removeValue(forKey: regionId)
+                        }
+                    }
+                }
+            }
         }
 
         if let error = error {
@@ -192,10 +240,24 @@ extension WatchConnectivityManager: WCSessionDelegate {
     // MARK: - Private Helpers
 
     private func sendAvailableRegions() {
-        // TODO: Load regions from storage and send to watch
-        let context: [String: Any] = [
-            "availableRegions": [] as [[String: Any]]
-        ]
-        updateApplicationContext(context)
+        let storage = RegionStorage.shared
+        storage.loadRegions()
+
+        let regionDicts: [[String: Any]] = storage.regions.map { region in
+            let metadata = storage.metadata(for: region)
+            return [
+                "regionId": metadata.id.uuidString,
+                "name": metadata.name,
+                "minZoom": metadata.minZoom,
+                "maxZoom": metadata.maxZoom,
+                "tileCount": metadata.tileCount,
+                "north": metadata.boundingBox.north,
+                "south": metadata.boundingBox.south,
+                "east": metadata.boundingBox.east,
+                "west": metadata.boundingBox.west
+            ]
+        }
+
+        updateApplicationContext(["availableRegions": regionDicts])
     }
 }

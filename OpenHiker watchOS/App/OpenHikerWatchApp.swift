@@ -54,6 +54,12 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         if let error = error {
             print("WCSession activation error: \(error.localizedDescription)")
+        } else {
+            // Process any application context sent while the app wasn't running
+            let context = session.receivedApplicationContext
+            if !context.isEmpty {
+                self.session(session, didReceiveApplicationContext: context)
+            }
         }
     }
 
@@ -200,7 +206,41 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
     // MARK: - Application Context
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        // Handle updated context from iOS app
         print("Received application context update")
+
+        guard let regionDicts = applicationContext["availableRegions"] as? [[String: Any]] else { return }
+
+        var phoneRegions: [RegionMetadata] = []
+        for dict in regionDicts {
+            guard let idString = dict["regionId"] as? String,
+                  let id = UUID(uuidString: idString),
+                  let name = dict["name"] as? String,
+                  let minZoom = dict["minZoom"] as? Int,
+                  let maxZoom = dict["maxZoom"] as? Int,
+                  let tileCount = dict["tileCount"] as? Int,
+                  let north = dict["north"] as? Double,
+                  let south = dict["south"] as? Double,
+                  let east = dict["east"] as? Double,
+                  let west = dict["west"] as? Double else {
+                continue
+            }
+
+            phoneRegions.append(RegionMetadata(
+                id: id,
+                name: name,
+                boundingBox: BoundingBox(north: north, south: south, east: east, west: west),
+                minZoom: minZoom,
+                maxZoom: maxZoom,
+                tileCount: tileCount
+            ))
+        }
+
+        DispatchQueue.main.async {
+            // Merge: keep local regions, add any from phone we don't have locally yet
+            let localRegions = self.loadAllRegionMetadata()
+            let localIds = Set(localRegions.map { $0.id })
+            let newFromPhone = phoneRegions.filter { !localIds.contains($0.id) }
+            self.availableRegions = localRegions + newFromPhone
+        }
     }
 }
