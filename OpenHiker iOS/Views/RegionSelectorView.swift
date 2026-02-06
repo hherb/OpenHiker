@@ -89,6 +89,23 @@ struct RegionSelectorView: View {
     /// Watch connectivity manager for auto-transferring downloaded regions.
     @EnvironmentObject private var watchConnectivity: WatchConnectivityManager
 
+    // MARK: - Waypoint State
+
+    /// All waypoints loaded from the local store, displayed as map annotations.
+    @State private var waypoints: [Waypoint] = []
+
+    /// Whether the add waypoint sheet is currently presented.
+    @State private var showAddWaypointSheet = false
+
+    /// The coordinate for a new waypoint (set by map tap/long-press).
+    @State private var newWaypointCoordinate: CLLocationCoordinate2D?
+
+    /// The waypoint selected for detail viewing.
+    @State private var selectedWaypoint: Waypoint?
+
+    /// Whether the waypoint detail view is presented.
+    @State private var showWaypointDetail = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -107,6 +124,27 @@ struct RegionSelectorView: View {
                             .stroke(.orange, lineWidth: 4)
                     }
 
+                    // Waypoint annotations
+                    ForEach(waypoints) { waypoint in
+                        Annotation(
+                            waypoint.label.isEmpty ? waypoint.category.displayName : waypoint.label,
+                            coordinate: waypoint.coordinate
+                        ) {
+                            Button {
+                                selectedWaypoint = waypoint
+                                showWaypointDetail = true
+                            } label: {
+                                Image(systemName: waypoint.category.iconName)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 28)
+                                    .background(Color.orange)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            }
+                        }
+                    }
+
                     // User position marker
                     UserAnnotation()
                 }
@@ -114,6 +152,13 @@ struct RegionSelectorView: View {
                 .mapControls {
                     MapCompass()
                     MapScaleView()
+                }
+                .onMapCameraChange { context in
+                    // Persist map position for relaunch
+                    saveLastLocation(
+                        coordinate: context.region.center,
+                        span: context.region.span.latitudeDelta
+                    )
                 }
 
                 // Selection overlay - only blocks gestures during active selection
@@ -145,6 +190,17 @@ struct RegionSelectorView: View {
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundStyle(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            // Drop waypoint pin at map center
+                            Button {
+                                dropPinAtCenter()
+                            } label: {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.orange)
                                     .frame(width: 44, height: 44)
                                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                             }
@@ -217,6 +273,35 @@ struct RegionSelectorView: View {
                 )
                 .presentationDetents([.medium])
             }
+            .sheet(isPresented: $showAddWaypointSheet) {
+                if let coord = newWaypointCoordinate {
+                    AddWaypointView(
+                        latitude: coord.latitude,
+                        longitude: coord.longitude,
+                        onSave: { waypoint in
+                            waypoints.append(waypoint)
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showWaypointDetail) {
+                if let waypoint = selectedWaypoint {
+                    NavigationStack {
+                        WaypointDetailView(
+                            waypoint: waypoint,
+                            onUpdate: { updated in
+                                if let index = waypoints.firstIndex(where: { $0.id == updated.id }) {
+                                    waypoints[index] = updated
+                                }
+                            },
+                            onDelete: { id in
+                                waypoints.removeAll { $0.id == id }
+                                showWaypointDetail = false
+                            }
+                        )
+                    }
+                }
+            }
             .sheet(isPresented: $showSearchSheet) {
                 LocationSearchSheet(
                     searchCompleter: searchCompleter,
@@ -241,6 +326,7 @@ struct RegionSelectorView: View {
                 center: center,
                 span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
             ))
+            loadWaypoints()
         }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             // When location updates, center map if user requested it
@@ -511,6 +597,35 @@ struct RegionSelectorView: View {
         lastLatitude = coordinate.latitude
         lastLongitude = coordinate.longitude
         lastSpan = span
+    }
+
+    // MARK: - Waypoint Methods
+
+    /// Loads all waypoints from ``WaypointStore`` for display on the map.
+    ///
+    /// Errors are logged but do not interrupt the map view — the user can still
+    /// use all other features without waypoints.
+    private func loadWaypoints() {
+        do {
+            waypoints = try WaypointStore.shared.fetchAll()
+        } catch {
+            print("Error loading waypoints: \(error.localizedDescription)")
+        }
+    }
+
+    /// Opens the add waypoint sheet at the current visible map center.
+    ///
+    /// If the camera has a known region, uses its center. Otherwise falls back
+    /// to the persisted last location from `@AppStorage`.
+    private func dropPinAtCenter() {
+        let coordinate: CLLocationCoordinate2D
+        if let region = cameraPosition.region {
+            coordinate = region.center
+        } else {
+            coordinate = CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
+        }
+        newWaypointCoordinate = coordinate
+        showAddWaypointSheet = true
     }
 }
 

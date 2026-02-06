@@ -353,6 +353,65 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    // MARK: - Waypoint Sync
+
+    /// Sends a waypoint to the Apple Watch via `transferUserInfo`.
+    ///
+    /// Uses queued delivery which is reliable even when the watch app is not
+    /// running. The waypoint's dictionary representation includes a `"type": "waypoint"`
+    /// key for routing on the receiving side. If a thumbnail is provided, it is
+    /// included as `"thumbnailData"` in the transfer.
+    ///
+    /// - Parameters:
+    ///   - waypoint: The ``Waypoint`` to sync to the watch.
+    ///   - thumbnail: Optional 100x100 JPEG thumbnail data.
+    func sendWaypointToWatch(_ waypoint: Waypoint, thumbnail: Data?) {
+        guard let session = session, session.activationState == .activated else {
+            print("WCSession not activated, cannot sync waypoint to watch")
+            return
+        }
+
+        guard session.isPaired && session.isWatchAppInstalled else {
+            print("No watch paired or app not installed, skipping waypoint sync")
+            return
+        }
+
+        var userInfo = waypoint.toDictionary()
+        userInfo["type"] = "waypoint"
+        if let thumbnail = thumbnail {
+            userInfo["thumbnailData"] = thumbnail
+        }
+
+        session.transferUserInfo(userInfo)
+        print("Queued waypoint sync to watch: \(waypoint.id.uuidString)")
+    }
+
+    // MARK: - User Info Reception (Waypoint Sync from Watch)
+
+    /// Called when the watch sends userInfo (used for waypoint sync).
+    ///
+    /// Checks for `"type": "waypoint"` and decodes the waypoint dictionary.
+    /// Inserts the waypoint into the local ``WaypointStore`` so it appears on
+    /// the iPhone map.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let type = userInfo["type"] as? String, type == "waypoint" else {
+            print("Received unknown userInfo type from watch")
+            return
+        }
+
+        guard let waypoint = Waypoint.fromDictionary(userInfo) else {
+            print("Failed to decode waypoint from watch userInfo")
+            return
+        }
+
+        do {
+            try WaypointStore.shared.insert(waypoint)
+            print("Received and saved waypoint from watch: \(waypoint.id.uuidString)")
+        } catch {
+            print("Error saving received waypoint: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Sends the list of all downloaded regions to the watch via application context.

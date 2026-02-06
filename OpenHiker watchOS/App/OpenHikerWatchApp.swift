@@ -46,6 +46,21 @@ struct OpenHikerWatchApp: App {
                 .environmentObject(locationManager)
                 .environmentObject(connectivityManager)
                 .environmentObject(healthKitManager)
+                .onAppear {
+                    initializeWaypointStore()
+                }
+        }
+    }
+
+    /// Opens the shared ``WaypointStore`` database so it's ready for CRUD operations.
+    ///
+    /// Called once on app launch. Errors are logged but not fatal — the app can
+    /// still function without waypoints.
+    private func initializeWaypointStore() {
+        do {
+            try WaypointStore.shared.open()
+        } catch {
+            print("Error opening WaypointStore: \(error.localizedDescription)")
         }
     }
 }
@@ -110,6 +125,27 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         session.sendMessage(["action": "requestRegions"], replyHandler: nil) { error in
             print("Error requesting regions: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Waypoint Sync
+
+    /// Sends a waypoint to the iPhone via `transferUserInfo`.
+    ///
+    /// Uses queued delivery (`transferUserInfo`) which is reliable even when
+    /// the iPhone app is not running. The waypoint is encoded as a dictionary
+    /// with a `"type": "waypoint"` key for routing on the receiving side.
+    ///
+    /// - Parameter waypoint: The ``Waypoint`` to sync to the iPhone.
+    func syncWaypointToPhone(_ waypoint: Waypoint) {
+        guard let session = session, session.activationState == .activated else {
+            print("WCSession not activated, cannot sync waypoint")
+            return
+        }
+
+        var userInfo = waypoint.toDictionary()
+        userInfo["type"] = "waypoint"
+        session.transferUserInfo(userInfo)
+        print("Queued waypoint sync to iPhone: \(waypoint.id.uuidString)")
     }
 }
 
@@ -297,6 +333,35 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
 
         return metadata
+    }
+
+    // MARK: - User Info (Waypoint Sync)
+
+    /// Called when the iPhone sends userInfo (used for waypoint sync).
+    ///
+    /// Checks for `"type": "waypoint"` and decodes the waypoint dictionary.
+    /// Inserts the waypoint into the local ``WaypointStore`` with its thumbnail
+    /// data if provided.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let type = userInfo["type"] as? String, type == "waypoint" else {
+            print("Received unknown userInfo type")
+            return
+        }
+
+        guard let waypoint = Waypoint.fromDictionary(userInfo) else {
+            print("Failed to decode waypoint from userInfo")
+            return
+        }
+
+        // Extract thumbnail data if present
+        let thumbnailData = userInfo["thumbnailData"] as? Data
+
+        do {
+            try WaypointStore.shared.insert(waypoint, photo: nil, thumbnail: thumbnailData)
+            print("Received and saved waypoint from iPhone: \(waypoint.id.uuidString)")
+        } catch {
+            print("Error saving received waypoint: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Application Context
