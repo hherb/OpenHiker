@@ -60,6 +60,14 @@
 		1A0000010000000000000035 /* ElevationDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000035 /* ElevationDataManager.swift */; };
 		1A0000010000000000000036 /* RoutingGraphBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000036 /* RoutingGraphBuilder.swift */; };
 		1A0000010000000000000037 /* OSMDataDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000037 /* OSMDataDownloader.swift */; };
+		1A0000010000000000000038 /* TurnInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000038 /* TurnInstruction.swift */; };
+		1B0000010000000000000038 /* TurnInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000038 /* TurnInstruction.swift */; };
+		1A0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
+		1B0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
+		1A000001000000000000003A /* RoutePlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003A /* RoutePlanningView.swift */; };
+		1A000001000000000000003B /* RouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003B /* RouteDetailView.swift */; };
+		1B0000010000000000000033 /* RouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000012 /* RouteGuidance.swift */; };
+		1B0000010000000000000034 /* NavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000013 /* NavigationOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +138,12 @@
 		2A0000010000000000000035 /* ElevationDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevationDataManager.swift; sourceTree = "<group>"; };
 		2A0000010000000000000036 /* RoutingGraphBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingGraphBuilder.swift; sourceTree = "<group>"; };
 		2A0000010000000000000037 /* OSMDataDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OSMDataDownloader.swift; sourceTree = "<group>"; };
+		2A0000010000000000000038 /* TurnInstruction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnInstruction.swift; sourceTree = "<group>"; };
+		2A0000010000000000000039 /* PlannedRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedRoute.swift; sourceTree = "<group>"; };
+		2A000001000000000000003A /* RoutePlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanningView.swift; sourceTree = "<group>"; };
+		2A000001000000000000003B /* RouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDetailView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000012 /* RouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidance.swift; sourceTree = "<group>"; };
+		2B0000010000000000000013 /* NavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -199,6 +213,8 @@
 				2A0000010000000000000021 /* HikesListView.swift */,
 				2A0000010000000000000022 /* HikeDetailView.swift */,
 				2A0000010000000000000023 /* ElevationProfileView.swift */,
+				2A000001000000000000003A /* RoutePlanningView.swift */,
+				2A000001000000000000003B /* RouteDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -254,6 +270,7 @@
 				2B0000010000000000000007 /* HikeStatsOverlay.swift */,
 				2B0000010000000000000010 /* AddWaypointSheet.swift */,
 				2B0000010000000000000011 /* SaveHikeSheet.swift */,
+				2B0000010000000000000013 /* NavigationOverlay.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -264,6 +281,7 @@
 				2B0000010000000000000004 /* MapRenderer.swift */,
 				2B0000010000000000000005 /* LocationManager.swift */,
 				2B0000010000000000000008 /* HealthKitManager.swift */,
+				2B0000010000000000000012 /* RouteGuidance.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -304,6 +322,8 @@
 				2A0000010000000000000014 /* Waypoint.swift */,
 				2A0000010000000000000018 /* SavedRoute.swift */,
 				2A0000010000000000000030 /* RoutingGraph.swift */,
+				2A0000010000000000000038 /* TurnInstruction.swift */,
+				2A0000010000000000000039 /* PlannedRoute.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -463,6 +483,10 @@
 				1A0000010000000000000035 /* ElevationDataManager.swift in Sources */,
 				1A0000010000000000000036 /* RoutingGraphBuilder.swift in Sources */,
 				1A0000010000000000000037 /* OSMDataDownloader.swift in Sources */,
+				1A0000010000000000000038 /* TurnInstruction.swift in Sources */,
+				1A0000010000000000000039 /* PlannedRoute.swift in Sources */,
+				1A000001000000000000003A /* RoutePlanningView.swift in Sources */,
+				1A000001000000000000003B /* RouteDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -491,6 +515,10 @@
 				1B0000010000000000000030 /* RoutingGraph.swift in Sources */,
 				1B0000010000000000000031 /* RoutingStore.swift in Sources */,
 				1B0000010000000000000032 /* RoutingEngine.swift in Sources */,
+				1B0000010000000000000038 /* TurnInstruction.swift in Sources */,
+				1B0000010000000000000039 /* PlannedRoute.swift in Sources */,
+				1B0000010000000000000033 /* RouteGuidance.swift in Sources */,
+				1B0000010000000000000034 /* NavigationOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

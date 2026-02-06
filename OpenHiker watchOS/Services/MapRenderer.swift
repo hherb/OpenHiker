@@ -197,6 +197,7 @@ final class MapRenderer: ObservableObject {
 /// - A directional cone showing the compass heading
 /// - A compass indicator in the top-right corner
 /// - A track trail polyline showing recorded hike points
+/// - A planned route polyline for turn-by-turn navigation
 ///
 /// Tiles are organized in a 3x3 grid around the center tile, repositioned
 /// using Web Mercator math to achieve sub-tile-precision scrolling.
@@ -206,10 +207,12 @@ final class MapRenderer: ObservableObject {
 /// Scene
 ///   ├── tilesNode        ← Contains tile sprites (z=0)
 ///   └── overlaysNode     ← Contains markers and compass (z>0)
+///         ├── routeNode (z=40) ← Planned route polyline (purple)
+///         ├── trackNode (z=50) ← Recorded track trail (orange)
+///         ├── waypointMarkers (z=75)
 ///         ├── positionMarker (z=100)
 ///         │     └── headingCone (z=99)
-///         ├── compassNode (z=200)
-///         └── trackNode (z=50)
+///         └── compassNode (z=200)
 /// ```
 final class MapScene: SKScene {
     /// Weak reference to the renderer that provides tile data and coordinate state.
@@ -232,6 +235,9 @@ final class MapScene: SKScene {
 
     /// A polyline shape node showing the recorded hike track.
     private var trackNode: SKShapeNode?
+
+    /// A polyline shape node showing the planned route for active navigation.
+    private var routeNode: SKShapeNode?
 
     /// In-memory cache of tile textures to avoid re-creating them from PNG data.
     private var textureCache: [TileCoordinate: SKTexture] = [:]
@@ -677,6 +683,71 @@ final class MapScene: SKScene {
 
         self.trackNode = trail
         overlaysNode.addChild(trail)
+    }
+
+    // MARK: - Route Polyline
+
+    /// Renders a planned route polyline on the map for active navigation.
+    ///
+    /// Removes any existing route polyline and creates a new purple line from the
+    /// given coordinates. Each coordinate is projected from geographic to screen
+    /// position using Web Mercator math. The route line sits below the track trail
+    /// (z=40 vs z=50) so recorded tracks overlay the planned route.
+    ///
+    /// - Parameter coordinates: The ordered polyline coordinates of the planned route,
+    ///   or an empty array to clear the route display.
+    func updateRouteLine(coordinates: [CLLocationCoordinate2D]) {
+        // Remove old route node
+        routeNode?.removeFromParent()
+        routeNode = nil
+
+        guard let renderer = renderer,
+              let center = renderer.centerCoordinate,
+              coordinates.count >= 2 else { return }
+
+        let zoom = renderer.currentZoom
+        let tileSize = MapRenderer.tileSize
+        let n = Double(1 << zoom)
+
+        let centerX = (center.longitude + 180.0) / 360.0 * n
+        let centerLatRad = center.latitude * .pi / 180.0
+        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+
+        let path = CGMutablePath()
+        var started = false
+
+        for coord in coordinates {
+            let posX = (coord.longitude + 180.0) / 360.0 * n
+            let posLatRad = coord.latitude * .pi / 180.0
+            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
+
+            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
+            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+
+            if !started {
+                path.move(to: CGPoint(x: screenX, y: screenY))
+                started = true
+            } else {
+                path.addLine(to: CGPoint(x: screenX, y: screenY))
+            }
+        }
+
+        let routeLine = SKShapeNode(path: path)
+        routeLine.strokeColor = UIColor(red: 0.58, green: 0.29, blue: 0.85, alpha: 0.9)
+        routeLine.lineWidth = 4
+        routeLine.lineCap = .round
+        routeLine.lineJoin = .round
+        routeLine.zPosition = 40
+        routeLine.isAntialiased = true
+
+        self.routeNode = routeLine
+        overlaysNode.addChild(routeLine)
+    }
+
+    /// Removes the planned route polyline from the map.
+    func clearRouteLine() {
+        routeNode?.removeFromParent()
+        routeNode = nil
     }
 
     // MARK: - Waypoint Markers
