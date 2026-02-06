@@ -7,56 +7,44 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		/* iOS App Files */
 		1A0000010000000000000001 /* OpenHikerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000001 /* OpenHikerApp.swift */; };
 		1A0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000002 /* ContentView.swift */; };
 		1A0000010000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000003 /* Assets.xcassets */; };
 		1A0000010000000000000004 /* RegionSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000004 /* RegionSelectorView.swift */; };
 		1A0000010000000000000005 /* TileDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000005 /* TileDownloader.swift */; };
 		1A0000010000000000000006 /* WatchTransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000006 /* WatchTransferManager.swift */; };
-
-		/* Shared Files for iOS */
+		1A0000010000000000000007 /* RegionStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000007 /* RegionStorage.swift */; };
 		1A0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1A0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
 		1A0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
-
-		/* watchOS App Files */
 		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
 		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
 		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
 		1B0000010000000000000004 /* MapRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000004 /* MapRenderer.swift */; };
 		1B0000010000000000000005 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000005 /* LocationManager.swift */; };
 		1B0000010000000000000006 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000006 /* MapView.swift */; };
-
-		/* Shared Files for watchOS */
 		1B0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1B0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
 		1B0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		/* iOS App */
 		2A0000010000000000000001 /* OpenHikerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerApp.swift; sourceTree = "<group>"; };
 		2A0000010000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2A0000010000000000000004 /* RegionSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionSelectorView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000005 /* TileDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileDownloader.swift; sourceTree = "<group>"; };
 		2A0000010000000000000006 /* WatchTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransferManager.swift; sourceTree = "<group>"; };
-
-		/* Shared */
+		2A0000010000000000000007 /* RegionStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionStorage.swift; sourceTree = "<group>"; };
 		2A0000010000000000000010 /* TileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileStore.swift; sourceTree = "<group>"; };
 		2A0000010000000000000011 /* TileCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileCoordinate.swift; sourceTree = "<group>"; };
 		2A0000010000000000000012 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
-
-		/* watchOS App */
 		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
 		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
 		2B0000010000000000000004 /* MapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRenderer.swift; sourceTree = "<group>"; };
 		2B0000010000000000000005 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		2B0000010000000000000006 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
-
-		/* Products */
 		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -131,6 +119,7 @@
 			children = (
 				2A0000010000000000000005 /* TileDownloader.swift */,
 				2A0000010000000000000006 /* WatchTransferManager.swift */,
+				2A0000010000000000000007 /* RegionStorage.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -259,7 +248,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					6A0000010000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
@@ -317,6 +306,7 @@
 				1A0000010000000000000004 /* RegionSelectorView.swift in Sources */,
 				1A0000010000000000000005 /* TileDownloader.swift in Sources */,
 				1A0000010000000000000006 /* WatchTransferManager.swift in Sources */,
+				1A0000010000000000000007 /* RegionStorage.swift in Sources */,
 				1A0000010000000000000010 /* TileStore.swift in Sources */,
 				1A0000010000000000000011 /* TileCoordinate.swift in Sources */,
 				1A0000010000000000000012 /* Region.swift in Sources */,
@@ -375,6 +365,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -397,6 +388,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -436,6 +428,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -451,6 +444,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -462,7 +456,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
@@ -493,7 +487,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
@@ -525,9 +519,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker watchOS/Resources/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.openhiker.ios;
@@ -555,9 +550,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker watchOS/Resources/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.openhiker.ios;
@@ -582,15 +578,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				9A0000010000000000000001 /* Debug */,
-				9A0000010000000000000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		7A0000010000000000000001 /* Build configuration list for PBXNativeTarget "OpenHiker" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -609,8 +596,16 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000010000000000000001 /* Debug */,
+				9A0000010000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = 8A0000010000000000000001 /* Project object */;
 }

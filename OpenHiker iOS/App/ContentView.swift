@@ -30,12 +30,13 @@ struct ContentView: View {
 // MARK: - Downloaded Regions List
 
 struct RegionsListView: View {
-    @State private var regions: [Region] = []
+    @ObservedObject private var storage = RegionStorage.shared
+    @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
     var body: some View {
         NavigationStack {
             Group {
-                if regions.isEmpty {
+                if storage.regions.isEmpty {
                     ContentUnavailableView(
                         "No Regions Downloaded",
                         systemImage: "map",
@@ -43,8 +44,10 @@ struct RegionsListView: View {
                     )
                 } else {
                     List {
-                        ForEach(regions) { region in
-                            RegionRowView(region: region)
+                        ForEach(storage.regions) { region in
+                            RegionRowView(region: region, onTransfer: {
+                                transferToWatch(region)
+                            })
                         }
                         .onDelete(perform: deleteRegions)
                     }
@@ -56,39 +59,51 @@ struct RegionsListView: View {
             }
         }
         .onAppear {
-            loadRegions()
+            storage.loadRegions()
         }
     }
 
-    private func loadRegions() {
-        // TODO: Load from persistent storage
+    private func deleteRegions(at offsets: IndexSet) {
+        storage.deleteRegions(at: offsets)
     }
 
-    private func deleteRegions(at offsets: IndexSet) {
-        // TODO: Delete region files
-        regions.remove(atOffsets: offsets)
+    private func transferToWatch(_ region: Region) {
+        let mbtilesURL = storage.mbtilesURL(for: region)
+        let metadata = storage.metadata(for: region)
+        watchConnectivity.transferMBTilesFile(at: mbtilesURL, metadata: metadata)
     }
 }
 
 struct RegionRowView: View {
     let region: Region
+    let onTransfer: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(region.name)
-                .font(.headline)
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(region.name)
+                    .font(.headline)
 
-            HStack {
-                Label(region.fileSizeFormatted, systemImage: "externaldrive")
-                Spacer()
-                Label("\(region.tileCount) tiles", systemImage: "square.grid.3x3")
+                HStack {
+                    Label(region.fileSizeFormatted, systemImage: "externaldrive")
+                    Spacer()
+                    Label("\(region.tileCount) tiles", systemImage: "square.grid.3x3")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Text("Zoom \(region.zoomLevels.lowerBound)-\(region.zoomLevels.upperBound) • \(String(format: "%.1f", region.areaCoveredKm2)) km²")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
-            Text("Zoom \(region.zoomLevels.lowerBound)-\(region.zoomLevels.upperBound) • \(String(format: "%.1f", region.areaCoveredKm2)) km²")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            Button {
+                onTransfer()
+            } label: {
+                Image(systemName: "arrow.up.to.line")
+                    .font(.title3)
+            }
+            .buttonStyle(.borderless)
         }
         .padding(.vertical, 4)
     }

@@ -23,6 +23,8 @@ struct RegionSelectorView: View {
     @AppStorage("lastSpan") private var lastSpan: Double = 0.5
 
     private let tileDownloader = TileDownloader()
+    @ObservedObject private var regionStorage = RegionStorage.shared
+    @EnvironmentObject private var watchConnectivity: WatchConnectivityManager
 
     var body: some View {
         NavigationStack {
@@ -97,10 +99,15 @@ struct RegionSelectorView: View {
                     Button(isSelecting ? "Done" : "Select Area") {
                         if isSelecting {
                             finalizeSelection()
+                            // Show download sheet immediately if selection was successful
+                            if selectedRegion != nil {
+                                showDownloadSheet = true
+                            }
                         }
                         isSelecting.toggle()
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isDownloading)
                 }
 
                 if selectedRegion != nil {
@@ -268,23 +275,29 @@ struct RegionSelectorView: View {
     }
 
     private func finalizeSelection() {
-        // Convert screen rect to map coordinates
-        // For now, use a simplified approach based on current camera
-        guard let _ = selectionRect else { return }
+        // Use the visible region - if user drew a rectangle, scale it down
+        // Otherwise use the center portion of the visible map
+        guard let visibleRegion = cameraPosition.region else { return }
 
-        // This is a placeholder - in a real implementation, we'd convert
-        // the screen rectangle to geographic coordinates
-        // For MVP, we'll use the visible region scaled down
-        // Use the region property from MapCameraPosition
-        if let visibleRegion = cameraPosition.region {
-            selectedRegion = MKCoordinateRegion(
-                center: visibleRegion.center,
-                span: MKCoordinateSpan(
-                    latitudeDelta: visibleRegion.span.latitudeDelta * 0.5,
-                    longitudeDelta: visibleRegion.span.longitudeDelta * 0.5
-                )
-            )
+        let scaleFactor: Double
+        if selectionRect != nil && selectionRect!.width > 50 && selectionRect!.height > 50 {
+            // User drew a meaningful rectangle - use a smaller portion
+            scaleFactor = 0.5
+        } else {
+            // No rectangle or too small - use center 60% of visible region
+            scaleFactor = 0.6
         }
+
+        selectedRegion = MKCoordinateRegion(
+            center: visibleRegion.center,
+            span: MKCoordinateSpan(
+                latitudeDelta: visibleRegion.span.latitudeDelta * scaleFactor,
+                longitudeDelta: visibleRegion.span.longitudeDelta * scaleFactor
+            )
+        )
+
+        // Clear the selection rectangle
+        selectionRect = nil
     }
 
     private func startDownload() {
@@ -308,17 +321,32 @@ struct RegionSelectorView: View {
 
         Task {
             do {
+                var totalTiles = 0
                 let mbtilesURL = try await tileDownloader.downloadRegion(request) { progress in
+                    totalTiles = progress.totalTiles
                     Task { @MainActor in
                         self.downloadProgress = progress
                     }
                 }
 
                 await MainActor.run {
+                    // Save the region to storage
+                    let region = regionStorage.createRegion(
+                        from: request,
+                        mbtilesURL: mbtilesURL,
+                        tileCount: totalTiles
+                    )
+                    regionStorage.saveRegion(region)
+
+                    // Transfer to watch if connected
+                    if watchConnectivity.isPaired {
+                        let metadata = regionStorage.metadata(for: region)
+                        watchConnectivity.transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+                    }
+
                     isDownloading = false
                     downloadProgress = nil
                     print("Download complete: \(mbtilesURL.path)")
-                    // TODO: Transfer to Watch via WatchTransferManager
                 }
             } catch {
                 await MainActor.run {
