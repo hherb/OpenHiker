@@ -9,7 +9,7 @@
 
 ## Key Patterns
 - **Models**: `Codable + Sendable + Identifiable + Equatable` convention
-- **SQLite pattern**: `TileStore`, `WaypointStore`, and `RouteStore` all use `@unchecked Sendable` + `DispatchQueue(label:)` serial queue + `queue.sync {}` for thread safety
+- **SQLite pattern**: `TileStore`, `WaypointStore`, `RouteStore`, and `RoutingStore` all use `@unchecked Sendable` + `DispatchQueue(label:)` serial queue + `queue.sync {}` for thread safety
 - **Singleton pattern**: `WatchConnectivityManager.shared`, `RegionStorage.shared`, `WatchConnectivityReceiver.shared`, `WaypointStore.shared`, `RouteStore.shared`
 - **Environment injection**: Singletons injected via `@StateObject` in App entry point -> `.environmentObject()` -> `@EnvironmentObject` in views
 - **WatchConnectivity**: `transferFile` for large data (MBTiles), `transferUserInfo` for small data (waypoints), `updateApplicationContext` for state
@@ -34,8 +34,8 @@
 
 ## Key Files
 - `Shared/Models/`: Region.swift, TileCoordinate.swift, HikeStatistics.swift, Waypoint.swift, SavedRoute.swift, SharedRoute.swift, ActivityType.swift
-- `Shared/Storage/`: TileStore.swift (+ WritableTileStore), WaypointStore.swift, RouteStore.swift
-- `Shared/Services/`: GitHubRouteService.swift (actor — GitHub API for community route sharing)
+- `Shared/Storage/`: TileStore.swift (+ WritableTileStore), WaypointStore.swift, RouteStore.swift, RoutingStore.swift
+- `Shared/Services/`: RoutingEngine.swift (A* pathfinding), GitHubRouteService.swift (actor — GitHub API for community route sharing)
 - `Shared/Utilities/`: TrackCompression.swift (binary pack + zlib for GPS tracks), RouteExporter.swift (SavedRoute ↔ SharedRoute ↔ GPX ↔ Markdown), PhotoCompressor.swift
 - `OpenHiker iOS/Views/`: RouteUploadView.swift, CommunityBrowseView.swift, CommunityRouteDetailView.swift
 - `route-repo-template/`: GitHub Actions workflows + repo setup for OpenHikerRoutes
@@ -45,7 +45,8 @@
 - Phase 1 (Hike Metrics + HealthKit): Completed and merged
 - Phase 2 (Waypoints & Pins): Implemented on `claude/implement-phase2-waypoints-soKPD`
 - Phase 3 (Save Routes & Review Past Hikes): Implemented on `claude/phase3-save-routes-review-oogwp`
-- Phase 4 (Community Route Sharing): Implemented on `claude/add-route-upload-feature-47R66`
+- Phase 4 (Custom Offline Routing Engine): Implemented on `claude/implement-routing-engine-KCnec`
+- Phase 5 (Community Route Sharing): Implemented on `claude/add-route-upload-feature-47R66`
 
 ### Phase 1 Details
 - `HikeStatistics` shared model, `HikeStatsFormatter`, `CalorieEstimator`
@@ -75,7 +76,20 @@
 - Walking/resting classification: speed-based state machine (< 0.3 m/s threshold, 60s min rest)
 - Developer docs at `docs/developer/phase3-save-routes-developer-guide.md`
 
-### Phase 4 Details
+### Phase 4 Details (Routing Engine)
+- **A* pathfinding** with via-point support: segmented routing (start→via1→via2→end)
+- **Shared files**: `RoutingGraph.swift` (models + cost config), `RoutingStore.swift` (SQLite read-only), `RoutingEngine.swift` (A* + BinaryMinHeap)
+- **iOS-only files**: `ProtobufReader.swift` (wire format decoder), `PBFParser.swift` (OSM PBF), `ElevationDataManager.swift` (Tilezen skadi tiles), `RoutingGraphBuilder.swift` (graph construction pipeline), `OSMDataDownloader.swift` (Overpass API)
+- **Cost model**: Naismith's rule (`hikingClimbPenaltyPerMetre = 7.92`) + surface/SAC-scale multipliers, all in `RoutingCostConfig` enum
+- **Edge geometry**: Float32 packed lat/lon pairs in BLOB (`EdgeGeometry.pack/unpack`)
+- **Elevation data**: Tilezen skadi tiles (gzip-compressed HGT on AWS S3), bilinear interpolation, memory-limited tile cache
+- **SQLite schema**: `routing_nodes(id, latitude, longitude, elevation)`, `routing_edges(16 columns)`, `routing_metadata(key, value)` with indexes on `from_node`, `to_node`, `lat/lon`
+- **Graph builder pipeline**: identifyJunctions → splitWaysAtJunctions → lookupElevations → computeEdgeCosts → writeToSQLite
+- **WatchConnectivity**: `.routing.db` transferred alongside `.mbtiles`, `hasRoutingData` field in `Region`/`RegionMetadata`
+- **Patterns**: Actor (PBFParser, ElevationDataManager, RoutingGraphBuilder, OSMDataDownloader), Serial DispatchQueue (RoutingStore)
+- Developer docs at `docs/developer/routing-engine.md`
+
+### Phase 5 Details (Community Route Sharing)
 - Community route sharing via GitHub repo `hherb/OpenHikerRoutes` with PR-based moderation
 - `SharedRoute` model: canonical JSON format with `route.json` + `route.gpx` + `README.md` + `photos/`
 - `ActivityType` enum: hiking, cycling, running, skiTouring, other (with SF Symbol icons)

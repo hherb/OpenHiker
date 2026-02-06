@@ -117,7 +117,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             "north": metadata.boundingBox.north,
             "south": metadata.boundingBox.south,
             "east": metadata.boundingBox.east,
-            "west": metadata.boundingBox.west
+            "west": metadata.boundingBox.west,
+            "hasRoutingData": metadata.hasRoutingData
         ]
 
         let transfer = session.transferFile(url, metadata: metadataDict)
@@ -150,6 +151,40 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             let metadata = storage.metadata(for: region)
             transferMBTilesFile(at: mbtilesURL, metadata: metadata)
         }
+    }
+
+    /// Transfers a routing graph database file to the Apple Watch.
+    ///
+    /// The file is sent via `WCSession.transferFile()` with metadata containing
+    /// the region ID and a type marker so the watch can route the file to the
+    /// correct storage location (`Documents/regions/<uuid>.routing.db`).
+    ///
+    /// - Parameters:
+    ///   - url: The local file URL of the `.routing.db` file.
+    ///   - metadata: The ``RegionMetadata`` describing the region.
+    func transferRoutingDatabase(at url: URL, metadata: RegionMetadata) {
+        guard let session = session, session.activationState == .activated else {
+            print("WCSession not activated")
+            return
+        }
+
+        guard session.isPaired && session.isWatchAppInstalled else {
+            print("No watch paired or watch app not installed")
+            return
+        }
+
+        let metadataDict: [String: Any] = [
+            "type": "routingdb",
+            "regionId": metadata.id.uuidString,
+            "name": metadata.name
+        ]
+
+        let transfer = session.transferFile(url, metadata: metadataDict)
+        DispatchQueue.main.async {
+            self.pendingTransfers.append(transfer)
+        }
+
+        print("Started routing database transfer: \(url.lastPathComponent)")
     }
 
     /// Transfers a GPX route file to the Apple Watch.
@@ -484,7 +519,8 @@ extension WatchConnectivityManager: WCSessionDelegate {
                 "north": metadata.boundingBox.north,
                 "south": metadata.boundingBox.south,
                 "east": metadata.boundingBox.east,
-                "west": metadata.boundingBox.west
+                "west": metadata.boundingBox.west,
+                "hasRoutingData": metadata.hasRoutingData
             ]
         }
 
