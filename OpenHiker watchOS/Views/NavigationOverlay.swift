@@ -63,13 +63,12 @@ struct NavigationOverlay: View {
     /// The top bar showing the upcoming turn direction and instruction text.
     private var instructionBar: some View {
         HStack(spacing: 8) {
-            // Turn direction icon
+            // Turn direction icon (SF Symbols already indicate direction)
             if let instruction = guidance.currentInstruction {
                 Image(systemName: instruction.direction.sfSymbolName)
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundStyle(guidance.isOffRoute ? .red : .white)
-                    .rotationEffect(iconRotation(for: instruction))
             }
 
             // Instruction text
@@ -172,23 +171,8 @@ struct NavigationOverlay: View {
 
     // MARK: - Helpers
 
-    /// Computes a rotation angle for the turn direction icon based on bearing.
-    ///
-    /// This rotates the arrow icon to roughly match the turn direction,
-    /// providing an intuitive visual cue.
-    ///
-    /// - Parameter instruction: The current turn instruction.
-    /// - Returns: A rotation ``Angle`` for the icon.
-    private func iconRotation(for instruction: TurnInstruction) -> Angle {
-        // The SF Symbols already indicate direction, so minimal rotation is needed.
-        // Only rotate the generic arrows by bearing.
-        switch instruction.direction {
-        case .start:
-            return .degrees(0)
-        default:
-            return .degrees(0)
-        }
-    }
+    /// Metres-per-kilometre constant for compact distance formatting.
+    private static let metresPerKilometre: Double = 1000.0
 
     /// Formats a distance for compact display on the watch.
     ///
@@ -198,10 +182,10 @@ struct NavigationOverlay: View {
     /// - Parameter metres: Distance in metres.
     /// - Returns: A compact formatted string.
     private func formatShortDistance(_ metres: Double) -> String {
-        if metres < 1000 {
+        if metres < Self.metresPerKilometre {
             return "\(Int(metres))m"
         } else {
-            return String(format: "%.1fkm", metres / 1000)
+            return String(format: "%.1fkm", metres / Self.metresPerKilometre)
         }
     }
 }

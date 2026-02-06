@@ -221,11 +221,17 @@ struct PlannedRoutesListView: View {
 
     /// Deletes planned routes at the given index offsets.
     ///
+    /// Logs and surfaces errors to the user if deletion fails.
+    ///
     /// - Parameter offsets: The index positions of the routes to delete.
     private func deleteRoutes(at offsets: IndexSet) {
         for index in offsets {
             let route = routeStore.routes[index]
-            try? PlannedRouteStore.shared.delete(id: route.id)
+            do {
+                try PlannedRouteStore.shared.delete(id: route.id)
+            } catch {
+                print("Failed to delete planned route \(route.id): \(error.localizedDescription)")
+            }
         }
     }
 }
