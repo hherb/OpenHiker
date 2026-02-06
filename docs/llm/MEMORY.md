@@ -104,6 +104,20 @@
 - Bot token: XOR-obfuscated, embedded in binary (placeholder — needs real token before deploy)
 - iOS `ContentView` now has 5 tabs: Regions, Downloaded, Hikes, Community, Watch
 
+### Phase 5b Details (Route Planning & Active Guidance)
+- **Route planning (iOS)**: `RoutePlanningView` interactive MapKit pin placement (start/end/via) + routing engine computation
+- **Turn instructions**: `TurnDirection` enum (10 cases), `TurnInstruction` struct, `BearingCalculator` (pure functions), `TurnInstructionGenerator` (edge-pair bearing delta → direction classification)
+- **Turn thresholds**: `TurnInstructionConfig` enum — straight <15°, slight <45°, normal <135°, sharp <170°, u-turn ≥170°; min spacing 50m between instructions
+- **Elevation profile**: `ElevationPoint` struct stored in `PlannedRoute.elevationProfile: [ElevationPoint]?` — generated from `RoutingNode.elevation` (SRTM) during `PlannedRoute.from(computedRoute:)`; backward-compatible (nil for old routes)
+- **Pin repositioning**: Long-press (0.5s) → reposition mode (yellow ring + scale) → next map tap moves pin → re-computes route; cancel via button or tapping any pin
+- **Route storage**: `PlannedRouteStore` (JSON files in `Documents/planned_routes/`, singleton, serial queue)
+- **Route transfer**: iOS→watch via `WCSession.transferFile` with `type: "plannedRoute"` metadata
+- **Watch guidance**: `RouteGuidance` (ObservableObject) — position-on-route projection, off-route detection (50m trigger/30m clear hysteresis), haptic feedback (click at 100m, directionUp/Down at 30m, failure for u-turn/off-route, success for arrival)
+- **Watch overlay**: `NavigationOverlay` — instruction bar (top) + progress bar (bottom), purple/red background for on/off-route
+- **SpriteKit polyline**: `MapScene.updateRouteLine(coordinates:)` — purple 4pt SKShapeNode at z=40
+- **Tab structure**: iOS ContentView has 6 tabs (Regions, Downloaded, Routes [new], Hikes, Community, Watch); watchOS has 3 tabs (Routes [new], Regions, Settings)
+- Developer docs at `docs/developer/phase5-route-planning-guidance.md`
+
 ## Dev Rules (from docs/llm/general_golden_rules.md)
 1. Clean separation of concerns
 2. Prefer reusable pure functions
