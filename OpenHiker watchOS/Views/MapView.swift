@@ -45,6 +45,18 @@ struct MapView: View {
     /// Whether the region picker sheet is currently displayed.
     @State private var showingRegionPicker = false
 
+    /// Whether the add waypoint sheet is currently displayed.
+    @State private var showingAddWaypoint = false
+
+    /// All waypoints loaded from the local store, displayed as map markers.
+    @State private var waypoints: [Waypoint] = []
+
+    /// Whether an error alert is displayed.
+    @State private var showError = false
+
+    /// The error message for the alert.
+    @State private var errorMessage = ""
+
     /// The currently loaded region's metadata, or `nil` if no region is loaded.
     @State private var selectedRegion: RegionMetadata?
 
@@ -106,10 +118,12 @@ struct MapView: View {
         }
         .onAppear {
             loadSavedRegion()
+            loadWaypoints()
             locationManager.startLocationUpdates()
         }
         .onChange(of: mapRenderer.currentZoom) { _, _ in
             mapScene?.updateVisibleTiles()
+            refreshWaypointMarkers()
             if locationManager.isTracking {
                 mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
             }
@@ -121,6 +135,17 @@ struct MapView: View {
             if let heading = newHeading {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        .sheet(isPresented: $showingAddWaypoint) {
+            AddWaypointSheet(onSave: { waypoint in
+                waypoints.append(waypoint)
+                refreshWaypointMarkers()
+            })
         }
         .sheet(isPresented: $showingRegionPicker, onDismiss: {
             if let region = pickedRegion {
@@ -210,9 +235,9 @@ struct MapView: View {
         .padding(.top, 4)
     }
 
-    /// The bottom control bar with center-on-user, tracking toggle, and region picker buttons.
+    /// The bottom control bar with center-on-user, pin, tracking toggle, and region picker buttons.
     private var bottomControls: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Center on user button
             Button {
                 centerOnUser()
@@ -222,6 +247,18 @@ struct MapView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(isCenteredOnUser ? .blue : .primary)
+
+            Spacer()
+
+            // Drop waypoint pin button
+            Button {
+                showingAddWaypoint = true
+            } label: {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -282,7 +319,10 @@ struct MapView: View {
             selectedRegion = region
             // Create the scene once after loading; SpriteView will reuse it
             mapScene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
+            refreshWaypointMarkers()
         } catch {
+            errorMessage = "Failed to load map region: \(error.localizedDescription)"
+            showError = true
             print("Error loading region: \(error.localizedDescription)")
         }
     }
@@ -311,6 +351,7 @@ struct MapView: View {
         // Center map on user if enabled
         if isCenteredOnUser {
             mapRenderer.setCenter(location.coordinate)
+            refreshWaypointMarkers()
         }
     }
 
@@ -325,6 +366,27 @@ struct MapView: View {
 
         isCenteredOnUser = true
         mapRenderer.setCenter(location.coordinate)
+    }
+
+    /// Loads all waypoints from the local ``WaypointStore`` and updates the map markers.
+    ///
+    /// Called on appear and after new waypoints are synced from the iPhone.
+    private func loadWaypoints() {
+        do {
+            waypoints = try WaypointStore.shared.fetchAll()
+            refreshWaypointMarkers()
+        } catch {
+            errorMessage = "Could not load waypoints: \(error.localizedDescription)"
+            showError = true
+            print("Error loading waypoints: \(error.localizedDescription)")
+        }
+    }
+
+    /// Tells the ``MapScene`` to refresh waypoint marker positions.
+    ///
+    /// Called after zoom/pan changes and when waypoints are added or removed.
+    private func refreshWaypointMarkers() {
+        mapScene?.updateWaypointMarkers(waypoints: waypoints)
     }
 
     /// Toggles hike track recording on or off.

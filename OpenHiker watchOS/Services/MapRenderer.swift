@@ -679,6 +679,150 @@ final class MapScene: SKScene {
         overlaysNode.addChild(trail)
     }
 
+    // MARK: - Waypoint Markers
+
+    /// Updates the waypoint markers displayed on the map.
+    ///
+    /// Removes markers for waypoints that no longer exist, adds markers for
+    /// new waypoints, and repositions all markers based on the current map
+    /// center and zoom level. Each marker is an `SKNode` rendering the
+    /// category's SF Symbol inside a colored pin shape.
+    ///
+    /// Markers use the naming convention `"waypoint-<uuid>"` for identification.
+    ///
+    /// - Parameter waypoints: The full list of waypoints to display on the map.
+    func updateWaypointMarkers(waypoints: [Waypoint]) {
+        guard let renderer = renderer,
+              let center = renderer.centerCoordinate else { return }
+
+        let zoom = renderer.currentZoom
+        let tileSize = MapRenderer.tileSize
+
+        let n = Double(1 << zoom)
+        let centerX = (center.longitude + 180.0) / 360.0 * n
+        let centerLatRad = center.latitude * .pi / 180.0
+        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+
+        // Build set of current waypoint IDs
+        let currentIds = Set(waypoints.map { "waypoint-\($0.id.uuidString)" })
+
+        // Remove markers that no longer exist
+        overlaysNode.children
+            .filter { ($0.name ?? "").hasPrefix("waypoint-") && !currentIds.contains($0.name ?? "") }
+            .forEach { $0.removeFromParent() }
+
+        // Add or update markers
+        for waypoint in waypoints {
+            let nodeName = "waypoint-\(waypoint.id.uuidString)"
+
+            // Calculate screen position from lat/lon
+            let posX = (waypoint.longitude + 180.0) / 360.0 * n
+            let posLatRad = waypoint.latitude * .pi / 180.0
+            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
+
+            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
+            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+
+            if let existingNode = overlaysNode.childNode(withName: nodeName) {
+                // Reposition existing marker
+                existingNode.position = CGPoint(x: screenX, y: screenY)
+            } else {
+                // Create new marker
+                let marker = createWaypointMarkerNode(for: waypoint)
+                marker.name = nodeName
+                marker.position = CGPoint(x: screenX, y: screenY)
+                overlaysNode.addChild(marker)
+            }
+        }
+    }
+
+    /// Creates a SpriteKit node for a waypoint marker.
+    ///
+    /// Renders a colored circle with the category's SF Symbol icon inside, plus
+    /// a small triangular pin stem pointing downward. The circle has a white
+    /// border for visibility against any map background.
+    ///
+    /// - Parameter waypoint: The waypoint to create a marker for.
+    /// - Returns: A configured `SKNode` representing the waypoint on the map.
+    // MARK: - Waypoint Marker Layout Constants
+
+    /// Radius of the circular pin head (10pt: large enough to tap on watch, small enough to not obscure map).
+    private let pinCircleRadius: CGFloat = 10
+    /// Height of the triangular pin stem below the circle.
+    private let pinStemHeight: CGFloat = 6
+    /// Half-width of the pin stem base.
+    private let pinStemHalfWidth: CGFloat = 4
+    /// Stroke width for the pin circle border.
+    private let pinCircleStrokeWidth: CGFloat = 1.5
+    /// Stroke width for the pin stem border.
+    private let pinStemStrokeWidth: CGFloat = 1.0
+    /// SF Symbol rendering point size for the category icon.
+    private let pinIconPointSize: CGFloat = 11
+    /// Display size of the icon sprite (2pt larger than pointSize to avoid clipping rounded symbols).
+    private let pinIconSpriteSize: CGFloat = 13
+    /// Vertical offset to visually center the icon within the circle.
+    private let pinIconVerticalOffset: CGFloat = 1
+    /// Z-position for waypoint markers (between track trail at 50 and position marker at 100).
+    private let waypointZPosition: CGFloat = 75
+
+    private func createWaypointMarkerNode(for waypoint: Waypoint) -> SKNode {
+        let container = SKNode()
+        container.zPosition = waypointZPosition
+
+        let pinColor = colorFromHex(waypoint.category.colorHex)
+
+        // Pin circle
+        let circle = SKShapeNode(circleOfRadius: pinCircleRadius)
+        circle.fillColor = pinColor
+        circle.strokeColor = .white
+        circle.lineWidth = pinCircleStrokeWidth
+
+        // Pin stem (triangle pointing down)
+        let stemPath = CGMutablePath()
+        stemPath.move(to: CGPoint(x: -pinStemHalfWidth, y: -pinCircleRadius))
+        stemPath.addLine(to: CGPoint(x: 0, y: -pinCircleRadius - pinStemHeight))
+        stemPath.addLine(to: CGPoint(x: pinStemHalfWidth, y: -pinCircleRadius))
+        stemPath.closeSubpath()
+
+        let stem = SKShapeNode(path: stemPath)
+        stem.fillColor = pinColor
+        stem.strokeColor = .white
+        stem.lineWidth = pinStemStrokeWidth
+
+        container.addChild(stem)
+        container.addChild(circle)
+
+        // Category icon rendered as SF Symbol texture
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: pinIconPointSize, weight: .bold)
+        if let iconImage = UIImage(systemName: waypoint.category.iconName, withConfiguration: iconConfig)?
+            .withTintColor(.white, renderingMode: .alwaysOriginal) {
+            let iconTexture = SKTexture(image: iconImage)
+            let iconSprite = SKSpriteNode(texture: iconTexture)
+            iconSprite.size = CGSize(width: pinIconSpriteSize, height: pinIconSpriteSize)
+            iconSprite.position = CGPoint(x: 0, y: pinIconVerticalOffset)
+            container.addChild(iconSprite)
+        }
+
+        return container
+    }
+
+    /// Converts a 6-character hex color string to a `UIColor`.
+    ///
+    /// - Parameter hex: A hex string (e.g., "4A90D9") without the `#` prefix.
+    /// - Returns: The corresponding `UIColor`, or `.orange` if parsing fails.
+    private func colorFromHex(_ hex: String) -> UIColor {
+        var hexValue: UInt64 = 0
+        guard hex.count == 6, Scanner(string: hex).scanHexInt64(&hexValue) else {
+            return .orange
+        }
+        return UIColor(
+            red: CGFloat((hexValue >> 16) & 0xFF) / 255.0,
+            green: CGFloat((hexValue >> 8) & 0xFF) / 255.0,
+            blue: CGFloat(hexValue & 0xFF) / 255.0,
+            alpha: 1.0
+        )
+    }
+
     // MARK: - Helpers
 
     /// Creates a unique node name for a tile coordinate (e.g., "tile_14_8192_5461").

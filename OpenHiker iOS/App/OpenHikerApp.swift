@@ -36,6 +36,21 @@ struct OpenHikerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(watchConnectivity)
+                .onAppear {
+                    initializeWaypointStore()
+                }
+        }
+    }
+
+    /// Opens the shared ``WaypointStore`` database so it's ready for CRUD operations.
+    ///
+    /// Called once on app launch. Errors are logged but not fatal — the app can
+    /// still function without waypoints.
+    private func initializeWaypointStore() {
+        do {
+            try WaypointStore.shared.open()
+        } catch {
+            print("Error opening WaypointStore: \(error.localizedDescription)")
         }
     }
 }
