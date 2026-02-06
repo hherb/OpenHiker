@@ -407,6 +407,9 @@ extension WatchConnectivityManager: WCSessionDelegate {
         do {
             try WaypointStore.shared.insert(waypoint)
             print("Received and saved waypoint from watch: \(waypoint.id.uuidString)")
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .waypointSyncReceived, object: nil)
+            }
         } catch {
             print("Error saving received waypoint: \(error.localizedDescription)")
         }

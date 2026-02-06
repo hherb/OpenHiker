@@ -69,12 +69,6 @@ struct MapView: View {
     /// The region selected in the picker sheet (used for dismiss callback).
     @State private var pickedRegion: RegionMetadata?
 
-    /// Whether to show an error alert for HealthKit or tracking failures.
-    @State private var showingError = false
-
-    /// The error message to display in the alert.
-    @State private var errorMessage = ""
-
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -136,6 +130,9 @@ struct MapView: View {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
+            loadWaypoints()
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -161,13 +158,8 @@ struct MapView: View {
         .onChange(of: healthKitManager.healthKitError?.localizedDescription) { _, newValue in
             if let message = newValue {
                 errorMessage = message
-                showingError = true
+                showError = true
             }
-        }
-        .alert("Tracking Error", isPresented: $showingError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(errorMessage)
         }
     }
 
@@ -407,7 +399,7 @@ struct MapView: View {
                     if workout == nil, let error = healthKitManager.healthKitError {
                         await MainActor.run {
                             errorMessage = error.localizedDescription
-                            showingError = true
+                            showError = true
                         }
                     }
                 }
@@ -419,7 +411,7 @@ struct MapView: View {
                 // Check if startWorkout set an error (synchronous method)
                 if let error = healthKitManager.healthKitError {
                     errorMessage = error.localizedDescription
-                    showingError = true
+                    showError = true
                 }
             }
         }
