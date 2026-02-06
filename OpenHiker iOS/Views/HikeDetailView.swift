@@ -46,7 +46,7 @@ struct HikeDetailView: View {
     private static let mapMinSpanDegrees = 0.005
 
     /// Required length for a valid hex color string (6 hex characters, no prefix).
-    private static let hexColorStringLength = 6
+    static let hexColorStringLength = 6
 
     /// Decoded track coordinates for the map polyline overlay.
     @State private var trackCoordinates: [CLLocationCoordinate2D] = []

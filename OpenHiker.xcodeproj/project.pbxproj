@@ -66,6 +66,7 @@
 		1B0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
 		1A000001000000000000003A /* RoutePlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003A /* RoutePlanningView.swift */; };
 		1A000001000000000000003B /* RouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003B /* RouteDetailView.swift */; };
+		1A000001000000000000003C /* RouteUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003C /* RouteUploadView.swift */; };
 		1B0000010000000000000033 /* RouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000012 /* RouteGuidance.swift */; };
 		1B0000010000000000000034 /* NavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000013 /* NavigationOverlay.swift */; };
 /* End PBXBuildFile section */
@@ -142,6 +143,7 @@
 		2A0000010000000000000039 /* PlannedRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedRoute.swift; sourceTree = "<group>"; };
 		2A000001000000000000003A /* RoutePlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanningView.swift; sourceTree = "<group>"; };
 		2A000001000000000000003B /* RouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDetailView.swift; sourceTree = "<group>"; };
+		2A000001000000000000003C /* RouteUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteUploadView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000012 /* RouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidance.swift; sourceTree = "<group>"; };
 		2B0000010000000000000013 /* NavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -215,6 +217,7 @@
 				2A0000010000000000000023 /* ElevationProfileView.swift */,
 				2A000001000000000000003A /* RoutePlanningView.swift */,
 				2A000001000000000000003B /* RouteDetailView.swift */,
+				2A000001000000000000003C /* RouteUploadView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -487,6 +490,7 @@
 				1A0000010000000000000039 /* PlannedRoute.swift in Sources */,
 				1A000001000000000000003A /* RoutePlanningView.swift in Sources */,
 				1A000001000000000000003B /* RouteDetailView.swift in Sources */,
+				1A000001000000000000003C /* RouteUploadView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -252,7 +252,7 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 sqlite3_bind_null(statement, 18)
             }
 
-            route.trackData.withUnsafeBytes { ptr in
+            _ = route.trackData.withUnsafeBytes { ptr in
                 sqlite3_bind_blob(statement, 19, ptr.baseAddress, Int32(route.trackData.count), Self.sqliteTransient)
             }
 

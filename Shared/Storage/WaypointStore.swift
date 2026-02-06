@@ -83,6 +83,14 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
         return WaypointStore(path: dbPath)
     }()
 
+    // MARK: - Published Properties
+
+    /// In-memory cache of all waypoints, kept in sync with the database.
+    ///
+    /// Views can observe this via `@ObservedObject` to automatically refresh
+    /// when waypoints are inserted, updated, or deleted.
+    @Published var waypoints: [Waypoint] = []
+
     // MARK: - Properties
 
     /// The underlying SQLite database connection (nil when closed).
@@ -153,6 +161,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
             self.db = db
             try createSchema()
         }
+        reloadWaypoints()
     }
 
     /// Closes the database connection and releases resources.
@@ -164,6 +173,23 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 sqlite3_close(db)
                 self.db = nil
             }
+        }
+    }
+
+    /// Reloads the in-memory ``waypoints`` cache from the database.
+    ///
+    /// Called internally after any mutation (insert, update, delete) to keep
+    /// the `@Published` array in sync. Dispatches to the main queue so
+    /// SwiftUI views update correctly.
+    func reloadWaypoints() {
+        guard db != nil else { return }
+        do {
+            let loaded = try fetchWaypoints(sql: "SELECT * FROM waypoints ORDER BY timestamp DESC")
+            DispatchQueue.main.async {
+                self.waypoints = loaded
+            }
+        } catch {
+            print("Error reloading waypoints cache: \(error.localizedDescription)")
         }
     }
 
@@ -251,6 +277,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 throw WaypointStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
             }
         }
+        reloadWaypoints()
     }
 
     // MARK: - Update
@@ -304,6 +331,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 throw WaypointStoreError.waypointNotFound
             }
         }
+        reloadWaypoints()
     }
 
     // MARK: - Delete
@@ -339,6 +367,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 throw WaypointStoreError.waypointNotFound
             }
         }
+        reloadWaypoints()
     }
 
     // MARK: - Fetch

@@ -37,7 +37,7 @@ import Combine
 /// If HealthKit is unavailable (e.g. older devices, MDM restrictions) or the user
 /// denies authorization, all methods become no-ops and the stats overlay simply
 /// hides the vitals section. Tracking continues to work without HealthKit.
-final class HealthKitManager: NSObject, ObservableObject {
+final class HealthKitManager: NSObject, ObservableObject, @unchecked Sendable {
 
     // MARK: - Published Properties
 

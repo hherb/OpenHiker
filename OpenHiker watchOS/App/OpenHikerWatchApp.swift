@@ -389,7 +389,7 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             try FileManager.default.moveItem(at: file.fileURL, to: destinationURL)
 
             // Update existing region metadata to reflect routing data availability
-            var allMetadata = loadAllRegionMetadata()
+            let allMetadata = loadAllRegionMetadata()
             if let index = allMetadata.firstIndex(where: { $0.id == regionId }) {
                 let existing = allMetadata[index]
                 let updated = RegionMetadata(
