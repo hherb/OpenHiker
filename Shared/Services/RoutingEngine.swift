@@ -121,7 +121,10 @@ final class RoutingEngine {
 
             // Short-circuit if start == end
             if startNode.id == endNode.id {
-                if allNodes.isEmpty { allNodes.append(startNode) }
+                if allNodes.isEmpty {
+                    allNodes.append(startNode)
+                    allCoordinates.append(startNode.coordinate)
+                }
                 continue
             }
 
@@ -190,8 +193,8 @@ final class RoutingEngine {
     /// - Parameters:
     ///   - startNode: The origin routing node.
     ///   - endNode: The destination routing node.
-    ///   - mode: Hiking or cycling mode (determines which cost column is used
-    ///     for reverse edges).
+    ///   - mode: Hiking or cycling mode (determines edge passability filtering
+    ///     and the base speed used for estimated duration).
     /// - Returns: A ``ComputedRoute`` for this single segment.
     /// - Throws: ``RoutingError/noRouteFound`` if A* exhausts all reachable
     ///   nodes without reaching the destination.
@@ -284,7 +287,7 @@ final class RoutingEngine {
 
     /// Check whether a specific edge is passable for the given routing mode.
     ///
-    /// Cyclists cannot traverse `steps` or ways explicitly tagged `bicycle=no`.
+    /// Cyclists cannot traverse `steps` (highway type filter at the edge level).
     private func isEdgePassable(_ edge: RoutingEdge, mode: RoutingMode) -> Bool {
         switch mode {
         case .hiking:

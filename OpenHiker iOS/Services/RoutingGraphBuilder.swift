@@ -403,8 +403,9 @@ actor RoutingGraphBuilder {
         sacMultiplier: Double,
         highwayType: String?
     ) -> Double {
-        // Steps get an extra penalty for hiking (steep, slow)
-        let stepsPenalty: Double = (highwayType == "steps") ? 1.5 : 1.0
+        // Steps get an extra penalty for hiking (steep, uneven surfaces)
+        let stepsPenalty: Double = (highwayType == "steps")
+            ? RoutingCostConfig.stepsHikingMultiplier : 1.0
 
         var cost = distance * surfaceMultiplier * sacMultiplier * stepsPenalty
 
@@ -599,7 +600,11 @@ actor RoutingGraphBuilder {
             }
             sqlite3_bind_text(metaStmt, 1, key, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(metaStmt, 2, value, -1, SQLITE_TRANSIENT)
-            sqlite3_step(metaStmt)
+            guard sqlite3_step(metaStmt) == SQLITE_DONE else {
+                let msg = String(cString: sqlite3_errmsg(db))
+                sqlite3_finalize(metaStmt)
+                throw BuildError.databaseCreationFailed("Metadata insert failed: \(msg)")
+            }
             sqlite3_finalize(metaStmt)
         }
 

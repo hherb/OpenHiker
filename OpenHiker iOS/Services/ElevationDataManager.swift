@@ -17,9 +17,10 @@
 
 import Foundation
 import CoreLocation
+import Compression
 
-/// Downloads and queries elevation data from Copernicus DEM GLO-30 (primary)
-/// or SRTM 1-arc-second (fallback).
+/// Downloads and queries elevation data from Tilezen skadi tiles (primary)
+/// or OpenTopography SRTM mirror (fallback).
 ///
 /// Each elevation tile covers a 1°×1° cell and is stored in HGT format
 /// (raw 16-bit signed big-endian integers on a 3601×3601 grid). Tiles are
@@ -28,8 +29,8 @@ import CoreLocation
 /// ## Data sources
 /// | Source | Coverage | Resolution | License |
 /// |--------|----------|-----------|---------|
-/// | Copernicus DEM GLO-30 | 90°N–90°S (global) | ~30 m | CC-BY-4.0 |
-/// | SRTM 1-arc-second | 60°N–56°S | ~30 m | Public domain |
+/// | Tilezen/Mapzen skadi (SRTM+ASTER) | Global | ~30 m | Public domain |
+/// | OpenTopography SRTM GL1 (fallback) | 60°N–56°S | ~30 m | Public domain |
 ///
 /// ## Bilinear interpolation
 /// For a query point the four surrounding grid cells are located and their
@@ -47,15 +48,20 @@ actor ElevationDataManager {
     /// Maximum number of download retries per tile before giving up.
     private static let maxRetries: Int = 4
 
-    /// Base URL for Copernicus DEM tiles on AWS Open Data (no auth required).
-    /// Pattern: `Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_DEM.tif`
-    /// We download a pre-converted HGT version when available.
-    private static let copernicusBaseURL =
-        "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com"
+    /// Base URL for Tilezen/Mapzen skadi elevation tiles on AWS (no auth required).
+    ///
+    /// These are gzip-compressed 1-arc-second HGT files sourced from SRTM and
+    /// ASTER GDEM. Coverage is global.
+    /// Pattern: `skadi/{N|S}{lat:02d}/{tileName}.hgt.gz`
+    private static let skadiBaseURL =
+        "https://elevation-tiles-prod.s3.amazonaws.com/skadi"
 
-    /// Base URL for SRTM tiles (fallback, requires no auth for most mirrors).
-    private static let srtmBaseURL =
-        "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF"
+    /// Nanoseconds per second, used in retry delay calculations.
+    private static let nanosecondsPerSecond: UInt64 = 1_000_000_000
+
+    /// Maximum number of tiles to keep in the memory cache.
+    /// Each tile is ~25 MB, so 4 tiles ≈ 100 MB.
+    private static let maxCachedTiles: Int = 4
 
     // MARK: - Properties
 
@@ -194,6 +200,7 @@ actor ElevationDataManager {
         try data.write(to: diskPath)
 
         let grid = try readHGT(at: diskPath)
+        evictTileIfNeeded()
         loadedTiles[tileName] = grid
         return grid
     }
@@ -226,65 +233,72 @@ actor ElevationDataManager {
 
     // MARK: - Download
 
-    /// Download an HGT file for the given tile, trying Copernicus first then SRTM.
+    /// Download an HGT file for the given tile.
     ///
-    /// Retries with exponential backoff on network failures.
+    /// Tries the Tilezen skadi tiles first (gzip-compressed HGT on AWS),
+    /// then falls back to the OpenTopography SRTM mirror.
     ///
     /// - Parameter tileName: Tile name like "N47E011".
-    /// - Returns: The raw HGT file data.
+    /// - Returns: The raw HGT file data (uncompressed).
     private func downloadHGT(tileName: String) async throws -> Data {
-        // Try Copernicus first
-        if let data = try? await downloadCopernicusTile(tileName: tileName) {
-            return data
+        // Try Tilezen skadi (gzip-compressed HGT)
+        do {
+            return try await downloadSkadiTile(tileName: tileName)
+        } catch {
+            print("Skadi download failed for \(tileName): \(error.localizedDescription), trying fallback...")
         }
 
-        // Fall back to SRTM
+        // Fall back to OpenTopography SRTM (raw HGT)
         return try await downloadSRTMTile(tileName: tileName)
     }
 
-    /// Download a Copernicus DEM GLO-30 tile from AWS S3.
+    /// Download a gzip-compressed HGT tile from the Tilezen skadi service on AWS S3.
     ///
-    /// The tile is distributed as a GeoTIFF but many mirrors provide HGT
-    /// conversions. We attempt the direct HGT download pattern.
-    private func downloadCopernicusTile(tileName: String) async throws -> Data {
-        // Copernicus tile URL pattern
-        // Example: Copernicus_DSM_COG_10_N47_00_E011_00_DEM/Copernicus_DSM_COG_10_N47_00_E011_00_DEM.dt2
-        let urlString = "\(Self.copernicusBaseURL)/\(copernicusTilePath(tileName: tileName))"
+    /// URL pattern: `https://elevation-tiles-prod.s3.amazonaws.com/skadi/N47/N47E011.hgt.gz`
+    ///
+    /// - Parameter tileName: Tile name like "N47E011".
+    /// - Returns: The decompressed raw HGT data.
+    private func downloadSkadiTile(tileName: String) async throws -> Data {
+        let latFolder = String(tileName.prefix(3))  // e.g. "N47"
+        let urlString = "\(Self.skadiBaseURL)/\(latFolder)/\(tileName).hgt.gz"
 
         guard let url = URL(string: urlString) else {
             throw ElevationError.invalidTileName(tileName)
         }
 
-        return try await downloadWithRetry(url: url)
+        let gzipData = try await downloadWithRetry(url: url)
+        return try decompressGzip(gzipData)
     }
 
-    /// Download an SRTM tile.
+    /// Download a raw HGT tile from the OpenTopography SRTM mirror.
+    ///
+    /// URL pattern: `https://opentopography.s3.sdsc.edu/raster/SRTM_GL1/SRTM_GL1_srtm/N47E011.hgt`
+    ///
+    /// - Parameter tileName: Tile name like "N47E011".
+    /// - Returns: The raw HGT data.
     private func downloadSRTMTile(tileName: String) async throws -> Data {
-        let urlString = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/hgt/\(tileName).hgt.zip"
+        let urlString = "https://opentopography.s3.sdsc.edu/raster/SRTM_GL1/SRTM_GL1_srtm/\(tileName).hgt"
 
         guard let url = URL(string: urlString) else {
             throw ElevationError.invalidTileName(tileName)
         }
 
-        // SRTM tiles are typically zip-compressed
-        let zipData = try await downloadWithRetry(url: url)
+        let data = try await downloadWithRetry(url: url)
 
-        // Extract the .hgt file from the zip
-        // For simplicity, if it's already raw HGT data, return as-is
-        let expectedSize = Self.hgtGridSize * Self.hgtGridSize * 2
-        if zipData.count == expectedSize {
-            return zipData
+        // Validate that the downloaded data is the expected HGT size
+        let expectedSize = Self.hgtGridSize * Self.hgtGridSize * MemoryLayout<Int16>.size
+        guard data.count == expectedSize else {
+            throw ElevationError.invalidTileData(tileName)
         }
 
-        // Try to find HGT data within the zip (basic zip extraction)
-        // The zip central directory isn't needed if there's only one file
-        throw ElevationError.downloadFailed(tileName)
+        return data
     }
 
     /// Download data from a URL with exponential backoff retry.
     ///
-    /// Retries up to ``maxRetries`` times on network errors with
-    /// delays of 2, 4, 8, 16 seconds.
+    /// Retries up to ``maxRetries`` times on transient errors (5xx, network)
+    /// with delays of 2, 4, 8, 16 seconds. Does not retry on client errors
+    /// (4xx) as those indicate permanent failure.
     ///
     /// - Parameter url: The URL to download.
     /// - Returns: The downloaded data.
@@ -294,21 +308,125 @@ actor ElevationDataManager {
         for attempt in 0..<Self.maxRetries {
             do {
                 let (data, response) = try await session.data(from: url)
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    throw ElevationError.httpError(code, url.absoluteString)
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw ElevationError.httpError(0, url.absoluteString)
                 }
-                return data
+
+                switch httpResponse.statusCode {
+                case 200:
+                    return data
+                case 400..<500:
+                    // Client errors are permanent — don't retry
+                    throw ElevationError.httpError(httpResponse.statusCode, url.absoluteString)
+                default:
+                    // Server errors (5xx) — retry
+                    throw ElevationError.httpError(httpResponse.statusCode, url.absoluteString)
+                }
+            } catch let error as ElevationError {
+                if case .httpError(let code, _) = error, (400..<500).contains(code) {
+                    throw error  // Don't retry client errors
+                }
+                lastError = error
+                if attempt < Self.maxRetries - 1 {
+                    let delay = UInt64(pow(2.0, Double(attempt + 1))) * Self.nanosecondsPerSecond
+                    try await Task.sleep(nanoseconds: delay)
+                }
             } catch {
                 lastError = error
                 if attempt < Self.maxRetries - 1 {
-                    let delay = UInt64(pow(2.0, Double(attempt + 1))) * 1_000_000_000
+                    let delay = UInt64(pow(2.0, Double(attempt + 1))) * Self.nanosecondsPerSecond
                     try await Task.sleep(nanoseconds: delay)
                 }
             }
         }
         throw lastError
+    }
+
+    /// Decompress gzip-compressed data using the Compression framework.
+    ///
+    /// - Parameter data: The gzip-compressed input data.
+    /// - Returns: The decompressed data.
+    /// - Throws: ``ElevationError/invalidTileData(_:)`` if decompression fails.
+    private func decompressGzip(_ data: Data) throws -> Data {
+        // Expected output: one HGT tile = 3601 × 3601 × 2 bytes
+        let expectedSize = Self.hgtGridSize * Self.hgtGridSize * MemoryLayout<Int16>.size
+        let bufferSize = expectedSize + 1024  // Small margin for safety
+
+        let decompressed = try data.withUnsafeBytes { (sourceBuffer: UnsafeRawBufferPointer) -> Data in
+            guard let sourcePtr = sourceBuffer.baseAddress else {
+                throw ElevationError.invalidTileData("empty gzip data")
+            }
+
+            let destBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { destBuffer.deallocate() }
+
+            // Skip gzip header (10 bytes minimum) — the Compression framework's
+            // COMPRESSION_ZLIB expects raw deflate without the gzip wrapper.
+            // Gzip = 10-byte header + optional fields + deflate stream + 8-byte trailer.
+            let headerSize = gzipHeaderSize(data)
+            guard headerSize > 0, headerSize < data.count else {
+                throw ElevationError.invalidTileData("invalid gzip header")
+            }
+
+            let compressedStart = sourcePtr.advanced(by: headerSize)
+            let compressedSize = data.count - headerSize - 8  // 8-byte gzip trailer
+
+            let decompressedSize = compression_decode_buffer(
+                destBuffer, bufferSize,
+                compressedStart.assumingMemoryBound(to: UInt8.self), compressedSize,
+                nil,
+                COMPRESSION_ZLIB
+            )
+
+            guard decompressedSize > 0 else {
+                throw ElevationError.invalidTileData("gzip decompression failed")
+            }
+
+            return Data(bytes: destBuffer, count: decompressedSize)
+        }
+
+        return decompressed
+    }
+
+    /// Compute the size of a gzip header.
+    ///
+    /// Gzip header: 2 magic bytes, 1 method, 1 flags, 4 mtime, 1 xfl, 1 os = 10 bytes minimum.
+    /// Additional optional fields (FEXTRA, FNAME, FCOMMENT, FHCRC) may follow.
+    ///
+    /// - Parameter data: The gzip data.
+    /// - Returns: The header size in bytes, or 0 if the data is not valid gzip.
+    private func gzipHeaderSize(_ data: Data) -> Int {
+        guard data.count >= 10 else { return 0 }
+        guard data[0] == 0x1f, data[1] == 0x8b else { return 0 }  // Magic number
+
+        let flags = data[3]
+        var offset = 10
+
+        // FEXTRA
+        if flags & 0x04 != 0 {
+            guard offset + 2 <= data.count else { return 0 }
+            let extraLen = Int(data[offset]) | (Int(data[offset + 1]) << 8)
+            offset += 2 + extraLen
+        }
+
+        // FNAME — null-terminated string
+        if flags & 0x08 != 0 {
+            while offset < data.count && data[offset] != 0 { offset += 1 }
+            offset += 1  // Skip null terminator
+        }
+
+        // FCOMMENT — null-terminated string
+        if flags & 0x10 != 0 {
+            while offset < data.count && data[offset] != 0 { offset += 1 }
+            offset += 1
+        }
+
+        // FHCRC — 2-byte header CRC
+        if flags & 0x02 != 0 {
+            offset += 2
+        }
+
+        return offset
     }
 
     // MARK: - Bilinear Interpolation
@@ -356,12 +474,14 @@ actor ElevationDataManager {
         let e10 = grid[r1 * gridSize + c0]
         let e11 = grid[r1 * gridSize + c1]
 
-        // Check for void values
+        // Check for void values — average non-void samples instead of
+        // picking an arbitrary one, for smoother coastline behaviour.
         if e00 == Self.hgtVoidValue || e01 == Self.hgtVoidValue ||
            e10 == Self.hgtVoidValue || e11 == Self.hgtVoidValue {
-            // Use the first non-void value, or return nil
-            let nonVoid = [e00, e01, e10, e11].first { $0 != Self.hgtVoidValue }
-            return nonVoid.map { Double($0) }
+            let samples = [e00, e01, e10, e11].filter { $0 != Self.hgtVoidValue }
+            guard !samples.isEmpty else { return nil }
+            let sum = samples.reduce(0.0) { $0 + Double($1) }
+            return sum / Double(samples.count)
         }
 
         // Bilinear interpolation
@@ -414,16 +534,16 @@ actor ElevationDataManager {
         return names
     }
 
-    /// Build the Copernicus S3 object path for a tile.
+    /// Evict the oldest tile from the memory cache when it exceeds ``maxCachedTiles``.
     ///
-    /// - Parameter tileName: Tile name like "N47E011".
-    /// - Returns: The S3 object key path.
-    private func copernicusTilePath(tileName: String) -> String {
-        // Example: Copernicus_DSM_COG_10_N47_00_E011_00_DEM/Copernicus_DSM_COG_10_N47_00_E011_00_DEM.dt2
-        let latPart = String(tileName.prefix(3))  // N47
-        let lonPart = String(tileName.suffix(4))   // E011
-        let folderName = "Copernicus_DSM_COG_10_\(latPart)_00_\(lonPart)_00_DEM"
-        return "\(folderName)/\(folderName).dt2"
+    /// Uses a simple FIFO strategy: removes an arbitrary entry when the cache
+    /// is full. This bounds memory usage to approximately `maxCachedTiles × 25 MB`.
+    private func evictTileIfNeeded() {
+        while loadedTiles.count >= Self.maxCachedTiles {
+            if let key = loadedTiles.keys.first {
+                loadedTiles.removeValue(forKey: key)
+            }
+        }
     }
 }
 

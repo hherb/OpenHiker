@@ -280,14 +280,16 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
 
             try FileManager.default.moveItem(at: file.fileURL, to: destinationURL)
 
-            // Create metadata object
+            // Create metadata object (preserve hasRoutingData from transfer metadata)
+            let hasRoutingData = metadata["hasRoutingData"] as? Bool ?? false
             let regionMetadata = RegionMetadata(
                 id: regionId,
                 name: name,
                 boundingBox: BoundingBox(north: north, south: south, east: east, west: west),
                 minZoom: minZoom,
                 maxZoom: maxZoom,
-                tileCount: tileCount
+                tileCount: tileCount,
+                hasRoutingData: hasRoutingData
             )
 
             // Save metadata
@@ -374,7 +376,7 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             var allMetadata = loadAllRegionMetadata()
             if let index = allMetadata.firstIndex(where: { $0.id == regionId }) {
                 let existing = allMetadata[index]
-                allMetadata[index] = RegionMetadata(
+                let updated = RegionMetadata(
                     id: existing.id,
                     name: existing.name,
                     boundingBox: existing.boundingBox,
@@ -383,7 +385,16 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
                     tileCount: existing.tileCount,
                     hasRoutingData: true
                 )
-                saveRegionMetadata(allMetadata[index])
+                saveRegionMetadata(updated)
+
+                // Update the in-memory @Published array so UI reflects the change
+                DispatchQueue.main.async {
+                    if let regionIndex = self.availableRegions.firstIndex(where: { $0.id == regionId }) {
+                        self.availableRegions[regionIndex] = updated
+                    }
+                }
+            } else {
+                print("Routing DB received for unknown region \(regionId) — MBTiles may not have arrived yet")
             }
 
             print("Successfully received routing database for region: \(name)")

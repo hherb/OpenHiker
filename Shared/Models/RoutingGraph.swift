@@ -247,26 +247,36 @@ enum RoutingCostConfig {
     /// Default SAC scale multiplier when the tag is absent.
     static let defaultSacMultiplier: Double = 1.0
 
+    // MARK: Steps Penalty
+
+    /// Extra cost multiplier for `highway=steps` in hiking mode.
+    /// Steps are slower due to steep, uneven surfaces.
+    static let stepsHikingMultiplier: Double = 1.5
+
     // MARK: Descent Cost (Tobler's Hiking Function)
 
-    /// Returns a descent cost multiplier based on the average grade percentage.
+    /// Returns a descent penalty multiplier based on the average grade percentage.
     ///
-    /// Gentle downhills are faster than flat walking; steep descents become
-    /// slower than the equivalent ascent because the hiker must brake.
+    /// This multiplier is applied to `elevationLoss × hikingClimbPenaltyPerMetre`
+    /// to compute the descent cost component. Higher values mean more penalty.
+    /// Very gentle descents have near-zero penalty; steep descents are penalised
+    /// heavily because the hiker must brake.
     ///
     /// - Parameter gradePercent: Absolute value of the downhill grade as a
     ///   percentage (e.g. 15 for a 15 % slope). Must be ≥ 0.
-    /// - Returns: A multiplier applied to the equivalent ascent cost.
+    /// - Returns: A multiplier for the descent penalty term (0.0 = no penalty,
+    ///   1.0 = full climb-equivalent penalty, > 1.0 = worse than climbing).
     static func descentMultiplier(gradePercent: Double) -> Double {
-        switch gradePercent {
-        case ..<10:
-            return 0.5   // gentle — faster than flat
-        case 10..<20:
-            return 0.8   // moderate — starting to brake
-        case 20..<30:
-            return 1.0   // steep — as slow as flat
+        let grade = max(gradePercent, 0)
+        switch grade {
+        case ..<5:
+            return 0.0   // very gentle — negligible impact on hiking speed
+        case 5..<15:
+            return 0.3   // moderate — slight braking, still easy
+        case 15..<25:
+            return 0.8   // steep — significant braking required
         default:
-            return 1.5   // very steep — dangerous, very slow
+            return 1.5   // very steep — dangerous, slower than climbing
         }
     }
 
@@ -345,7 +355,8 @@ enum EdgeGeometry {
     ///   array is empty.
     static func pack(_ coordinates: [CLLocationCoordinate2D]) -> Data? {
         guard !coordinates.isEmpty else { return nil }
-        var data = Data(capacity: coordinates.count * 8) // 2 × Float32 per point
+        let bytesPerPoint = 2 * MemoryLayout<Float32>.size
+        var data = Data(capacity: coordinates.count * bytesPerPoint)
         for coord in coordinates {
             var lat = Float32(coord.latitude)
             var lon = Float32(coord.longitude)

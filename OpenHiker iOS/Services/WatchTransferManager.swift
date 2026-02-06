@@ -117,7 +117,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             "north": metadata.boundingBox.north,
             "south": metadata.boundingBox.south,
             "east": metadata.boundingBox.east,
-            "west": metadata.boundingBox.west
+            "west": metadata.boundingBox.west,
+            "hasRoutingData": metadata.hasRoutingData
         ]
 
         let transfer = session.transferFile(url, metadata: metadataDict)

@@ -71,6 +71,10 @@ actor PBFParser {
         let tags: [String: String]
     }
 
+    /// Conversion factor from PBF nanodegrees to decimal degrees.
+    /// PBF stores coordinates as `(offset + granularity × delta) × 1e-9`.
+    private static let nanodegreesToDegrees: Double = 1e-9
+
     /// Errors specific to PBF parsing.
     enum ParseError: Error, LocalizedError {
         case invalidBlobHeader
@@ -103,8 +107,8 @@ actor PBFParser {
     /// - Parameters:
     ///   - fileURL: Path to the `.osm.pbf` file on disk.
     ///   - boundingBox: Geographic filter — only nodes within this box are
-    ///     kept, and only ways whose node refs all appear in the kept set
-    ///     are included.
+    ///     kept. Ways are included if they pass the routing tag filter;
+    ///     nodes are then pruned to only those referenced by kept ways.
     ///   - progress: Callback with `(bytesProcessed, totalBytes)`.
     /// - Returns: A tuple of `(nodes, ways)` where `nodes` is keyed by
     ///   OSM node ID for efficient lookup during graph construction.
@@ -340,12 +344,12 @@ actor PBFParser {
                 stringTable = try parseStringTable(stData)
             case 2: // primitivegroup
                 primitiveGroupDatas.append(try reader.readLengthDelimited())
-            case 17: // granularity
-                granularity = Int64(try reader.readVarint())
-            case 19: // lat_offset
-                latOffset = Int64(try reader.readVarint())
-            case 20: // lon_offset
-                lonOffset = Int64(try reader.readVarint())
+            case 17: // granularity (protobuf int32 — use bitPattern for safety)
+                granularity = Int64(bitPattern: try reader.readVarint())
+            case 19: // lat_offset (protobuf int64 — use bitPattern for safety)
+                latOffset = Int64(bitPattern: try reader.readVarint())
+            case 20: // lon_offset (protobuf int64 — use bitPattern for safety)
+                lonOffset = Int64(bitPattern: try reader.readVarint())
             default:
                 try reader.skipField(wireType: wireType)
             }
@@ -471,7 +475,7 @@ actor PBFParser {
                 lons = try reader.readPackedSignedVarints()
             case 10: // keys_vals
                 let raw = try reader.readPackedVarints()
-                keysVals = raw.map { Int32($0) }
+                keysVals = raw.map { Int32(truncatingIfNeeded: $0) }
             default:
                 try reader.skipField(wireType: wireType)
             }
@@ -495,8 +499,8 @@ actor PBFParser {
             currentLat += lats[i]
             currentLon += lons[i]
 
-            let latitude = 0.000000001 * Double(latOffset + granularity * currentLat)
-            let longitude = 0.000000001 * Double(lonOffset + granularity * currentLon)
+            let latitude = Self.nanodegreesToDegrees * Double(latOffset + granularity * currentLat)
+            let longitude = Self.nanodegreesToDegrees * Double(lonOffset + granularity * currentLon)
 
             // Parse tags for this node
             var tags: [String: String] = [:]
@@ -555,8 +559,8 @@ actor PBFParser {
         while !reader.isAtEnd {
             let (fieldNumber, wireType) = try reader.readFieldTag()
             switch fieldNumber {
-            case 1:
-                wayId = Int64(try reader.readVarint())
+            case 1: // way ID (protobuf int64 — use bitPattern for safety)
+                wayId = Int64(bitPattern: try reader.readVarint())
             case 2:
                 keys = try reader.readPackedVarints()
             case 3:

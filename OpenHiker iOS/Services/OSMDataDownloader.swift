@@ -49,6 +49,9 @@ actor OSMDataDownloader {
     /// Overpass API timeout in seconds (sent as `[timeout:…]`).
     private static let overpassTimeoutSeconds: Int = 300
 
+    /// Nanoseconds per second, used in retry delay calculations.
+    private static let nanosecondsPerSecond: UInt64 = 1_000_000_000
+
     // MARK: - Properties
 
     /// URL session for API requests.
@@ -131,6 +134,12 @@ actor OSMDataDownloader {
         progress: @escaping (String, Double) -> Void
     ) async throws -> (nodes: [Int64: PBFParser.OSMNode], ways: [PBFParser.OSMWay]) {
 
+        // Same area check as downloadTrailData
+        let areaKm2 = boundingBox.areaKm2
+        if areaKm2 > Self.maxOverpassAreaKm2 {
+            throw OSMDownloadError.areaTooLarge(areaKm2)
+        }
+
         progress("Downloading trail data...", 0.1)
 
         let query = buildOverpassQuery(boundingBox: boundingBox)
@@ -160,9 +169,12 @@ actor OSMDataDownloader {
 
         let highwayValues = RoutingCostConfig.routableHighwayValues.sorted().joined(separator: "|")
 
+        // Apply bbox only to the way query (not globally) so that
+        // recurse-down (._;>;) can fetch nodes outside the bbox that
+        // are referenced by ways crossing the boundary.
         return """
-        [out:xml][timeout:\(Self.overpassTimeoutSeconds)][bbox:\(bbox)];
-        way["highway"~"^\(highwayValues)$"];
+        [out:xml][timeout:\(Self.overpassTimeoutSeconds)];
+        way["highway"~"^(\(highwayValues))$"](\(bbox));
         (._;>;);
         out body;
         """
@@ -188,7 +200,11 @@ actor OSMDataDownloader {
                     var request = URLRequest(url: url)
                     request.httpMethod = "POST"
                     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                    let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+                    // Use a restricted character set for form encoding — .urlQueryAllowed
+                    // leaves &, =, + unescaped which are special in form bodies.
+                    var formAllowed = CharacterSet.alphanumerics
+                    formAllowed.insert(charactersIn: "-._~")
+                    let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: formAllowed) ?? query
                     request.httpBody = "data=\(encodedQuery)".data(using: .utf8)
 
                     let (data, response) = try await session.data(for: request)
@@ -202,7 +218,8 @@ actor OSMDataDownloader {
                         return data
                     case 429:
                         // Rate limited — wait longer
-                        let delay = UInt64(pow(2.0, Double(attempt + 2))) * 1_000_000_000
+                        lastError = OSMDownloadError.httpError(429)
+                        let delay = UInt64(pow(2.0, Double(attempt + 2))) * Self.nanosecondsPerSecond
                         try await Task.sleep(nanoseconds: delay)
                         continue
                     case 504:
@@ -217,7 +234,7 @@ actor OSMDataDownloader {
                 } catch {
                     lastError = error
                     if attempt < Self.maxRetries - 1 {
-                        let delay = UInt64(pow(2.0, Double(attempt + 1))) * 1_000_000_000
+                        let delay = UInt64(pow(2.0, Double(attempt + 1))) * Self.nanosecondsPerSecond
                         try await Task.sleep(nanoseconds: delay)
                     }
                 }
@@ -339,17 +356,14 @@ private class OverpassXMLParser: NSObject, XMLParserDelegate {
     ) {
         switch elementName {
         case "node":
-            // Store all nodes (ways reference them by ID)
-            let coord = CLLocationCoordinate2D(latitude: currentNodeLat, longitude: currentNodeLon)
-            if boundingBox.contains(coord) || true {
-                // Keep all nodes because ways might reference nodes just outside the bbox
-                nodes[currentNodeId] = PBFParser.OSMNode(
-                    id: currentNodeId,
-                    latitude: currentNodeLat,
-                    longitude: currentNodeLon,
-                    tags: currentNodeTags
-                )
-            }
+            // Keep all nodes — ways may reference nodes outside the bbox,
+            // and the Overpass query already filters ways by area.
+            nodes[currentNodeId] = PBFParser.OSMNode(
+                id: currentNodeId,
+                latitude: currentNodeLat,
+                longitude: currentNodeLon,
+                tags: currentNodeTags
+            )
             inNode = false
 
         case "way":
