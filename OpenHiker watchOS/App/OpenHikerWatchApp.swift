@@ -234,6 +234,8 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             handleReceivedMBTiles(file: file, metadata: metadata)
         case "gpx":
             handleReceivedGPX(file: file, metadata: metadata)
+        case "routingdb":
+            handleReceivedRoutingDB(file: file, metadata: metadata)
         default:
             print("Unknown file type: \(fileType)")
         }
@@ -337,6 +339,60 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Processes a received routing database file from the iOS companion app.
+    ///
+    /// Moves the file to `Documents/regions/<uuid>.routing.db` alongside the
+    /// corresponding MBTiles file. The region's metadata is updated to reflect
+    /// that routing data is now available.
+    ///
+    /// - Parameters:
+    ///   - file: The received WCSession file containing the routing database.
+    ///   - metadata: The transfer metadata dictionary with the region ID and name.
+    private func handleReceivedRoutingDB(file: WCSessionFile, metadata: [String: Any]) {
+        guard let regionIdString = metadata["regionId"] as? String,
+              let regionId = UUID(uuidString: regionIdString),
+              let name = metadata["name"] as? String else {
+            print("Invalid routing database metadata")
+            return
+        }
+
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let regionsDir = documentsDir.appendingPathComponent("regions", isDirectory: true)
+
+        do {
+            try FileManager.default.createDirectory(at: regionsDir, withIntermediateDirectories: true)
+
+            let destinationURL = regionsDir.appendingPathComponent("\(regionId.uuidString).routing.db")
+
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+
+            try FileManager.default.moveItem(at: file.fileURL, to: destinationURL)
+
+            // Update existing region metadata to reflect routing data availability
+            var allMetadata = loadAllRegionMetadata()
+            if let index = allMetadata.firstIndex(where: { $0.id == regionId }) {
+                let existing = allMetadata[index]
+                allMetadata[index] = RegionMetadata(
+                    id: existing.id,
+                    name: existing.name,
+                    boundingBox: existing.boundingBox,
+                    minZoom: existing.minZoom,
+                    maxZoom: existing.maxZoom,
+                    tileCount: existing.tileCount,
+                    hasRoutingData: true
+                )
+                saveRegionMetadata(allMetadata[index])
+            }
+
+            print("Successfully received routing database for region: \(name)")
+
+        } catch {
+            print("Error saving received routing database: \(error.localizedDescription)")
+        }
+    }
+
     /// Persists a ``RegionMetadata`` object to the JSON metadata file.
     ///
     /// If a region with the same ID already exists, it is replaced. The full
@@ -435,13 +491,15 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
                 continue
             }
 
+            let hasRoutingData = dict["hasRoutingData"] as? Bool ?? false
             phoneRegions.append(RegionMetadata(
                 id: id,
                 name: name,
                 boundingBox: BoundingBox(north: north, south: south, east: east, west: west),
                 minZoom: minZoom,
                 maxZoom: maxZoom,
-                tileCount: tileCount
+                tileCount: tileCount,
+                hasRoutingData: hasRoutingData
             ))
         }
 

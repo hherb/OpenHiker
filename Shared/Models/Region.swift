@@ -41,9 +41,20 @@ struct Region: Identifiable, Codable, Sendable {
     /// Size of the MBTiles file on disk in bytes
     let fileSizeBytes: Int64
 
+    /// Whether a routing graph database has been built for this region.
+    ///
+    /// When `true`, a `.routing.db` file exists alongside the `.mbtiles` file
+    /// and can be transferred to the watch for offline route computation.
+    let hasRoutingData: Bool
+
     /// The filename for the MBTiles database, derived from the region's UUID.
     var mbtilesFilename: String {
         "\(id.uuidString).mbtiles"
+    }
+
+    /// The filename for the routing graph database, derived from the region's UUID.
+    var routingDbFilename: String {
+        "\(id.uuidString).routing.db"
     }
 
     /// Human-readable file size (e.g., "12.3 MB") formatted using the system's byte count formatter.
@@ -66,6 +77,7 @@ struct Region: Identifiable, Codable, Sendable {
     ///   - createdAt: Timestamp of creation (defaults to now).
     ///   - tileCount: Total number of tiles downloaded.
     ///   - fileSizeBytes: Size of the MBTiles file on disk in bytes.
+    ///   - hasRoutingData: Whether a routing graph has been built for this region.
     init(
         id: UUID = UUID(),
         name: String,
@@ -73,7 +85,8 @@ struct Region: Identifiable, Codable, Sendable {
         zoomLevels: ClosedRange<Int>,
         createdAt: Date = Date(),
         tileCount: Int,
-        fileSizeBytes: Int64
+        fileSizeBytes: Int64,
+        hasRoutingData: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -82,6 +95,7 @@ struct Region: Identifiable, Codable, Sendable {
         self.createdAt = createdAt
         self.tileCount = tileCount
         self.fileSizeBytes = fileSizeBytes
+        self.hasRoutingData = hasRoutingData
     }
 }
 
@@ -109,6 +123,9 @@ struct RegionDownloadProgress: Sendable {
         case downloading
         case rendering
         case packaging
+        case downloadingTrailData
+        case downloadingElevation
+        case buildingRoutingGraph
         case transferring
         case completed
         case failed(Error)
@@ -120,6 +137,9 @@ struct RegionDownloadProgress: Sendable {
             case .downloading: return "Downloading tiles..."
             case .rendering: return "Rendering map..."
             case .packaging: return "Creating offline package..."
+            case .downloadingTrailData: return "Downloading trail data..."
+            case .downloadingElevation: return "Downloading elevation data..."
+            case .buildingRoutingGraph: return "Building routing graph..."
             case .transferring: return "Transferring to Watch..."
             case .completed: return "Complete"
             case .failed(let error): return "Failed: \(error.localizedDescription)"
@@ -162,6 +182,12 @@ struct RegionSelectionRequest: Codable, Sendable {
     let zoomLevels: ClosedRange<Int>
     /// Whether to include contour line tiles (adds ~30% more data)
     let includeContours: Bool
+    /// Whether to build an offline routing graph for this region.
+    ///
+    /// When enabled, OSM trail data and elevation data are downloaded
+    /// and compiled into a `.routing.db` SQLite database alongside the
+    /// MBTiles tile data.
+    let includeRoutingData: Bool
 
     /// Default zoom levels for hiking: 12-16 provides enough detail for trail navigation.
     static let defaultHikingZoomLevels: ClosedRange<Int> = 12...16
@@ -196,16 +222,19 @@ struct RegionSelectionRequest: Codable, Sendable {
     ///   - boundingBox: Geographic area to download.
     ///   - zoomLevels: Zoom levels to include (defaults to `12...16` for hiking).
     ///   - includeContours: Whether to include contour line data (defaults to `true`).
+    ///   - includeRoutingData: Whether to build a routing graph (defaults to `true`).
     init(
         name: String,
         boundingBox: BoundingBox,
         zoomLevels: ClosedRange<Int> = Self.defaultHikingZoomLevels,
-        includeContours: Bool = true
+        includeContours: Bool = true,
+        includeRoutingData: Bool = true
     ) {
         self.name = name
         self.boundingBox = boundingBox
         self.zoomLevels = zoomLevels
         self.includeContours = includeContours
+        self.includeRoutingData = includeRoutingData
     }
 }
 
@@ -230,6 +259,9 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
     /// Total number of tiles in the region
     let tileCount: Int
 
+    /// Whether an offline routing graph database is available for this region.
+    let hasRoutingData: Bool
+
     /// The range of available zoom levels as a `ClosedRange`.
     var zoomLevels: ClosedRange<Int> {
         minZoom...maxZoom
@@ -247,6 +279,7 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
         self.minZoom = region.zoomLevels.lowerBound
         self.maxZoom = region.zoomLevels.upperBound
         self.tileCount = region.tileCount
+        self.hasRoutingData = region.hasRoutingData
     }
 
     /// Create metadata from explicit values.
@@ -260,13 +293,15 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
     ///   - minZoom: Minimum available zoom level.
     ///   - maxZoom: Maximum available zoom level.
     ///   - tileCount: Total number of tiles.
+    ///   - hasRoutingData: Whether a routing database is available.
     init(
         id: UUID,
         name: String,
         boundingBox: BoundingBox,
         minZoom: Int,
         maxZoom: Int,
-        tileCount: Int
+        tileCount: Int,
+        hasRoutingData: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -274,6 +309,7 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
         self.minZoom = minZoom
         self.maxZoom = maxZoom
         self.tileCount = tileCount
+        self.hasRoutingData = hasRoutingData
     }
 
     /// Check if a geographic coordinate is within this region's bounding box.
