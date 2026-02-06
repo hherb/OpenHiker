@@ -1,6 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import MapKit
+import CoreLocation
 
 struct RegionSelectorView: View {
     @State private var cameraPosition: MapCameraPosition = .automatic
@@ -9,6 +10,9 @@ struct RegionSelectorView: View {
     @State private var selectedRegion: MKCoordinateRegion?
     @State private var showDownloadSheet = false
     @State private var regionName = ""
+    @State private var showSearchSheet = false
+    @StateObject private var locationManager = LocationManageriOS()
+    @StateObject private var searchCompleter = LocationSearchCompleter()
 
     // Default to a nice hiking area (Yosemite)
     private let defaultCenter = CLLocationCoordinate2D(latitude: 37.8651, longitude: -119.5383)
@@ -29,16 +33,45 @@ struct RegionSelectorView: View {
                 .mapControls {
                     MapCompass()
                     MapScaleView()
-                    MapUserLocationButton()
                 }
 
-                // Selection overlay
+                // Selection overlay - only blocks gestures during active selection
                 if isSelecting {
                     SelectionOverlay(selectionRect: $selectionRect)
                 }
 
-                // Instructions overlay
+                // Custom controls overlay
                 VStack {
+                    HStack {
+                        Spacer()
+
+                        VStack(spacing: 8) {
+                            // Search location button
+                            Button {
+                                showSearchSheet = true
+                            } label: {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            // Center on location button
+                            Button {
+                                centerOnUserLocation()
+                            } label: {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                        .padding(.trailing, 8)
+                        .padding(.top, 60) // Below navigation bar
+                    }
+
                     Spacer()
 
                     if selectedRegion != nil {
@@ -77,6 +110,21 @@ struct RegionSelectorView: View {
                     onDownload: startDownload
                 )
                 .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showSearchSheet) {
+                LocationSearchSheet(
+                    searchCompleter: searchCompleter,
+                    onSelectLocation: { coordinate in
+                        showSearchSheet = false
+                        withAnimation {
+                            cameraPosition = .region(MKCoordinateRegion(
+                                center: coordinate,
+                                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
+                            ))
+                        }
+                    }
+                )
+                .presentationDetents([.medium, .large])
             }
         }
         .onAppear {
@@ -201,6 +249,164 @@ struct RegionSelectorView: View {
 
         showDownloadSheet = false
         selectedRegion = nil
+    }
+
+    private func centerOnUserLocation() {
+        locationManager.requestLocationPermission()
+
+        if let location = locationManager.currentLocation {
+            withAnimation {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: location.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+                ))
+            }
+        }
+    }
+}
+
+// MARK: - Location Search
+
+class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    @Published var searchQuery = ""
+    @Published var completions: [MKLocalSearchCompletion] = []
+    @Published var isSearching = false
+
+    private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+
+    func search(_ query: String) {
+        searchQuery = query
+        if query.isEmpty {
+            completions = []
+            isSearching = false
+        } else {
+            isSearching = true
+            completer.queryFragment = query
+        }
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        completions = completer.results
+        isSearching = false
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        print("Search completer error: \(error.localizedDescription)")
+        isSearching = false
+    }
+
+    func getCoordinate(for completion: MKLocalSearchCompletion) async -> CLLocationCoordinate2D? {
+        let request = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: request)
+
+        do {
+            let response = try await search.start()
+            return response.mapItems.first?.placemark.coordinate
+        } catch {
+            print("Search error: \(error.localizedDescription)")
+            return nil
+        }
+    }
+}
+
+struct LocationSearchSheet: View {
+    @ObservedObject var searchCompleter: LocationSearchCompleter
+    let onSelectLocation: (CLLocationCoordinate2D) -> Void
+
+    @State private var searchText = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Search results
+                if searchCompleter.completions.isEmpty && !searchText.isEmpty && !searchCompleter.isSearching {
+                    ContentUnavailableView.search(text: searchText)
+                } else {
+                    List(searchCompleter.completions, id: \.self) { completion in
+                        Button {
+                            Task {
+                                if let coordinate = await searchCompleter.getCoordinate(for: completion) {
+                                    onSelectLocation(coordinate)
+                                }
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(completion.title)
+                                    .foregroundStyle(.primary)
+                                if !completion.subtitle.isEmpty {
+                                    Text(completion.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Search Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search for a place")
+            .onChange(of: searchText) { _, newValue in
+                searchCompleter.search(newValue)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Location Manager for iOS
+
+class LocationManageriOS: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+
+    @Published var currentLocation: CLLocation?
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        authorizationStatus = manager.authorizationStatus
+    }
+
+    func requestLocationPermission() {
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        currentLocation = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Location error: \(error.localizedDescription)")
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+            manager.requestLocation()
+        }
     }
 }
 
