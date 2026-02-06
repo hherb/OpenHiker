@@ -261,9 +261,12 @@ struct SaveHikeSheet: View {
     ///   - data: The GPX XML data to save.
     ///   - name: The file name (without extension).
     private func saveGPXToDocuments(_ data: Data, name: String) {
-        let documentsDir = FileManager.default.urls(
+        guard let documentsDir = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
-        ).first!
+        ).first else {
+            print("Error: Documents directory unavailable, cannot save GPX")
+            return
+        }
         let routesDir = documentsDir.appendingPathComponent("routes", isDirectory: true)
 
         do {

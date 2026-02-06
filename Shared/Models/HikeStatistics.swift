@@ -111,6 +111,13 @@ enum HikeStatisticsConfig {
     /// 70 kg is the WHO reference adult weight.
     static let defaultBodyMassKg: Double = 70.0
 
+    /// Minimum duration in seconds below ``restingSpeedThreshold`` to count as a rest stop.
+    ///
+    /// Short pauses under this threshold (e.g., stopping at a junction to check
+    /// the map) are counted as walking time to avoid over-counting rest periods.
+    /// 60 seconds = 1 minute.
+    static let minRestDurationSec: TimeInterval = 60.0
+
     /// Maximum age in seconds for a SpO2 reading to be considered "recent".
     ///
     /// Blood oxygen samples older than this threshold are hidden from the

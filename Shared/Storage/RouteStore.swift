@@ -68,16 +68,28 @@ enum RouteStoreError: Error, LocalizedError {
 /// store.close()
 /// ```
 final class RouteStore: @unchecked Sendable, ObservableObject {
+    // MARK: - Constants
+
+    /// The `SQLITE_TRANSIENT` destructor type, which tells SQLite to copy the data immediately.
+    ///
+    /// The C macro `SQLITE_TRANSIENT` is `((sqlite3_destructor_type)-1)`, which doesn't bridge
+    /// to Swift. This constant reproduces the same bit pattern via `unsafeBitCast`.
+    private static let sqliteTransient = Self.sqliteTransient
+
     // MARK: - Singleton
 
     /// Shared singleton instance used across the app.
     ///
     /// The database path defaults to `Documents/routes.db`.
+    /// Falls back to a temporary directory if the Documents directory is unavailable.
     static let shared: RouteStore = {
-        let documentsDir = FileManager.default.urls(
+        guard let documentsDir = FileManager.default.urls(
             for: .documentDirectory,
             in: .userDomainMask
-        ).first!
+        ).first else {
+            let fallback = NSTemporaryDirectory()
+            return RouteStore(path: (fallback as NSString).appendingPathComponent("routes.db"))
+        }
         let dbPath = documentsDir.appendingPathComponent("routes.db").path
         return RouteStore(path: dbPath)
     }()
@@ -200,14 +212,14 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             let endTimeString = dateFormatter.string(from: route.endTime)
             let regionIdString = route.regionId?.uuidString
 
-            sqlite3_bind_text(statement, 1, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_text(statement, 2, route.name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 1, idString, -1, Self.sqliteTransient)
+            sqlite3_bind_text(statement, 2, route.name, -1, Self.sqliteTransient)
             sqlite3_bind_double(statement, 3, route.startLatitude)
             sqlite3_bind_double(statement, 4, route.startLongitude)
             sqlite3_bind_double(statement, 5, route.endLatitude)
             sqlite3_bind_double(statement, 6, route.endLongitude)
-            sqlite3_bind_text(statement, 7, startTimeString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_text(statement, 8, endTimeString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 7, startTimeString, -1, Self.sqliteTransient)
+            sqlite3_bind_text(statement, 8, endTimeString, -1, Self.sqliteTransient)
             sqlite3_bind_double(statement, 9, route.totalDistance)
             sqlite3_bind_double(statement, 10, route.elevationGain)
             sqlite3_bind_double(statement, 11, route.elevationLoss)
@@ -232,16 +244,16 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 sqlite3_bind_null(statement, 16)
             }
 
-            sqlite3_bind_text(statement, 17, route.comment, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 17, route.comment, -1, Self.sqliteTransient)
 
             if let regionIdString = regionIdString {
-                sqlite3_bind_text(statement, 18, regionIdString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_text(statement, 18, regionIdString, -1, Self.sqliteTransient)
             } else {
                 sqlite3_bind_null(statement, 18)
             }
 
             route.trackData.withUnsafeBytes { ptr in
-                sqlite3_bind_blob(statement, 19, ptr.baseAddress, Int32(route.trackData.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_blob(statement, 19, ptr.baseAddress, Int32(route.trackData.count), Self.sqliteTransient)
             }
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
@@ -275,9 +287,9 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
             let idString = route.id.uuidString
 
-            sqlite3_bind_text(statement, 1, route.name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_text(statement, 2, route.comment, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_text(statement, 3, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 1, route.name, -1, Self.sqliteTransient)
+            sqlite3_bind_text(statement, 2, route.comment, -1, Self.sqliteTransient)
+            sqlite3_bind_text(statement, 3, idString, -1, Self.sqliteTransient)
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
@@ -310,7 +322,7 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             defer { sqlite3_finalize(statement) }
 
             let idString = id.uuidString
-            sqlite3_bind_text(statement, 1, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 1, idString, -1, Self.sqliteTransient)
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
@@ -372,7 +384,7 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             defer { sqlite3_finalize(statement) }
 
             let idString = id.uuidString
-            sqlite3_bind_text(statement, 1, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(statement, 1, idString, -1, Self.sqliteTransient)
 
             guard sqlite3_step(statement) == SQLITE_ROW else {
                 return nil

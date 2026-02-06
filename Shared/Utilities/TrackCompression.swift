@@ -50,6 +50,20 @@ enum TrackCompression {
     /// = 4 + 4 + 4 + 8 = 20 bytes.
     static let bytesPerPoint = 20
 
+    /// Extra bytes added to the compression output buffer beyond the source size.
+    ///
+    /// Zlib output is typically smaller than input, but for very small inputs
+    /// the overhead of zlib framing can make the output slightly larger. This
+    /// safety margin prevents buffer overruns.
+    private static let compressionBufferMargin = 64
+
+    /// Multiplier applied to compressed data size to estimate the decompression
+    /// buffer size.
+    ///
+    /// For our binary track records, the typical compression ratio is ~2:1.
+    /// Using 10x provides a safe upper bound while keeping allocation reasonable.
+    private static let decompressionBufferMultiplier = 10
+
     // MARK: - Encode
 
     /// Encodes an array of CLLocation objects into compressed binary data.
@@ -189,7 +203,7 @@ enum TrackCompression {
     private static func compress(_ sourceData: Data) -> Data? {
         // Destination buffer — same size as source is usually enough for zlib
         // (compressed output is smaller). Add a small margin for safety.
-        let destinationBufferSize = sourceData.count + 64
+        let destinationBufferSize = sourceData.count + compressionBufferMargin
         let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
         defer { destinationBuffer.deallocate() }
 
@@ -221,7 +235,7 @@ enum TrackCompression {
     private static func decompress(_ compressedData: Data) -> Data? {
         // Estimate decompressed size: for our binary track data, typical ratio is ~2:1
         // Use 10x as upper bound to be safe.
-        let destinationBufferSize = compressedData.count * 10
+        let destinationBufferSize = compressedData.count * decompressionBufferMultiplier
         let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
         defer { destinationBuffer.deallocate() }
 

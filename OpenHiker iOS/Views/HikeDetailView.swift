@@ -34,6 +34,20 @@ struct HikeDetailView: View {
     /// The saved route to display. Mutable so the user can edit name/comment.
     @State private var route: SavedRoute
 
+    /// Factor applied to track bounds to add visual padding around the polyline on the map.
+    ///
+    /// 1.2 means the map shows 20% more area beyond the track's bounding box.
+    private static let mapBoundsPaddingFactor = 1.2
+
+    /// Minimum coordinate span in degrees for the map region.
+    ///
+    /// Prevents the map from zooming in too far on very short tracks where the
+    /// bounding box would be nearly zero. 0.005 degrees is roughly 500m.
+    private static let mapMinSpanDegrees = 0.005
+
+    /// Required length for a valid hex color string (6 hex characters, no prefix).
+    private static let hexColorStringLength = 6
+
     /// Decoded track coordinates for the map polyline overlay.
     @State private var trackCoordinates: [CLLocationCoordinate2D] = []
 
@@ -356,13 +370,11 @@ struct HikeDetailView: View {
                 latitude: (minLat + maxLat) / 2,
                 longitude: (minLon + maxLon) / 2
             )
-            // Add 20% padding to the span
-            let paddingFactor = 1.2
-            let latDelta = (maxLat - minLat) * paddingFactor
-            let lonDelta = (maxLon - minLon) * paddingFactor
+            let latDelta = (maxLat - minLat) * Self.mapBoundsPaddingFactor
+            let lonDelta = (maxLon - minLon) * Self.mapBoundsPaddingFactor
             let span = MKCoordinateSpan(
-                latitudeDelta: max(latDelta, 0.005),
-                longitudeDelta: max(lonDelta, 0.005)
+                latitudeDelta: max(latDelta, Self.mapMinSpanDegrees),
+                longitudeDelta: max(lonDelta, Self.mapMinSpanDegrees)
             )
             let region = MKCoordinateRegion(center: center, span: span)
             cameraPosition = .region(region)
@@ -400,9 +412,20 @@ struct HikeDetailView: View {
 extension Color {
     /// Creates a Color from a hex string (6 characters, no `#` prefix).
     ///
+    /// If the string is not exactly 6 hex characters, falls back to a 50% gray
+    /// so the UI remains usable even with malformed data.
+    ///
     /// - Parameter hex: A 6-character hex color string (e.g., "4A90D9").
     init(hex: String) {
-        let scanner = Scanner(string: hex)
+        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard trimmed.count == HikeDetailView.hexColorStringLength,
+              trimmed.allSatisfy({ $0.isHexDigit }) else {
+            self.init(white: 0.5)
+            return
+        }
+
+        let scanner = Scanner(string: trimmed)
         var rgbValue: UInt64 = 0
         scanner.scanHexInt64(&rgbValue)
 
