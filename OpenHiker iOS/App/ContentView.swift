@@ -19,15 +19,16 @@ import SwiftUI
 
 /// The root content view of the iOS companion app.
 ///
-/// Presents a tab-based interface with four main sections:
+/// Presents a tab-based interface with five main sections:
 /// - **Regions**: Select and download new map regions from OpenTopoMap
 /// - **Downloaded**: View, manage, and transfer previously downloaded regions
 /// - **Hikes**: Review saved hikes with track overlay, elevation profile, and stats
+/// - **Community**: Browse and download shared routes from the OpenHikerRoutes repository
 /// - **Watch**: Monitor Apple Watch connectivity and manage file transfers
 struct ContentView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
-    /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Watch).
+    /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Community, 4 = Watch).
     @State private var selectedTab = 0
 
     var body: some View {
@@ -50,11 +51,17 @@ struct ContentView: View {
                 }
                 .tag(2)
 
+            CommunityBrowseView()
+                .tabItem {
+                    Label("Community", systemImage: "globe")
+                }
+                .tag(3)
+
             WatchSyncView()
                 .tabItem {
                     Label("Watch", systemImage: "applewatch")
                 }
-                .tag(3)
+                .tag(4)
         }
     }
 }

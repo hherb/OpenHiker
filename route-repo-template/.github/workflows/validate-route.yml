@@ -1,0 +1,133 @@
+name: Validate Route PR
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'routes/**'
+      - 'waypoints/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed route files
+        id: changed
+        run: |
+          # Get list of added/modified route.json files in this PR
+          ROUTE_FILES=$(git diff --name-only --diff-filter=A origin/main...HEAD | grep 'route\.json$' || true)
+          echo "route_files=$ROUTE_FILES" >> "$GITHUB_OUTPUT"
+          echo "Found route files: $ROUTE_FILES"
+
+      - name: Validate route.json schema
+        if: steps.changed.outputs.route_files != ''
+        run: |
+          for file in ${{ steps.changed.outputs.route_files }}; do
+            echo "Validating: $file"
+
+            # Check it's valid JSON
+            if ! python3 -m json.tool "$file" > /dev/null 2>&1; then
+              echo "ERROR: $file is not valid JSON"
+              exit 1
+            fi
+
+            # Check required fields exist
+            python3 -c "
+          import json, sys
+          with open('$file') as f:
+              data = json.load(f)
+
+          required = ['id', 'version', 'name', 'activityType', 'author', 'createdAt',
+                      'region', 'stats', 'boundingBox', 'track']
+          missing = [k for k in required if k not in data]
+          if missing:
+              print(f'ERROR: Missing required fields: {missing}')
+              sys.exit(1)
+
+          # Validate stats
+          stats_required = ['distanceMeters', 'elevationGainMeters', 'elevationLossMeters', 'durationSeconds']
+          missing_stats = [k for k in stats_required if k not in data.get('stats', {})]
+          if missing_stats:
+              print(f'ERROR: Missing stats fields: {missing_stats}')
+              sys.exit(1)
+
+          # Validate bounding box
+          bbox_required = ['north', 'south', 'east', 'west']
+          missing_bbox = [k for k in bbox_required if k not in data.get('boundingBox', {})]
+          if missing_bbox:
+              print(f'ERROR: Missing boundingBox fields: {missing_bbox}')
+              sys.exit(1)
+
+          # Validate track has points
+          if len(data.get('track', [])) < 2:
+              print('ERROR: Track must have at least 2 points')
+              sys.exit(1)
+
+          # Validate activity type
+          valid_types = ['hiking', 'cycling', 'running', 'skiTouring', 'other']
+          if data['activityType'] not in valid_types:
+              print(f'ERROR: Invalid activityType: {data[\"activityType\"]}. Must be one of {valid_types}')
+              sys.exit(1)
+
+          print(f'OK: {data[\"name\"]} by {data[\"author\"]} ({len(data[\"track\"])} track points)')
+          "
+          done
+
+      - name: Check photo file sizes
+        run: |
+          # Ensure no individual photo exceeds 200KB (compressed 640x400 should be well under)
+          MAX_SIZE=204800  # 200KB
+          find routes/ waypoints/ -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' 2>/dev/null | while read -r photo; do
+            size=$(stat -f%z "$photo" 2>/dev/null || stat -c%s "$photo" 2>/dev/null || echo 0)
+            if [ "$size" -gt "$MAX_SIZE" ]; then
+              echo "WARNING: $photo is ${size} bytes (max ${MAX_SIZE})"
+            fi
+          done
+          echo "Photo size check complete"
+
+      - name: Post validation summary
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const routeFiles = '${{ steps.changed.outputs.route_files }}'.split('\n').filter(f => f);
+
+            if (routeFiles.length === 0) {
+              return;
+            }
+
+            let summary = '## Route Validation Summary\n\n';
+            for (const file of routeFiles) {
+              try {
+                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+                const distKm = (data.stats.distanceMeters / 1000).toFixed(1);
+                const eleGain = Math.round(data.stats.elevationGainMeters);
+                summary += `### ${data.name}\n`;
+                summary += `- **Activity:** ${data.activityType}\n`;
+                summary += `- **Author:** ${data.author}\n`;
+                summary += `- **Region:** ${data.region.area}, ${data.region.country}\n`;
+                summary += `- **Distance:** ${distKm} km\n`;
+                summary += `- **Elevation Gain:** ${eleGain} m\n`;
+                summary += `- **Track Points:** ${data.track.length}\n`;
+                summary += `- **Waypoints:** ${(data.waypoints || []).length}\n`;
+                summary += `- **Photos:** ${(data.photos || []).length}\n\n`;
+              } catch (e) {
+                summary += `- **${file}:** Failed to parse - ${e.message}\n\n`;
+              }
+            }
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: summary
+            });
