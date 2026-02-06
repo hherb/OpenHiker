@@ -108,14 +108,13 @@ final class HealthKitManager: NSObject, ObservableObject {
     }()
 
     /// The set of HealthKit data types we request write access for.
-    private static let writeTypes: Set<HKSampleType> = {
-        var types = Set<HKSampleType>()
-        types.insert(HKWorkoutType.workoutType())
-        if let route = HKSeriesType.workoutRoute() as? HKSampleType {
-            types.insert(route)
-        }
-        return types
-    }()
+    ///
+    /// Includes `HKSeriesType.workoutRoute()` for saving GPS routes with workouts.
+    /// `HKSeriesType` is a subclass of `HKSampleType`, so no cast is needed.
+    private static let writeTypes: Set<HKSampleType> = [
+        HKWorkoutType.workoutType(),
+        HKSeriesType.workoutRoute()
+    ]
 
     // MARK: - Initialization
 
@@ -155,13 +154,14 @@ final class HealthKitManager: NSObject, ObservableObject {
                 read: Self.readTypes
             )
 
-            // Check actual authorization status for heart rate (primary indicator)
-            let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-            let status = healthStore.authorizationStatus(for: hrType)
+            // Check authorization status for workout type (a share type).
+            // Note: authorizationStatus(for:) only reports *share* status.
+            // Read-only types (heart rate, SpO2) don't expose their status
+            // for privacy reasons — HealthKit returns empty results instead.
+            let workoutStatus = healthStore.authorizationStatus(for: HKWorkoutType.workoutType())
 
             await MainActor.run {
-                self.isAuthorized = (status == .sharingAuthorized)
-                    || healthStore.authorizationStatus(for: HKWorkoutType.workoutType()) == .sharingAuthorized
+                self.isAuthorized = (workoutStatus == .sharingAuthorized)
             }
 
             // Try to read body mass for calorie estimation
