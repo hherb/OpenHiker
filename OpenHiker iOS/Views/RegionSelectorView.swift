@@ -14,6 +14,8 @@ struct RegionSelectorView: View {
     @State private var isDownloading = false
     @State private var downloadProgress: RegionDownloadProgress?
     @State private var downloadError: Error?
+    @State private var minZoom: Int = 12
+    @State private var maxZoom: Int = 16
     @StateObject private var locationManager = LocationManageriOS()
     @StateObject private var searchCompleter = LocationSearchCompleter()
 
@@ -123,6 +125,8 @@ struct RegionSelectorView: View {
                 DownloadConfigSheet(
                     region: selectedRegion!,
                     regionName: $regionName,
+                    minZoom: $minZoom,
+                    maxZoom: $maxZoom,
                     onDownload: startDownload
                 )
                 .presentationDetents([.medium])
@@ -238,7 +242,7 @@ struct RegionSelectorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    let tileCount = boundingBox.estimateTileCount(zoomLevels: 12...16)
+                    let tileCount = boundingBox.estimateTileCount(zoomLevels: minZoom...maxZoom)
                     Text("~\(tileCount) tiles • ~\(estimatedSize(tileCount: tileCount))")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -312,7 +316,8 @@ struct RegionSelectorView: View {
 
         let request = RegionSelectionRequest(
             name: regionName.isEmpty ? "Region \(Date().formatted(date: .abbreviated, time: .omitted))" : regionName,
-            boundingBox: boundingBox
+            boundingBox: boundingBox,
+            zoomLevels: minZoom...maxZoom
         )
 
         showDownloadSheet = false
@@ -584,10 +589,24 @@ struct SelectionOverlay: View {
 struct DownloadConfigSheet: View {
     let region: MKCoordinateRegion
     @Binding var regionName: String
+    @Binding var minZoom: Int
+    @Binding var maxZoom: Int
     let onDownload: () -> Void
 
     @State private var includeContours = true
-    @State private var zoomRange: ClosedRange<Double> = 12...16
+
+    private var boundingBox: BoundingBox {
+        BoundingBox(
+            north: region.center.latitude + region.span.latitudeDelta / 2,
+            south: region.center.latitude - region.span.latitudeDelta / 2,
+            east: region.center.longitude + region.span.longitudeDelta / 2,
+            west: region.center.longitude - region.span.longitudeDelta / 2
+        )
+    }
+
+    private var estimatedTiles: Int {
+        boundingBox.estimateTileCount(zoomLevels: minZoom...maxZoom)
+    }
 
     var body: some View {
         NavigationStack {
@@ -601,22 +620,20 @@ struct DownloadConfigSheet: View {
                 Section {
                     Toggle("Include Contour Lines", isOn: $includeContours)
 
-                    VStack(alignment: .leading) {
-                        Text("Zoom Levels: \(Int(zoomRange.lowerBound))-\(Int(zoomRange.upperBound))")
+                    Stepper("Min Zoom: \(minZoom)", value: $minZoom, in: 8...maxZoom)
+                    Stepper("Max Zoom: \(maxZoom)", value: $maxZoom, in: minZoom...18)
 
-                        // Simplified slider for now
-                        HStack {
-                            Text("12")
-                            Spacer()
-                            Text("16")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text("~\(estimatedTiles) tiles")
+                        Spacer()
+                        Text("~\(ByteCountFormatter.string(fromByteCount: Int64(estimatedTiles) * 15_000, countStyle: .file))")
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 } header: {
                     Text("Options")
                 } footer: {
-                    Text("Higher zoom levels provide more detail but require more storage.")
+                    Text("Higher zoom levels provide more detail but require more storage. Level 16 shows individual trails.")
                 }
 
                 Section {
