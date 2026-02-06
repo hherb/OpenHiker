@@ -42,21 +42,21 @@ final class HealthKitManager: NSObject, ObservableObject {
     // MARK: - Published Properties
 
     /// The most recent heart rate reading in beats per minute, or `nil` if unavailable.
-    @Published var currentHeartRate: Double?
+    @Published private(set) var currentHeartRate: Double?
 
     /// The most recent blood oxygen saturation as a fraction (0.0-1.0), or `nil` if unavailable.
     ///
     /// Only set when the reading is less than ``HikeStatisticsConfig/spO2MaxAgeSec`` old.
-    @Published var currentSpO2: Double?
+    @Published private(set) var currentSpO2: Double?
 
     /// Whether the user has granted HealthKit authorization for the required data types.
-    @Published var isAuthorized = false
+    @Published private(set) var isAuthorized = false
 
     /// Whether an HKWorkoutSession is currently running.
-    @Published var workoutActive = false
+    @Published private(set) var workoutActive = false
 
     /// Any error encountered during HealthKit operations, for display in the UI.
-    @Published var healthKitError: Error?
+    @Published private(set) var healthKitError: Error?
 
     // MARK: - Internal State
 
@@ -78,10 +78,18 @@ final class HealthKitManager: NSObject, ObservableObject {
     /// The anchored query for SpO2 updates.
     private var spO2Query: HKAnchoredObjectQuery?
 
+    /// Serial queue protecting ``heartRateSamples`` and ``spO2Samples`` from
+    /// concurrent access across HealthKit background callbacks and the main thread.
+    private let samplesQueue = DispatchQueue(label: "com.openhiker.samples", qos: .userInitiated)
+
     /// All heart rate samples collected during the current workout, used for avg/max calculations.
+    ///
+    /// - Important: Always access via ``samplesQueue`` to avoid data races.
     private var heartRateSamples: [Double] = []
 
     /// All SpO2 samples collected during the current workout, used for average calculations.
+    ///
+    /// - Important: Always access via ``samplesQueue`` to avoid data races.
     private var spO2Samples: [Double] = []
 
     /// The user's body mass in kg, read from HealthKit for calorie estimation.
@@ -212,8 +220,10 @@ final class HealthKitManager: NSObject, ObservableObject {
             routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
 
             workoutStartDate = Date()
-            heartRateSamples.removeAll()
-            spO2Samples.removeAll()
+            samplesQueue.sync {
+                heartRateSamples.removeAll()
+                spO2Samples.removeAll()
+            }
 
             workoutSession?.startActivity(with: workoutStartDate!)
             workoutBuilder?.beginCollection(withStart: workoutStartDate!) { success, error in
@@ -255,6 +265,16 @@ final class HealthKitManager: NSObject, ObservableObject {
         guard let workoutSession = workoutSession,
               let workoutBuilder = workoutBuilder,
               let startDate = workoutStartDate else {
+            print("stopWorkout() called but no active workout session exists")
+            await MainActor.run {
+                self.healthKitError = HealthKitError.workoutSaveFailed(
+                    underlying: NSError(
+                        domain: "HealthKitManager",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "No active workout to save."]
+                    )
+                )
+            }
             return nil
         }
 
@@ -294,16 +314,18 @@ final class HealthKitManager: NSObject, ObservableObject {
             try await workoutBuilder.addSamples([distanceSample, calorieSample])
         } catch {
             print("Error adding final workout samples: \(error.localizedDescription)")
+            await MainActor.run {
+                self.healthKitError = error
+            }
         }
 
         // End collection and save
         do {
-            try await workoutBuilder.endCollection(withEnd: endDate)
-            try await workoutBuilder.finishWorkout()
+            try await workoutBuilder.endCollection(at: endDate)
+            let savedWorkout = try await workoutBuilder.finishWorkout()
 
             // Finish route if we have location data
-            if let routeBuilder = routeBuilder,
-               let workout = workoutBuilder.finishedWorkout {
+            if let routeBuilder = routeBuilder, let workout = savedWorkout {
                 try await routeBuilder.finishRoute(with: workout, metadata: nil)
             }
 
@@ -313,7 +335,6 @@ final class HealthKitManager: NSObject, ObservableObject {
                 self.currentSpO2 = nil
             }
 
-            let savedWorkout = workoutBuilder.finishedWorkout
             print("HealthKit workout saved successfully")
 
             // Clean up references
@@ -343,9 +364,12 @@ final class HealthKitManager: NSObject, ObservableObject {
     func addRoutePoints(_ locations: [CLLocation]) {
         guard let routeBuilder = routeBuilder, workoutActive else { return }
 
-        routeBuilder.insertRouteData(locations) { success, error in
+        routeBuilder.insertRouteData(locations) { [weak self] success, error in
             if let error = error {
                 print("Error inserting route data: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self?.healthKitError = error
+                }
             }
         }
     }
@@ -373,10 +397,20 @@ final class HealthKitManager: NSObject, ObservableObject {
             anchor: nil,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, samples, _, _, error in
+            if let error = error {
+                print("Heart rate query error: \(error.localizedDescription)")
+                DispatchQueue.main.async { self?.healthKitError = error }
+                return
+            }
             self?.processHeartRateSamples(samples)
         }
 
         query.updateHandler = { [weak self] _, samples, _, _, error in
+            if let error = error {
+                print("Heart rate update error: \(error.localizedDescription)")
+                DispatchQueue.main.async { self?.healthKitError = error }
+                return
+            }
             self?.processHeartRateSamples(samples)
         }
 
@@ -396,12 +430,12 @@ final class HealthKitManager: NSObject, ObservableObject {
 
         let bpmUnit = HKUnit.count().unitDivided(by: .minute())
 
-        for sample in samples {
-            let bpm = sample.quantity.doubleValue(for: bpmUnit)
-            heartRateSamples.append(bpm)
+        let bpmValues = samples.map { $0.quantity.doubleValue(for: bpmUnit) }
+        samplesQueue.sync {
+            heartRateSamples.append(contentsOf: bpmValues)
         }
 
-        if let latestBPM = samples.last?.quantity.doubleValue(for: bpmUnit) {
+        if let latestBPM = bpmValues.last {
             DispatchQueue.main.async {
                 self.currentHeartRate = latestBPM
             }
@@ -434,10 +468,20 @@ final class HealthKitManager: NSObject, ObservableObject {
             anchor: nil,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, samples, _, _, error in
+            if let error = error {
+                print("SpO2 query error: \(error.localizedDescription)")
+                DispatchQueue.main.async { self?.healthKitError = error }
+                return
+            }
             self?.processSpO2Samples(samples)
         }
 
         query.updateHandler = { [weak self] _, samples, _, _, error in
+            if let error = error {
+                print("SpO2 update error: \(error.localizedDescription)")
+                DispatchQueue.main.async { self?.healthKitError = error }
+                return
+            }
             self?.processSpO2Samples(samples)
         }
 
@@ -457,9 +501,9 @@ final class HealthKitManager: NSObject, ObservableObject {
 
         let percentUnit = HKUnit.percent()
 
-        for sample in samples {
-            let value = sample.quantity.doubleValue(for: percentUnit)
-            spO2Samples.append(value)
+        let spO2Values = samples.map { $0.quantity.doubleValue(for: percentUnit) }
+        samplesQueue.sync {
+            spO2Samples.append(contentsOf: spO2Values)
         }
 
         if let latestSample = samples.last {
@@ -507,10 +551,15 @@ final class HealthKitManager: NSObject, ObservableObject {
                 limit: 1,
                 sortDescriptors: [sortDescriptor]
             ) { [weak self] _, results, error in
-                if let sample = results?.first as? HKQuantitySample {
+                if let error = error {
+                    print("Error reading body mass: \(error.localizedDescription)")
+                    // Non-fatal: CalorieEstimator falls back to defaultBodyMassKg
+                } else if let sample = results?.first as? HKQuantitySample {
                     let kg = sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
                     self?.bodyMassKg = kg
                     print("Read body mass from HealthKit: \(kg) kg")
+                } else {
+                    print("No body mass data in HealthKit, using default \(HikeStatisticsConfig.defaultBodyMassKg) kg")
                 }
                 continuation.resume()
             }
@@ -539,14 +588,15 @@ final class HealthKitManager: NSObject, ObservableObject {
             trackPoints: locationManager.trackPoints
         )
 
-        // Heart rate aggregates
-        let avgHR: Double? = heartRateSamples.isEmpty ? nil :
-            heartRateSamples.reduce(0, +) / Double(heartRateSamples.count)
-        let maxHR: Double? = heartRateSamples.isEmpty ? nil : heartRateSamples.max()
-
-        // SpO2 average
-        let avgSpO2: Double? = spO2Samples.isEmpty ? nil :
-            spO2Samples.reduce(0, +) / Double(spO2Samples.count)
+        // Heart rate and SpO2 aggregates — read under lock
+        let (avgHR, maxHR, avgSpO2): (Double?, Double?, Double?) = samplesQueue.sync {
+            let hr: Double? = heartRateSamples.isEmpty ? nil :
+                heartRateSamples.reduce(0, +) / Double(heartRateSamples.count)
+            let hrMax: Double? = heartRateSamples.isEmpty ? nil : heartRateSamples.max()
+            let spo2: Double? = spO2Samples.isEmpty ? nil :
+                spO2Samples.reduce(0, +) / Double(spO2Samples.count)
+            return (hr, hrMax, spo2)
+        }
 
         // Calorie estimation
         let calories = CalorieEstimator.estimateCalories(

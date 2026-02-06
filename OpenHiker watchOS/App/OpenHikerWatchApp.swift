@@ -141,6 +141,12 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             self.isReceivingFile = true
         }
 
+        defer {
+            DispatchQueue.main.async {
+                self.isReceivingFile = false
+            }
+        }
+
         guard let metadata = file.metadata else {
             print("Received file without metadata")
             return
@@ -155,10 +161,6 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             handleReceivedGPX(file: file, metadata: metadata)
         default:
             print("Unknown file type: \(fileType)")
-        }
-
-        DispatchQueue.main.async {
-            self.isReceivingFile = false
         }
     }
 

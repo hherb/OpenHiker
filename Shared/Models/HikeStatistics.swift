@@ -46,7 +46,7 @@ struct HikeStatistics: Codable, Sendable, Equatable {
     /// Total elapsed time from hike start to finish, in seconds.
     let duration: TimeInterval
 
-    /// Time spent actively moving (speed > ``HikeStatisticsConfig/restingSpeedThreshold``), in seconds.
+    /// Time spent actively moving (speed >= ``HikeStatisticsConfig/restingSpeedThreshold``), in seconds.
     let walkingTime: TimeInterval
 
     /// Time spent stationary or nearly stationary, in seconds.
@@ -65,7 +65,10 @@ struct HikeStatistics: Codable, Sendable, Equatable {
 
     // MARK: - Energy
 
-    /// Estimated energy burned in kilocalories, or `nil` if body mass data is unavailable.
+    /// Estimated energy burned in kilocalories.
+    ///
+    /// Always has a value because ``CalorieEstimator`` falls back to
+    /// ``HikeStatisticsConfig/defaultBodyMassKg`` when HealthKit body mass is unavailable.
     let estimatedCalories: Double?
 
     // MARK: - Speed
@@ -113,6 +116,20 @@ enum HikeStatisticsConfig {
     /// Blood oxygen samples older than this threshold are hidden from the
     /// live stats overlay since they may no longer reflect current status.
     static let spO2MaxAgeSec: TimeInterval = 300.0
+
+    // MARK: - Unit Conversion Constants
+
+    /// Meters per mile (international mile).
+    static let metersPerMile: Double = 1609.344
+
+    /// Feet per meter (international foot).
+    static let feetPerMeter: Double = 3.28084
+
+    /// Conversion factor from m/s to km/h.
+    static let kmhPerMps: Double = 3.6
+
+    /// Conversion factor from m/s to mph.
+    static let mphPerMps: Double = 2.23694
 }
 
 // MARK: - Formatting Helpers
@@ -135,7 +152,7 @@ enum HikeStatsFormatter {
             let km = meters / 1000.0
             return String(format: "%.1f km", km)
         } else {
-            let miles = meters / 1609.344
+            let miles = meters / HikeStatisticsConfig.metersPerMile
             return String(format: "%.1f mi", miles)
         }
     }
@@ -150,7 +167,7 @@ enum HikeStatsFormatter {
         if useMetric {
             return String(format: "%.0f m", meters)
         } else {
-            let feet = meters * 3.28084
+            let feet = meters * HikeStatisticsConfig.feetPerMeter
             return String(format: "%.0f ft", feet)
         }
     }
@@ -175,10 +192,10 @@ enum HikeStatsFormatter {
     /// - Returns: A formatted string like "4.5 km/h" or "2.8 mph".
     static func formatSpeed(_ metersPerSecond: Double, useMetric: Bool) -> String {
         if useMetric {
-            let kmh = metersPerSecond * 3.6
+            let kmh = metersPerSecond * HikeStatisticsConfig.kmhPerMps
             return String(format: "%.1f km/h", kmh)
         } else {
-            let mph = metersPerSecond * 2.23694
+            let mph = metersPerSecond * HikeStatisticsConfig.mphPerMps
             return String(format: "%.1f mph", mph)
         }
     }

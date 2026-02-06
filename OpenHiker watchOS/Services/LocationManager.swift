@@ -55,6 +55,15 @@ final class LocationManager: NSObject, ObservableObject {
     /// Recorded GPS points during the current hike track.
     @Published var trackPoints: [CLLocation] = []
 
+    /// Total distance of the current track in meters (incrementally updated).
+    @Published private(set) var totalDistance: CLLocationDistance = 0
+
+    /// Total cumulative elevation gain in meters (incrementally updated).
+    @Published private(set) var elevationGain: Double = 0
+
+    /// Total cumulative elevation loss in meters (incrementally updated, positive value).
+    @Published private(set) var elevationLoss: Double = 0
+
     /// The current GPS accuracy mode. Changing this updates the location manager settings.
     @Published var gpsMode: GPSMode = .balanced {
         didSet {
@@ -159,6 +168,9 @@ final class LocationManager: NSObject, ObservableObject {
         }
 
         trackPoints.removeAll()
+        totalDistance = 0
+        elevationGain = 0
+        elevationLoss = 0
         isTracking = true
         trackingError = nil
 
@@ -257,51 +269,22 @@ final class LocationManager: NSObject, ObservableObject {
 
     // MARK: - Track Statistics
 
-    /// Total distance of the current track in meters.
+    /// Incrementally updates cached distance and elevation stats when a new point is appended.
     ///
-    /// Calculated as the sum of distances between consecutive track points.
-    var totalDistance: CLLocationDistance {
-        guard trackPoints.count > 1 else { return 0 }
-
-        var distance: CLLocationDistance = 0
-        for i in 1..<trackPoints.count {
-            distance += trackPoints[i].distance(from: trackPoints[i - 1])
-        }
-        return distance
-    }
-
-    /// Total cumulative elevation gain in meters.
+    /// This avoids O(n) recomputation on every location update by updating running totals.
     ///
-    /// Only positive altitude changes between consecutive points are summed;
-    /// descents are ignored.
-    var elevationGain: Double {
-        guard trackPoints.count > 1 else { return 0 }
+    /// - Parameters:
+    ///   - previous: The last recorded track point.
+    ///   - current: The new track point being appended.
+    private func updateCachedStats(from previous: CLLocation, to current: CLLocation) {
+        totalDistance += current.distance(from: previous)
 
-        var gain: Double = 0
-        for i in 1..<trackPoints.count {
-            let diff = trackPoints[i].altitude - trackPoints[i - 1].altitude
-            if diff > 0 {
-                gain += diff
-            }
+        let elevationDiff = current.altitude - previous.altitude
+        if elevationDiff > 0 {
+            elevationGain += elevationDiff
+        } else if elevationDiff < 0 {
+            elevationLoss -= elevationDiff
         }
-        return gain
-    }
-
-    /// Total cumulative elevation loss in meters (positive value).
-    ///
-    /// Only negative altitude changes between consecutive points are summed
-    /// and returned as a positive value.
-    var elevationLoss: Double {
-        guard trackPoints.count > 1 else { return 0 }
-
-        var loss: Double = 0
-        for i in 1..<trackPoints.count {
-            let diff = trackPoints[i].altitude - trackPoints[i - 1].altitude
-            if diff < 0 {
-                loss -= diff
-            }
-        }
-        return loss
     }
 
     /// Duration of the track from first to last recorded point.
@@ -357,6 +340,7 @@ extension LocationManager: CLLocationManagerDelegate {
             if let lastPoint = trackPoints.last {
                 let distance = location.distance(from: lastPoint)
                 if distance >= gpsMode.distanceFilter {
+                    updateCachedStats(from: lastPoint, to: location)
                     trackPoints.append(location)
                 }
             } else {
