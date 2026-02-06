@@ -38,6 +38,7 @@ struct OpenHikerApp: App {
                 .environmentObject(watchConnectivity)
                 .onAppear {
                     initializeWaypointStore()
+                    initializeRouteStore()
                 }
         }
     }
@@ -51,6 +52,18 @@ struct OpenHikerApp: App {
             try WaypointStore.shared.open()
         } catch {
             print("Error opening WaypointStore: \(error.localizedDescription)")
+        }
+    }
+
+    /// Opens the shared ``RouteStore`` database so it's ready for CRUD operations.
+    ///
+    /// Called once on app launch. Errors are logged but not fatal — the app can
+    /// still function without saved routes.
+    private func initializeRouteStore() {
+        do {
+            try RouteStore.shared.open()
+        } catch {
+            print("Error opening RouteStore: \(error.localizedDescription)")
         }
     }
 }

@@ -296,6 +296,101 @@ final class LocationManager: NSObject, ObservableObject {
         }
         return last.timestamp.timeIntervalSince(first.timestamp)
     }
+
+    /// Computes the walking and resting time from recorded track points.
+    ///
+    /// Delegates to ``Self/computeWalkingAndRestingTime(from:)`` which is a
+    /// pure function operating on an array of `CLLocation` objects.
+    ///
+    /// - Returns: A tuple of (walking time, resting time) in seconds, or `(0, 0)`
+    ///   if fewer than 2 track points exist.
+    var walkingAndRestingTime: (walking: TimeInterval, resting: TimeInterval) {
+        Self.computeWalkingAndRestingTime(from: trackPoints)
+    }
+
+    /// Pure function that computes walking and resting time from GPS track points.
+    ///
+    /// Walking vs resting is determined by speed between consecutive points:
+    /// - If speed is below ``HikeStatisticsConfig/restingSpeedThreshold`` (0.3 m/s)
+    ///   for longer than ``HikeStatisticsConfig/minRestDurationSec`` (60 seconds),
+    ///   the interval is counted as resting.
+    /// - All other intervals are counted as walking.
+    ///
+    /// Extracted as a static method so it can be unit-tested independently of
+    /// `LocationManager` state.
+    ///
+    /// - Parameter points: The GPS track points to analyze.
+    /// - Returns: A tuple of (walking time, resting time) in seconds, or `(0, 0)`
+    ///   if fewer than 2 points are provided.
+    static func computeWalkingAndRestingTime(
+        from points: [CLLocation]
+    ) -> (walking: TimeInterval, resting: TimeInterval) {
+        guard points.count > 1 else { return (walking: 0, resting: 0) }
+
+        var walkingTotal: TimeInterval = 0
+        var restingTotal: TimeInterval = 0
+        var currentRestStart: Date?
+
+        for i in 1..<points.count {
+            let previous = points[i - 1]
+            let current = points[i]
+            let timeDiff = current.timestamp.timeIntervalSince(previous.timestamp)
+
+            guard timeDiff > 0 else { continue }
+
+            let speed = current.distance(from: previous) / timeDiff
+
+            if speed < HikeStatisticsConfig.restingSpeedThreshold {
+                if currentRestStart == nil {
+                    currentRestStart = previous.timestamp
+                }
+            } else {
+                if let restStart = currentRestStart {
+                    let restDuration = previous.timestamp.timeIntervalSince(restStart)
+                    classifyRestPeriod(
+                        duration: restDuration,
+                        walkingTotal: &walkingTotal,
+                        restingTotal: &restingTotal
+                    )
+                    currentRestStart = nil
+                }
+                walkingTotal += timeDiff
+            }
+        }
+
+        // Handle trailing rest period (still resting at end of track)
+        if let restStart = currentRestStart, let lastPoint = points.last {
+            let restDuration = lastPoint.timestamp.timeIntervalSince(restStart)
+            classifyRestPeriod(
+                duration: restDuration,
+                walkingTotal: &walkingTotal,
+                restingTotal: &restingTotal
+            )
+        }
+
+        return (walking: walkingTotal, resting: restingTotal)
+    }
+
+    /// Classifies a period spent below walking speed as either resting or walking.
+    ///
+    /// Periods shorter than ``HikeStatisticsConfig/minRestDurationSec`` are counted
+    /// as walking (brief pauses), while longer periods count as genuine rest stops.
+    ///
+    /// - Parameters:
+    ///   - duration: The duration in seconds spent below walking speed.
+    ///   - walkingTotal: Inout accumulator for walking time.
+    ///   - restingTotal: Inout accumulator for resting time.
+    private static func classifyRestPeriod(
+        duration: TimeInterval,
+        walkingTotal: inout TimeInterval,
+        restingTotal: inout TimeInterval
+    ) {
+        if duration >= HikeStatisticsConfig.minRestDurationSec {
+            restingTotal += duration
+        } else {
+            walkingTotal += duration
+        }
+    }
 }
 
 // MARK: - CLLocationManagerDelegate

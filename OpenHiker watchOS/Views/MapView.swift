@@ -69,6 +69,10 @@ struct MapView: View {
     /// The region selected in the picker sheet (used for dismiss callback).
     @State private var pickedRegion: RegionMetadata?
 
+    /// Whether the save hike sheet is currently displayed after stopping tracking.
+    @State private var showingSaveHike = false
+
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -159,6 +163,17 @@ struct MapView: View {
             if let message = newValue {
                 errorMessage = message
                 showError = true
+            }
+        }
+        .sheet(isPresented: $showingSaveHike) {
+            SaveHikeSheet(regionId: selectedRegion?.id) { saved in
+                if saved {
+                    print("Hike saved successfully")
+                } else {
+                    print("Hike discarded")
+                }
+                // Clear track data after save or discard
+                locationManager.trackPoints.removeAll()
             }
         }
     }
@@ -403,6 +418,10 @@ struct MapView: View {
                         }
                     }
                 }
+            }
+            // Present save hike sheet if there are track points to save
+            if !locationManager.trackPoints.isEmpty {
+                showingSaveHike = true
             }
         } else {
             locationManager.startTracking()

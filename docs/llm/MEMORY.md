@@ -9,8 +9,8 @@
 
 ## Key Patterns
 - **Models**: `Codable + Sendable + Identifiable` convention
-- **SQLite pattern**: `TileStore` and `WaypointStore` both use `@unchecked Sendable` + `DispatchQueue(label:)` serial queue + `queue.sync {}` for thread safety
-- **Singleton pattern**: `WatchConnectivityManager.shared`, `RegionStorage.shared`, `WatchConnectivityReceiver.shared`, `WaypointStore.shared`
+- **SQLite pattern**: `TileStore`, `WaypointStore`, and `RouteStore` all use `@unchecked Sendable` + `DispatchQueue(label:)` serial queue + `queue.sync {}` for thread safety
+- **Singleton pattern**: `WatchConnectivityManager.shared`, `RegionStorage.shared`, `WatchConnectivityReceiver.shared`, `WaypointStore.shared`, `RouteStore.shared`
 - **Environment injection**: Singletons injected via `@StateObject` in App entry point -> `.environmentObject()` -> `@EnvironmentObject` in views
 - **WatchConnectivity**: `transferFile` for large data (MBTiles), `transferUserInfo` for small data (waypoints), `updateApplicationContext` for state
 - **Platform guards**: iOS files use `#if os(iOS)`, watchOS files don't need guards (separate target)
@@ -18,7 +18,9 @@
 - **AGPL header**: All files start with the AGPL-3.0 copyright block
 - `@AppStorage` for user preferences
 - Thread safety: serial DispatchQueues for SQLite, HKHealthStore is thread-safe
-- `sqlite3_bind_text` uses `unsafeBitCast(-1, to: sqlite3_destructor_type.self)` for SQLITE_TRANSIENT
+- `sqlite3_bind_text` uses `unsafeBitCast(-1, to: sqlite3_destructor_type.self)` for SQLITE_TRANSIENT — in RouteStore, extracted as named `sqliteTransient` constant
+- **Track compression**: `TrackCompression` uses 20 bytes/point binary format (Float32 lat/lon/alt + Float64 timestamp) + zlib; constants `bytesPerPoint`, `compressionBufferMargin`, `decompressionBufferMultiplier`
+- **Walking/resting time**: Pure static function `LocationManager.computeWalkingAndRestingTime(from:)` + `classifyRestPeriod()` helper; thresholds in `HikeStatisticsConfig` (`restingSpeedThreshold`, `minRestDurationSec`)
 
 ## Xcode Project (pbxproj)
 - ID format: `2A...` for iOS file refs, `2B...` for watchOS, `1A...` for iOS build files, `1B...` for watchOS
@@ -28,14 +30,16 @@
 - iOS target: `6A0000010000000000000001`
 
 ## Key Files
-- `Shared/Models/`: Region.swift, TileCoordinate.swift, HikeStatistics.swift, Waypoint.swift
-- `Shared/Storage/`: TileStore.swift (+ WritableTileStore), WaypointStore.swift
+- `Shared/Models/`: Region.swift, TileCoordinate.swift, HikeStatistics.swift, Waypoint.swift, SavedRoute.swift
+- `Shared/Storage/`: TileStore.swift (+ WritableTileStore), WaypointStore.swift, RouteStore.swift
+- `Shared/Utilities/`: TrackCompression.swift (binary pack + zlib for GPS tracks)
 - SpriteKit map: `MapRenderer.swift` manages `MapScene` (SKScene with tilesNode + overlaysNode)
 
 ## Phase Status
 - Phase 1 (Hike Metrics + HealthKit): Completed and merged
 - Phase 2 (Waypoints & Pins): Implemented on `claude/implement-phase2-waypoints-soKPD`
-- Phase 3+ (Route Import, Offline Search): Not started
+- Phase 3 (Save Routes & Review Past Hikes): Implemented on `claude/phase3-save-routes-review-oogwp`
+- Phase 4+ (Route Import, Offline Search): Not started
 
 ### Phase 1 Details
 - `HikeStatistics` shared model, `HikeStatsFormatter`, `CalorieEstimator`
@@ -52,6 +56,18 @@
 - iOS: MapKit `Annotation` markers in `RegionSelectorView`
 - Bidirectional sync via `transferUserInfo` (thumbnails only to watch)
 - Developer docs at `docs/developer/phase2-waypoints-developer-guide.md`
+
+### Phase 3 Details
+- `SavedRoute` model (18 fields including compressed track BLOB)
+- `RouteStore` SQLite CRUD (singleton, same pattern as WaypointStore)
+- `TrackCompression` binary pack + zlib: 20 bytes/point → ~15x smaller than GPX
+- watchOS: `SaveHikeSheet` modal (save/discard after tracking stop)
+- watchOS: `MapView` modified to present SaveHikeSheet when tracking stops
+- iOS: `HikesListView` (searchable, swipe-to-delete), `HikeDetailView` (map + polyline + stats + elevation + comments)
+- iOS: `ElevationProfileView` with Swift Charts (AreaMark + LineMark, subsampled to 200 points)
+- WatchConnectivity: JSON-encoded SavedRoute via `transferFile` with `["type": "savedRoute"]` metadata
+- Walking/resting classification: speed-based state machine (< 0.3 m/s threshold, 60s min rest)
+- Developer docs at `docs/developer/phase3-save-routes-developer-guide.md`
 
 ## Dev Rules (from docs/llm/general_golden_rules.md)
 1. Clean separation of concerns

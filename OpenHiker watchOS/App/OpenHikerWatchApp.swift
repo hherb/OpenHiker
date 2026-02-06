@@ -48,6 +48,7 @@ struct OpenHikerWatchApp: App {
                 .environmentObject(healthKitManager)
                 .onAppear {
                     initializeWaypointStore()
+                    initializeRouteStore()
                 }
         }
     }
@@ -61,6 +62,18 @@ struct OpenHikerWatchApp: App {
             try WaypointStore.shared.open()
         } catch {
             print("Error opening WaypointStore: \(error.localizedDescription)")
+        }
+    }
+
+    /// Opens the shared ``RouteStore`` database so it's ready for CRUD operations.
+    ///
+    /// Called once on app launch. Errors are logged but not fatal — the app can
+    /// still function without saved routes.
+    private func initializeRouteStore() {
+        do {
+            try RouteStore.shared.open()
+        } catch {
+            print("Error opening RouteStore: \(error.localizedDescription)")
         }
     }
 }
@@ -146,6 +159,32 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         userInfo["type"] = "waypoint"
         session.transferUserInfo(userInfo)
         print("Queued waypoint sync to iPhone: \(waypoint.id.uuidString)")
+    }
+
+    // MARK: - Route Transfer
+
+    /// Transfers a saved route file to the iPhone via `WCSession.transferFile()`.
+    ///
+    /// The file is a JSON-encoded ``SavedRoute`` (including compressed track data).
+    /// The iPhone's ``WatchConnectivityManager`` handles reception by checking for
+    /// `type: "savedRoute"` in the metadata.
+    ///
+    /// - Parameters:
+    ///   - fileURL: Local file URL of the JSON-encoded route data.
+    ///   - routeId: The UUID of the route being transferred.
+    func transferRouteToPhone(fileURL: URL, routeId: UUID) {
+        guard let session = session, session.activationState == .activated else {
+            print("WCSession not activated, cannot transfer route")
+            return
+        }
+
+        let metadata: [String: Any] = [
+            "type": "savedRoute",
+            "routeId": routeId.uuidString
+        ]
+
+        session.transferFile(fileURL, metadata: metadata)
+        print("Queued route transfer to iPhone: \(routeId.uuidString)")
     }
 }
 

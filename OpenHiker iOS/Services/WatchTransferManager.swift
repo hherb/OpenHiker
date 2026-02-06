@@ -315,6 +315,53 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    // MARK: - File Reception (from Watch)
+
+    /// Called when a file is received from the watch via `WCSession.transferFile()`.
+    ///
+    /// Routes the file to the appropriate handler based on the `type` field in metadata:
+    /// - `"savedRoute"`: Decodes the JSON route data and inserts it into ``RouteStore``
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        guard let metadata = file.metadata else {
+            print("Received file from watch without metadata")
+            return
+        }
+
+        let fileType = metadata["type"] as? String ?? "unknown"
+
+        switch fileType {
+        case "savedRoute":
+            handleReceivedRoute(file: file, metadata: metadata)
+        default:
+            print("Received unknown file type from watch: \(fileType)")
+        }
+    }
+
+    /// Processes a received saved route file from the Apple Watch.
+    ///
+    /// The file contains a JSON-encoded ``SavedRoute`` (including compressed track data).
+    /// Decodes it and inserts into the local ``RouteStore``.
+    ///
+    /// - Parameters:
+    ///   - file: The received WCSession file containing JSON route data.
+    ///   - metadata: The transfer metadata dictionary with the route ID.
+    private func handleReceivedRoute(file: WCSessionFile, metadata: [String: Any]) {
+        let routeIdString = metadata["routeId"] as? String ?? "unknown"
+
+        do {
+            let jsonData = try Data(contentsOf: file.fileURL)
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let route = try decoder.decode(SavedRoute.self, from: jsonData)
+
+            try RouteStore.shared.insert(route)
+            print("Received and saved route from watch: \(routeIdString) — \(route.name)")
+        } catch {
+            print("Error processing received route \(routeIdString): \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Message Handling
 
     /// Handles incoming messages from the watch (no reply expected).
