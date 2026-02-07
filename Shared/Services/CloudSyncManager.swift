@@ -264,7 +264,10 @@ actor CloudSyncManager {
     /// Same logic as ``pushRoutes(forceAll:)`` but for planned routes. Uses
     /// ``PlannedRouteStore`` (JSON file-based) instead of ``RouteStore`` (SQLite).
     private func pushPlannedRoutes(forceAll: Bool = false) async throws {
-        let localRoutes = PlannedRouteStore.shared.routes
+        // Use loadAllFromDisk() instead of the in-memory cache to avoid a
+        // race where syncOnLaunch() runs before loadAll()'s main-queue
+        // dispatch has populated the routes array.
+        let localRoutes = PlannedRouteStore.shared.loadAllFromDisk()
 
         for var route in localRoutes {
             // Skip routes that are already synced and haven't been modified locally
@@ -370,7 +373,7 @@ actor CloudSyncManager {
             try await self.cloudStore.fetchAllPlannedRoutes()
         }
 
-        let localRoutes = PlannedRouteStore.shared.routes
+        let localRoutes = PlannedRouteStore.shared.loadAllFromDisk()
         let localRouteIDs = Set(localRoutes.map { $0.id })
         var didChange = false
 

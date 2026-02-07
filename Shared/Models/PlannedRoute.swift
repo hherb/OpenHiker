@@ -347,6 +347,46 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// Reads all planned routes from disk and returns them directly.
+    ///
+    /// Unlike ``loadAll()`` this does not update the in-memory `routes` cache
+    /// via the main queue, so it's safe to call from any thread or actor
+    /// without worrying about async dispatch timing.
+    ///
+    /// - Returns: All planned routes sorted by creation date, newest first.
+    func loadAllFromDisk() -> [PlannedRoute] {
+        queue.sync {
+            let directory = storageDirectory
+            guard FileManager.default.fileExists(atPath: directory.path) else {
+                return []
+            }
+
+            do {
+                let files = try FileManager.default.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: nil
+                ).filter { $0.pathExtension == "json" }
+
+                var loaded: [PlannedRoute] = []
+                for file in files {
+                    do {
+                        let data = try Data(contentsOf: file)
+                        let route = try decoder.decode(PlannedRoute.self, from: data)
+                        loaded.append(route)
+                    } catch {
+                        print("Error loading planned route \(file.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+
+                loaded.sort { $0.createdAt > $1.createdAt }
+                return loaded
+            } catch {
+                print("Error reading planned routes directory: \(error.localizedDescription)")
+                return []
+            }
+        }
+    }
+
     /// Loads all planned routes from disk into the in-memory cache.
     ///
     /// Call this on app launch. Routes are sorted by creation date, newest first.
