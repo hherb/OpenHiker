@@ -18,7 +18,7 @@
 import Foundation
 import WeatherKit
 import CoreLocation
-import Combine
+import SwiftUI
 
 /// Manages real-time UV index data for the watchOS app using Apple WeatherKit.
 ///
@@ -61,6 +61,17 @@ final class UVIndexManager: ObservableObject {
 
     /// Number of consecutive fetch failures, used for exponential backoff.
     private var consecutiveFailures = 0
+
+    // MARK: - Computed Properties
+
+    /// Whether the current UV reading is fresh enough to display.
+    ///
+    /// Returns `false` if the reading is older than ``UVIndexConfig/maxReadingAgeSec``
+    /// (30 minutes) or if no reading has been fetched yet.
+    var isReadingCurrent: Bool {
+        guard let lastFetch = lastFetchDate, currentUVIndex != nil else { return false }
+        return Date().timeIntervalSince(lastFetch) < UVIndexConfig.maxReadingAgeSec
+    }
 
     // MARK: - Public Methods
 
@@ -189,13 +200,13 @@ enum UVCategory: String, Equatable {
     /// - High: Orange
     /// - Very High: Red
     /// - Extreme: Violet/Purple
-    var displayColorName: String {
+    var displayColor: Color {
         switch self {
-        case .low: return "green"
-        case .moderate: return "yellow"
-        case .high: return "orange"
-        case .veryHigh: return "red"
-        case .extreme: return "purple"
+        case .low: return .green
+        case .moderate: return .yellow
+        case .high: return .orange
+        case .veryHigh: return .red
+        case .extreme: return .purple
         }
     }
 

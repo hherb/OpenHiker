@@ -93,25 +93,28 @@ struct HikeStatsOverlay: View {
                     }
                 }
 
-                // Row 3: SpO2 and UV index
-                HStack(spacing: 6) {
-                    if healthKitManager.isAuthorized,
-                       let spO2 = healthKitManager.currentSpO2 {
-                        statBadge(
-                            icon: "lungs.fill",
-                            value: HikeStatsFormatter.formatSpO2(spO2),
-                            iconColor: .cyan
-                        )
-                    }
+                // Row 3: SpO2 and UV index (only when at least one is available)
+                if hasSpO2 || hasCurrentUV {
+                    HStack(spacing: 6) {
+                        if healthKitManager.isAuthorized,
+                           let spO2 = healthKitManager.currentSpO2 {
+                            statBadge(
+                                icon: "lungs.fill",
+                                value: HikeStatsFormatter.formatSpO2(spO2),
+                                iconColor: .cyan
+                            )
+                        }
 
-                    // UV index (when available)
-                    if let uvIndex = uvIndexManager.currentUVIndex,
-                       let category = uvIndexManager.currentCategory {
-                        statBadge(
-                            icon: "sun.max.fill",
-                            value: "UV \(uvIndex)",
-                            iconColor: uvColorForCategory(category)
-                        )
+                        // UV index (when available and not stale)
+                        if uvIndexManager.isReadingCurrent,
+                           let uvIndex = uvIndexManager.currentUVIndex,
+                           let category = uvIndexManager.currentCategory {
+                            statBadge(
+                                icon: "sun.max.fill",
+                                value: "UV \(uvIndex)",
+                                iconColor: category.displayColor
+                            )
+                        }
                     }
                 }
             }
@@ -166,18 +169,14 @@ struct HikeStatsOverlay: View {
         .background(.ultraThinMaterial, in: Capsule())
     }
 
-    /// Returns the SwiftUI color for a UV category following the WHO color scheme.
-    ///
-    /// - Parameter category: The UV exposure category.
-    /// - Returns: The corresponding SwiftUI ``Color``.
-    private func uvColorForCategory(_ category: UVCategory) -> Color {
-        switch category {
-        case .low: return .green
-        case .moderate: return .yellow
-        case .high: return .orange
-        case .veryHigh: return .red
-        case .extreme: return .purple
-        }
+    /// Whether a recent SpO2 reading is available for display.
+    private var hasSpO2: Bool {
+        healthKitManager.isAuthorized && healthKitManager.currentSpO2 != nil
+    }
+
+    /// Whether a current (non-stale) UV index reading is available for display.
+    private var hasCurrentUV: Bool {
+        uvIndexManager.isReadingCurrent && uvIndexManager.currentUVIndex != nil
     }
 
     // MARK: - Auto-Hide Timer

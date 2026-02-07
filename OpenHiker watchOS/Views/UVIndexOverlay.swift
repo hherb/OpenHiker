@@ -48,7 +48,8 @@ struct UVIndexOverlay: View {
     private static let detailAutoHideSec: TimeInterval = 4.0
 
     var body: some View {
-        if showUVIndex, let uvIndex = uvIndexManager.currentUVIndex,
+        if showUVIndex, uvIndexManager.isReadingCurrent,
+           let uvIndex = uvIndexManager.currentUVIndex,
            let category = uvIndexManager.currentCategory {
             VStack(alignment: .trailing, spacing: 4) {
                 Spacer()
@@ -88,7 +89,7 @@ struct UVIndexOverlay: View {
         HStack(spacing: 3) {
             Image(systemName: "sun.max.fill")
                 .font(.system(size: 10))
-                .foregroundStyle(colorForCategory(category))
+                .foregroundStyle(category.displayColor)
             Text("UV \(uvIndex)")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
@@ -109,7 +110,7 @@ struct UVIndexOverlay: View {
             // Category header with color bar
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(colorForCategory(category))
+                    .fill(category.displayColor)
                     .frame(width: 4, height: 24)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -118,7 +119,7 @@ struct UVIndexOverlay: View {
                         .foregroundStyle(.white)
                     Text(category.rawValue)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(colorForCategory(category))
+                        .foregroundStyle(category.displayColor)
                 }
             }
 
@@ -137,22 +138,6 @@ struct UVIndexOverlay: View {
     }
 
     // MARK: - Helpers
-
-    /// Returns the SwiftUI color corresponding to a UV category.
-    ///
-    /// Follows the WHO/WMO standard UV index color scheme.
-    ///
-    /// - Parameter category: The UV exposure category.
-    /// - Returns: The corresponding SwiftUI ``Color``.
-    private func colorForCategory(_ category: UVCategory) -> Color {
-        switch category {
-        case .low: return .green
-        case .moderate: return .yellow
-        case .high: return .orange
-        case .veryHigh: return .red
-        case .extreme: return .purple
-        }
-    }
 
     /// Toggles the detail popup visibility and manages the auto-hide timer.
     private func toggleDetail() {
