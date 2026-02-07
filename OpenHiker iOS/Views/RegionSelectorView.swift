@@ -112,59 +112,97 @@ struct RegionSelectorView: View {
     /// The error message for the waypoint error alert.
     @State private var waypointErrorMessage = ""
 
+    // MARK: - Map Style State
+
+    /// The active map display style (Roads / Trails / Cycling).
+    /// Defaults to "Trails" (OpenTopoMap) so hiking trails are visible.
+    @AppStorage("preferredMapStyle") private var mapViewStyle: MapViewStyle = .hiking
+
+    /// The tile server selected for the next download, synced from ``mapViewStyle``.
+    @State private var selectedTileServer: TileDownloader.TileServer = .osmTopo
+
+    /// Centre coordinate for the trail/cycling map overlay (kept in sync with ``cameraPosition``).
+    @State private var trailMapCenter = CLLocationCoordinate2D(latitude: 37.8651, longitude: -119.5383)
+
+    /// Span for the trail/cycling map overlay (kept in sync with ``cameraPosition``).
+    @State private var trailMapSpan: Double = 0.5
+
     var body: some View {
         NavigationStack {
             ZStack {
-                // Map
-                Map(position: $cameraPosition) {
-                    // Show selection rectangle as annotation if we have one
-                    if let region = selectedRegion {
-                        MapPolygon(coordinates: regionCorners(region))
-                            .foregroundStyle(.blue.opacity(0.2))
-                            .stroke(.blue, lineWidth: 2)
-                    }
+                // Map — conditionally rendered as Apple Maps or tile overlay
+                if let tileTemplate = mapViewStyle.tileURLTemplate {
+                    // Trail / Cycling overlay via MKMapView + MKTileOverlay
+                    TrailMapView(
+                        tileURLTemplate: tileTemplate,
+                        center: $trailMapCenter,
+                        span: $trailMapSpan,
+                        waypoints: waypoints,
+                        selectedRegion: selectedRegion,
+                        trackCoordinates: locationManager.trackPoints.map(\.coordinate),
+                        onRegionChange: { center, span in
+                            // Keep cameraPosition in sync for finalizeSelection()
+                            cameraPosition = .region(MKCoordinateRegion(
+                                center: center,
+                                span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
+                            ))
+                            saveLastLocation(coordinate: center, span: span)
+                        },
+                        onWaypointTapped: { waypoint in
+                            selectedWaypoint = waypoint
+                            showWaypointDetail = true
+                        }
+                    )
+                } else {
+                    // Apple Maps (standard road map)
+                    Map(position: $cameraPosition) {
+                        if let region = selectedRegion {
+                            MapPolygon(coordinates: regionCorners(region))
+                                .foregroundStyle(.blue.opacity(0.2))
+                                .stroke(.blue, lineWidth: 2)
+                        }
 
-                    // Track trail breadcrumb
-                    if locationManager.trackPoints.count >= 2 {
-                        MapPolyline(coordinates: locationManager.trackPoints.map(\.coordinate))
-                            .stroke(.orange, lineWidth: 4)
-                    }
+                        if locationManager.trackPoints.count >= 2 {
+                            MapPolyline(coordinates: locationManager.trackPoints.map(\.coordinate))
+                                .stroke(.orange, lineWidth: 4)
+                        }
 
-                    // Waypoint annotations
-                    ForEach(waypoints) { waypoint in
-                        Annotation(
-                            waypoint.label.isEmpty ? waypoint.category.displayName : waypoint.label,
-                            coordinate: waypoint.coordinate
-                        ) {
-                            Button {
-                                selectedWaypoint = waypoint
-                                showWaypointDetail = true
-                            } label: {
-                                Image(systemName: waypoint.category.iconName)
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 28, height: 28)
-                                    .background(Color.orange)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                        ForEach(waypoints) { waypoint in
+                            Annotation(
+                                waypoint.label.isEmpty ? waypoint.category.displayName : waypoint.label,
+                                coordinate: waypoint.coordinate
+                            ) {
+                                Button {
+                                    selectedWaypoint = waypoint
+                                    showWaypointDetail = true
+                                } label: {
+                                    Image(systemName: waypoint.category.iconName)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 28, height: 28)
+                                        .background(Color.orange)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                                }
                             }
                         }
-                    }
 
-                    // User position marker
-                    UserAnnotation()
-                }
-                .mapStyle(.standard(elevation: .realistic, emphasis: .muted))
-                .mapControls {
-                    MapCompass()
-                    MapScaleView()
-                }
-                .onMapCameraChange { context in
-                    // Persist map position for relaunch
-                    saveLastLocation(
-                        coordinate: context.region.center,
-                        span: context.region.span.latitudeDelta
-                    )
+                        UserAnnotation()
+                    }
+                    .mapStyle(.standard(elevation: .realistic, emphasis: .muted))
+                    .mapControls {
+                        MapCompass()
+                        MapScaleView()
+                    }
+                    .onMapCameraChange { context in
+                        saveLastLocation(
+                            coordinate: context.region.center,
+                            span: context.region.span.latitudeDelta
+                        )
+                        // Keep trail map state in sync for seamless switching
+                        trailMapCenter = context.region.center
+                        trailMapSpan = context.region.span.latitudeDelta
+                    }
                 }
 
                 // Selection overlay - only blocks gestures during active selection
@@ -244,7 +282,18 @@ struct RegionSelectorView: View {
                 .padding()
             }
             .navigationTitle("Select Region")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Map Style", selection: $mapViewStyle) {
+                        ForEach(MapViewStyle.allCases, id: \.self) { style in
+                            Text(style.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(isSelecting ? "Done" : "Select Area") {
                         if isSelecting {
@@ -275,9 +324,10 @@ struct RegionSelectorView: View {
                     regionName: $regionName,
                     minZoom: $minZoom,
                     maxZoom: $maxZoom,
+                    selectedServer: $selectedTileServer,
                     onDownload: startDownload
                 )
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showAddWaypointSheet) {
                 if let coord = newWaypointCoordinate {
@@ -319,6 +369,8 @@ struct RegionSelectorView: View {
                     onSelectLocation: { coordinate in
                         showSearchSheet = false
                         saveLastLocation(coordinate: coordinate, span: 0.2)
+                        trailMapCenter = coordinate
+                        trailMapSpan = 0.2
                         withAnimation {
                             cameraPosition = .region(MKCoordinateRegion(
                                 center: coordinate,
@@ -337,6 +389,9 @@ struct RegionSelectorView: View {
                 center: center,
                 span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
             ))
+            trailMapCenter = center
+            trailMapSpan = lastSpan
+            selectedTileServer = mapViewStyle.defaultDownloadServer
             loadWaypoints()
         }
         .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
@@ -347,11 +402,30 @@ struct RegionSelectorView: View {
             if locationManager.shouldCenterOnNextUpdate, let location = newLocation {
                 locationManager.shouldCenterOnNextUpdate = false
                 saveLastLocation(coordinate: location.coordinate, span: 0.1)
+                trailMapCenter = location.coordinate
+                trailMapSpan = 0.1
                 withAnimation {
                     cameraPosition = .region(MKCoordinateRegion(
                         center: location.coordinate,
                         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
                     ))
+                }
+            }
+        }
+        .onChange(of: mapViewStyle) { _, newStyle in
+            // Sync camera position when switching map styles
+            selectedTileServer = newStyle.defaultDownloadServer
+            if newStyle == .standard {
+                // Switching TO Apple Maps — update cameraPosition from trail map state
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: trailMapCenter,
+                    span: MKCoordinateSpan(latitudeDelta: trailMapSpan, longitudeDelta: trailMapSpan)
+                ))
+            } else {
+                // Switching FROM Apple Maps to trail/cycling overlay
+                if let region = cameraPosition.region {
+                    trailMapCenter = region.center
+                    trailMapSpan = region.span.latitudeDelta
                 }
             }
         }
@@ -545,7 +619,7 @@ struct RegionSelectorView: View {
         Task {
             do {
                 var totalTiles = 0
-                let mbtilesURL = try await tileDownloader.downloadRegion(request) { progress in
+                let mbtilesURL = try await tileDownloader.downloadRegion(request, server: selectedTileServer) { progress in
                     totalTiles = progress.totalTiles
                     Task { @MainActor in
                         self.downloadProgress = progress
@@ -1055,6 +1129,9 @@ struct DownloadConfigSheet: View {
     /// Binding to the maximum zoom level.
     @Binding var maxZoom: Int
 
+    /// Binding to the tile server used for downloading.
+    @Binding var selectedServer: TileDownloader.TileServer
+
     /// Callback invoked when the user taps "Download Region".
     let onDownload: () -> Void
 
@@ -1076,6 +1153,18 @@ struct DownloadConfigSheet: View {
         boundingBox.estimateTileCount(zoomLevels: minZoom...maxZoom)
     }
 
+    /// A human-readable description of the selected tile server.
+    private var serverDescription: String {
+        switch selectedServer {
+        case .osmTopo:
+            return "Topographic maps with hiking trails, contour lines, and elevation data."
+        case .cyclosm:
+            return "Cycling-focused maps with bike routes, lanes, and infrastructure."
+        case .osmStandard:
+            return "Standard road maps from OpenStreetMap. No hiking or cycling trails."
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1083,6 +1172,18 @@ struct DownloadConfigSheet: View {
                     TextField("Region Name", text: $regionName)
                 } header: {
                     Text("Name")
+                }
+
+                Section {
+                    Picker("Map Source", selection: $selectedServer) {
+                        Text("OpenTopoMap (Hiking)").tag(TileDownloader.TileServer.osmTopo)
+                        Text("CyclOSM (Cycling)").tag(TileDownloader.TileServer.cyclosm)
+                        Text("OpenStreetMap").tag(TileDownloader.TileServer.osmStandard)
+                    }
+                } header: {
+                    Text("Map Source")
+                } footer: {
+                    Text(serverDescription)
                 }
 
                 Section {

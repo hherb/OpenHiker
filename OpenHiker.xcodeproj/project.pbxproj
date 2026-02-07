@@ -88,6 +88,7 @@
 		1A0000010000000000000049 /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000049 /* ExportSheet.swift */; };
 		1A000001000000000000004A /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004A /* SidebarView.swift */; };
 		1A000001000000000000004B /* WaypointsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004B /* WaypointsListView.swift */; };
+		1A000001000000000000004C /* TrailMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004D /* TrailMapView.swift */; };
 		1B0000010000000000000045 /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1B0000010000000000000046 /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
 		1B0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
@@ -216,6 +217,7 @@
 		2A000001000000000000004A /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		2A000001000000000000004B /* WaypointsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointsListView.swift; sourceTree = "<group>"; };
 		2A000001000000000000004C /* OpenHiker iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker iOS.entitlements"; sourceTree = "<group>"; };
+		2A000001000000000000004D /* TrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailMapView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000001 /* OpenHikerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerMacApp.swift; sourceTree = "<group>"; };
 		2C0000010000000000000002 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000003 /* OpenHikerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerCommands.swift; sourceTree = "<group>"; };
@@ -315,6 +317,7 @@
 				2A0000010000000000000049 /* ExportSheet.swift */,
 				2A000001000000000000004A /* SidebarView.swift */,
 				2A000001000000000000004B /* WaypointsListView.swift */,
+				2A000001000000000000004D /* TrailMapView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -689,6 +692,7 @@
 				1A0000010000000000000049 /* ExportSheet.swift in Sources */,
 				1A000001000000000000004A /* SidebarView.swift in Sources */,
 				1A000001000000000000004B /* WaypointsListView.swift in Sources */,
+				1A000001000000000000004C /* TrailMapView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
