@@ -118,43 +118,44 @@ actor PBFParser {
         progress: @escaping (Int64, Int64) -> Void
     ) async throws -> (nodes: [Int64: OSMNode], ways: [OSMWay]) {
 
-        let fileData = try Data(contentsOf: fileURL)
-        let totalBytes = Int64(fileData.count)
-        var offset = 0
+        // Stream the file via FileHandle instead of loading it entirely into
+        // memory.  PBF files can be 100–500 MB for large regions; holding the
+        // whole file in a Data buffer is the single biggest memory spike.
+        let fileHandle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? fileHandle.close() }
+
+        let totalBytes = Int64(fileHandle.seekToEndOfFile())
+        fileHandle.seek(toFileOffset: 0)
+        var bytesRead: Int64 = 0
 
         var allNodes: [Int64: OSMNode] = [:]
         var allWays: [OSMWay] = []
 
-        // First pass: collect ALL nodes referenced by routable ways,
-        // plus the ways themselves. We need two passes because ways
-        // reference node IDs that may appear later in the file.
-        // However for efficiency we do a single pass: collect nodes
-        // into a dict, collect ways, then prune nodes not in any way.
+        // Single-pass parse: collect nodes into a dict, collect ways, then
+        // prune nodes not referenced by any way.
 
-        while offset < fileData.count {
+        while bytesRead < totalBytes {
             // Read BlobHeader length (4 bytes, big-endian)
-            guard offset + 4 <= fileData.count else { break }
-            let headerLength = Int(readBigEndianUInt32(fileData, at: offset))
-            offset += 4
+            guard let lengthData = readExact(fileHandle: fileHandle, count: 4) else { break }
+            let headerLength = Int(readBigEndianUInt32(lengthData))
+            bytesRead += 4
 
-            guard offset + headerLength <= fileData.count else { break }
-            let headerData = fileData[fileData.startIndex + offset ..< fileData.startIndex + offset + headerLength]
-            offset += headerLength
+            guard let headerData = readExact(fileHandle: fileHandle, count: headerLength) else { break }
+            bytesRead += Int64(headerLength)
 
             // Parse BlobHeader
-            let (blobType, blobDataSize) = try parseBlobHeader(Data(headerData))
+            let (blobType, blobDataSize) = try parseBlobHeader(headerData)
 
-            guard offset + blobDataSize <= fileData.count else { break }
-            let blobData = fileData[fileData.startIndex + offset ..< fileData.startIndex + offset + blobDataSize]
-            offset += blobDataSize
+            guard let blobData = readExact(fileHandle: fileHandle, count: blobDataSize) else { break }
+            bytesRead += Int64(blobDataSize)
 
-            progress(Int64(offset), totalBytes)
+            progress(bytesRead, totalBytes)
 
             // Only process OSMData blocks (skip OSMHeader)
             guard blobType == "OSMData" else { continue }
 
             // Decompress blob
-            let rawBlock = try decompressBlob(Data(blobData))
+            let rawBlock = try decompressBlob(blobData)
 
             // Parse PrimitiveBlock
             let (blockNodes, blockWays) = try parsePrimitiveBlock(rawBlock, boundingBox: boundingBox)
@@ -599,14 +600,27 @@ actor PBFParser {
 
     // MARK: - Helpers
 
-    /// Read a 4-byte big-endian unsigned integer from raw data at a given offset.
+    /// Read exactly `count` bytes from a FileHandle, returning `nil` at EOF.
+    ///
+    /// Uses `read(upToCount:)` which may return fewer bytes than requested
+    /// near EOF; this wrapper treats a short read as EOF.
+    private func readExact(fileHandle: FileHandle, count: Int) -> Data? {
+        guard count > 0 else { return Data() }
+        guard let data = try? fileHandle.read(upToCount: count),
+              data.count == count else {
+            return nil
+        }
+        return data
+    }
+
+    /// Read a 4-byte big-endian unsigned integer from raw data.
     ///
     /// PBF files use network byte order (big-endian) for blob header lengths.
-    private func readBigEndianUInt32(_ data: Data, at offset: Int) -> UInt32 {
-        let b0 = UInt32(data[data.startIndex + offset]) << 24
-        let b1 = UInt32(data[data.startIndex + offset + 1]) << 16
-        let b2 = UInt32(data[data.startIndex + offset + 2]) << 8
-        let b3 = UInt32(data[data.startIndex + offset + 3])
+    private func readBigEndianUInt32(_ data: Data) -> UInt32 {
+        let b0 = UInt32(data[data.startIndex]) << 24
+        let b1 = UInt32(data[data.startIndex + 1]) << 16
+        let b2 = UInt32(data[data.startIndex + 2]) << 8
+        let b3 = UInt32(data[data.startIndex + 3])
         return b0 | b1 | b2 | b3
     }
 }

@@ -60,8 +60,8 @@ actor ElevationDataManager {
     private static let nanosecondsPerSecond: UInt64 = 1_000_000_000
 
     /// Maximum number of tiles to keep in the memory cache.
-    /// Each tile is ~25 MB, so 4 tiles ≈ 100 MB.
-    private static let maxCachedTiles: Int = 4
+    /// Each tile is ~25 MB, so 2 tiles ≈ 50 MB.
+    private static let maxCachedTiles: Int = 2
 
     // MARK: - Properties
 
@@ -160,10 +160,24 @@ actor ElevationDataManager {
         var downloaded = 0
 
         for tileName in tileNames {
-            _ = try await loadTile(tileName)
+            // Download to disk only — don't load into memory cache.
+            // The cache will be populated on demand during elevation lookups.
+            try await ensureTileOnDisk(tileName)
             downloaded += 1
             progress(downloaded, total)
         }
+    }
+
+    /// Ensure a tile exists on disk, downloading it if needed.
+    ///
+    /// Unlike ``loadTile(_:)`` this does NOT load the tile into the in-memory
+    /// cache, avoiding a ~26 MB allocation per tile during bulk downloads.
+    private func ensureTileOnDisk(_ tileName: String) async throws {
+        let diskPath = cacheDirectory.appendingPathComponent("\(tileName).hgt")
+        guard !FileManager.default.fileExists(atPath: diskPath.path) else { return }
+
+        let data = try await downloadHGT(tileName: tileName)
+        try data.write(to: diskPath)
     }
 
     /// Clear all cached elevation tiles from disk and memory.
@@ -173,6 +187,14 @@ actor ElevationDataManager {
             try FileManager.default.removeItem(at: cacheDirectory)
             try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         }
+    }
+
+    /// Release all in-memory elevation grids without touching the disk cache.
+    ///
+    /// Call this in response to memory warnings. Subsequent elevation queries
+    /// will reload tiles from disk on demand.
+    func clearMemoryCache() {
+        loadedTiles.removeAll()
     }
 
     // MARK: - Tile Loading
@@ -187,20 +209,17 @@ actor ElevationDataManager {
             return cached
         }
 
-        // Disk cache
+        // Ensure the tile exists on disk (download if needed)
         let diskPath = cacheDirectory.appendingPathComponent("\(tileName).hgt")
-        if FileManager.default.fileExists(atPath: diskPath.path) {
-            let grid = try readHGT(at: diskPath)
-            loadedTiles[tileName] = grid
-            return grid
+        if !FileManager.default.fileExists(atPath: diskPath.path) {
+            let data = try await downloadHGT(tileName: tileName)
+            try data.write(to: diskPath)
         }
 
-        // Download
-        let data = try await downloadHGT(tileName: tileName)
-        try data.write(to: diskPath)
+        // Evict BEFORE loading so peak memory stays within maxCachedTiles
+        evictTileIfNeeded()
 
         let grid = try readHGT(at: diskPath)
-        evictTileIfNeeded()
         loadedTiles[tileName] = grid
         return grid
     }

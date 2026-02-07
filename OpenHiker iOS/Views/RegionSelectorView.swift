@@ -88,6 +88,11 @@ struct RegionSelectorView: View {
     /// The tile downloader actor used for downloading map tiles.
     private let tileDownloader = TileDownloader()
 
+    /// Shared elevation data manager for memory pressure handling.
+    /// Also used by ``buildRoutingGraph(boundingBox:mbtilesURL:totalTiles:)``
+    /// so its cache can be cleared on memory warnings.
+    private let sharedElevationManager = ElevationDataManager()
+
     /// Shared region storage for saving downloaded regions.
     @ObservedObject private var regionStorage = RegionStorage.shared
 
@@ -419,6 +424,12 @@ struct RegionSelectorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
             loadWaypoints()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            print("[Memory Warning] Clearing elevation memory cache")
+            Task {
+                await sharedElevationManager.clearMemoryCache()
+            }
+        }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             // When location updates, center map if user requested it
             if locationManager.shouldCenterOnNextUpdate, let location = newLocation {
@@ -702,7 +713,8 @@ struct RegionSelectorView: View {
         )
 
         do {
-            // Step 1: Download and parse OSM trail data
+            // Step 1: Download and parse OSM trail data.
+            // Scoped so that `osmDownloader` is released after parsing.
             await MainActor.run {
                 self.downloadProgress = RegionDownloadProgress(
                     regionId: regionId,
@@ -713,12 +725,18 @@ struct RegionSelectorView: View {
                 )
             }
 
-            let osmDownloader = OSMDataDownloader()
-            let (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
-                boundingBox: boundingBox
-            ) { _, _ in }
+            let nodes: [Int64: PBFParser.OSMNode]
+            let ways: [PBFParser.OSMWay]
+            do {
+                let osmDownloader = OSMDataDownloader()
+                (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
+                    boundingBox: boundingBox
+                ) { _, _ in }
+                // osmDownloader released here
+            }
 
-            // Step 2: Build routing graph (elevation is fetched internally by the builder)
+            // Step 2: Build routing graph (elevation is fetched internally by the builder).
+            // ElevationDataManager's memory cache is cleared after building.
             await MainActor.run {
                 self.downloadProgress = RegionDownloadProgress(
                     regionId: regionId,
@@ -730,14 +748,16 @@ struct RegionSelectorView: View {
             }
 
             let graphBuilder = RoutingGraphBuilder()
-            let elevationManager = ElevationDataManager()
             try await graphBuilder.buildGraph(
                 ways: ways,
                 nodes: nodes,
-                elevationManager: elevationManager,
+                elevationManager: sharedElevationManager,
                 outputPath: routingDbURL.path,
                 boundingBox: boundingBox
             ) { _, _ in }
+
+            // Release elevation tile memory cache now that graph is built
+            await sharedElevationManager.clearMemoryCache()
 
             print("Routing graph built successfully: \(routingDbURL.path)")
             return true

@@ -210,12 +210,16 @@ actor TileDownloader {
         for tileRange in tileRanges {
             currentZoom = tileRange.zoom
 
-            try tileStore.beginTransaction()
-
             // Process tiles in batches. With 3 subdomains × 6 connections each,
             // up to 18 requests can be in flight simultaneously.
             let tiles = tileRange.allTiles()
             let batchSize = 150
+            // Commit transactions every ~500 tiles to limit SQLite WAL journal
+            // growth while still getting good bulk-insert performance.
+            let commitInterval = 450
+            var tilesSinceCommit = 0
+
+            try tileStore.beginTransaction()
 
             for batch in tiles.chunked(into: batchSize) {
                 try await withThrowingTaskGroup(of: (TileCoordinate, Data)?.self) { group in
@@ -229,6 +233,7 @@ actor TileDownloader {
                         if let (tile, data) = result {
                             try tileStore.insertTile(tile, data: data)
                             downloadedCount += 1
+                            tilesSinceCommit += 1
 
                             progress(RegionDownloadProgress(
                                 regionId: regionId,
@@ -239,6 +244,13 @@ actor TileDownloader {
                             ))
                         }
                     }
+                }
+
+                // Periodic commit to keep WAL journal small
+                if tilesSinceCommit >= commitInterval {
+                    try tileStore.commitTransaction()
+                    try tileStore.beginTransaction()
+                    tilesSinceCommit = 0
                 }
             }
 

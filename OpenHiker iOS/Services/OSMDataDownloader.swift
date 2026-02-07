@@ -145,9 +145,19 @@ actor OSMDataDownloader {
         let query = buildOverpassQuery(boundingBox: boundingBox)
         let data = try await executeOverpassQuery(query: query)
 
+        // Write to a temp file so we can release the raw Data from memory
+        // before parsing.  The Overpass XML response can be 50–200 MB for
+        // large regions; holding both the raw bytes and the parsed structures
+        // in memory simultaneously doubles the peak footprint.
+        let tempURL = cacheDirectory.appendingPathComponent("overpass_temp_\(UUID().uuidString).osm")
+        try data.write(to: tempURL)
+        // data goes out of scope here — memory is now reclaimable
+
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
         progress("Parsing trail data...", 0.6)
 
-        let (nodes, ways) = try parseOverpassXML(data: data, boundingBox: boundingBox)
+        let (nodes, ways) = try parseOverpassXML(url: tempURL, boundingBox: boundingBox)
 
         progress("Parsed \(nodes.count) nodes and \(ways.count) trails", 1.0)
         return (nodes, ways)
@@ -246,20 +256,10 @@ actor OSMDataDownloader {
 
     // MARK: - Overpass XML Parsing
 
-    /// Parse Overpass API XML response into nodes and ways.
+    /// Parse Overpass API XML from an in-memory Data buffer.
     ///
-    /// The XML format is straightforward:
-    /// ```xml
-    /// <osm>
-    ///   <node id="..." lat="..." lon="...">
-    ///     <tag k="..." v="..."/>
-    ///   </node>
-    ///   <way id="...">
-    ///     <nd ref="..."/>
-    ///     <tag k="..." v="..."/>
-    ///   </way>
-    /// </osm>
-    /// ```
+    /// Prefer ``parseOverpassXML(url:boundingBox:)`` for large responses to
+    /// avoid keeping both the raw bytes and parsed structures in memory.
     private func parseOverpassXML(
         data: Data,
         boundingBox: BoundingBox
@@ -267,6 +267,28 @@ actor OSMDataDownloader {
 
         let parser = OverpassXMLParser(boundingBox: boundingBox)
         let xmlParser = XMLParser(data: data)
+        xmlParser.delegate = parser
+
+        guard xmlParser.parse() else {
+            throw OSMDownloadError.xmlParseError(xmlParser.parserError?.localizedDescription ?? "Unknown XML error")
+        }
+
+        return (parser.nodes, parser.ways)
+    }
+
+    /// Parse Overpass API XML from a file on disk.
+    ///
+    /// Uses `XMLParser(contentsOf:)` which streams the file, keeping only a
+    /// small read buffer in memory instead of the entire XML document.
+    private func parseOverpassXML(
+        url: URL,
+        boundingBox: BoundingBox
+    ) throws -> (nodes: [Int64: PBFParser.OSMNode], ways: [PBFParser.OSMWay]) {
+
+        let parser = OverpassXMLParser(boundingBox: boundingBox)
+        guard let xmlParser = XMLParser(contentsOf: url) else {
+            throw OSMDownloadError.xmlParseError("Could not open XML file at \(url.path)")
+        }
         xmlParser.delegate = parser
 
         guard xmlParser.parse() else {

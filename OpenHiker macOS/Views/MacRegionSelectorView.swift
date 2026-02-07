@@ -589,10 +589,14 @@ struct MacRegionSelectorView: View {
                 )
             }
 
-            let osmDownloader = OSMDataDownloader()
-            let (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
-                boundingBox: boundingBox
-            ) { _, _ in }
+            let nodes: [Int64: PBFParser.OSMNode]
+            let ways: [PBFParser.OSMWay]
+            do {
+                let osmDownloader = OSMDataDownloader()
+                (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
+                    boundingBox: boundingBox
+                ) { _, _ in }
+            }
 
             await MainActor.run {
                 self.downloadProgress = RegionDownloadProgress(
@@ -608,6 +612,9 @@ struct MacRegionSelectorView: View {
                 ways: ways, nodes: nodes, elevationManager: elevationManager,
                 outputPath: routingDbURL.path, boundingBox: boundingBox
             ) { _, _ in }
+
+            // Release elevation tile memory cache now that graph is built
+            await elevationManager.clearMemoryCache()
 
             return true
         } catch {
