@@ -269,7 +269,7 @@ struct TileRange: Codable, Sendable {
 /// Used throughout the app to define the geographic extent of a map region. Supports
 /// creating from explicit edges or from a center point and radius, and provides helpers
 /// for area estimation, tile range calculation, and containment tests.
-struct BoundingBox: Codable, Sendable, Equatable {
+struct BoundingBox: Codable, Sendable, Equatable, Hashable {
     /// Maximum latitude (northern edge) in degrees
     let north: Double
     /// Minimum latitude (southern edge) in degrees

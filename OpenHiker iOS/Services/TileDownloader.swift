@@ -90,12 +90,13 @@ actor TileDownloader {
         config.waitsForConnectivity = true
 
         // Set a proper User-Agent as required by OSM tile usage policy
+        #if os(macOS)
+        let userAgent = "OpenHiker/1.0 (macOS; hiking navigation app)"
+        #else
+        let userAgent = "OpenHiker/1.0 (iOS; hiking navigation app)"
+        #endif
         config.httpAdditionalHeaders = [
-            #if os(macOS)
-            "User-Agent": "OpenHiker/1.0 (macOS; hiking navigation app)"
-            #else
-            "User-Agent": "OpenHiker/1.0 (iOS; hiking navigation app)"
-            #endif
+            "User-Agent": userAgent
         ]
 
         self.session = URLSession(configuration: config)

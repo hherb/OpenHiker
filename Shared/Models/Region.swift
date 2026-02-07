@@ -25,7 +25,7 @@ import CoreLocation
 /// tile count, file size, and the filename of the MBTiles database on disk.
 ///
 /// Regions are persisted as JSON and displayed in the iOS app's "Downloaded Regions" list.
-struct Region: Identifiable, Codable, Sendable {
+struct Region: Identifiable, Codable, Sendable, Hashable {
     /// Unique identifier for this region
     let id: UUID
     /// User-provided name for the region (e.g., "Yosemite Valley")
