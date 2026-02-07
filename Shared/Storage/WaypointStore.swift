@@ -577,23 +577,39 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
 
     /// Adds columns introduced in Phase 6 (iCloud sync) if they don't already exist.
     ///
-    /// Uses `ALTER TABLE ... ADD COLUMN` which silently fails if the column
-    /// already exists (caught and ignored). This avoids needing a version table
-    /// or user_version pragma for this simple migration.
+    /// Checks the existing column names via `PRAGMA table_info` before issuing
+    /// `ALTER TABLE ... ADD COLUMN` to avoid "duplicate column name" errors in
+    /// the SQLite log.
     private func migrateSchema(db: OpaquePointer) {
-        let migrations = [
-            "ALTER TABLE waypoints ADD COLUMN modified_at TEXT",
-            "ALTER TABLE waypoints ADD COLUMN cloudkit_record_id TEXT"
+        let existingColumns = columnNames(table: "waypoints", db: db)
+        let migrations: [(column: String, sql: String)] = [
+            ("modified_at", "ALTER TABLE waypoints ADD COLUMN modified_at TEXT"),
+            ("cloudkit_record_id", "ALTER TABLE waypoints ADD COLUMN cloudkit_record_id TEXT")
         ]
 
-        for sql in migrations {
+        for migration in migrations {
+            guard !existingColumns.contains(migration.column) else { continue }
             var errorMessage: UnsafeMutablePointer<CChar>?
-            let result = sqlite3_exec(db, sql, nil, nil, &errorMessage)
+            let result = sqlite3_exec(db, migration.sql, nil, nil, &errorMessage)
             if result != SQLITE_OK {
-                // "duplicate column name" is expected when migration already applied
                 sqlite3_free(errorMessage)
             }
         }
+    }
+
+    /// Returns the set of column names for a table via `PRAGMA table_info`.
+    private func columnNames(table: String, db: OpaquePointer) -> Set<String> {
+        var columns: Set<String> = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let namePtr = sqlite3_column_text(stmt, 1) {
+                    columns.insert(String(cString: namePtr))
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return columns
     }
 
     /// Executes a raw SQL statement (DDL or DML without result set).

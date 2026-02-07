@@ -169,7 +169,8 @@ actor CloudKitStore {
             recordType: Self.savedRouteRecordType,
             predicate: NSPredicate(value: true)
         )
-        query.sortDescriptors = [NSSortDescriptor(key: "startTime", ascending: false)]
+        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
+        // fields as queryable/sortable. Sort locally after fetching instead.
 
         var results: [(String, SavedRoute)] = []
 
@@ -181,8 +182,7 @@ actor CloudKitStore {
                     results.append((record.recordID.recordName, route))
                 }
             }
-        } catch where Self.isRecordTypeNotFoundError(error) {
-            // Schema not initialized yet — no records exist, return empty
+        } catch where Self.isSchemaNotReadyError(error) {
             print("CloudKitStore: Record type \(Self.savedRouteRecordType) not found in schema, returning empty")
             return []
         } catch {
@@ -249,7 +249,8 @@ actor CloudKitStore {
             recordType: Self.waypointRecordType,
             predicate: NSPredicate(value: true)
         )
-        query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
+        // fields as queryable/sortable. Sort locally after fetching instead.
 
         var results: [(String, Waypoint)] = []
 
@@ -261,8 +262,7 @@ actor CloudKitStore {
                     results.append((record.recordID.recordName, waypoint))
                 }
             }
-        } catch where Self.isRecordTypeNotFoundError(error) {
-            // Schema not initialized yet — no records exist, return empty
+        } catch where Self.isSchemaNotReadyError(error) {
             print("CloudKitStore: Record type \(Self.waypointRecordType) not found in schema, returning empty")
             return []
         } catch {
@@ -335,7 +335,8 @@ actor CloudKitStore {
             recordType: Self.plannedRouteRecordType,
             predicate: NSPredicate(value: true)
         )
-        query.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
+        // fields as queryable/sortable. Sort locally after fetching instead.
 
         var results: [(String, PlannedRoute)] = []
 
@@ -347,7 +348,7 @@ actor CloudKitStore {
                     results.append((record.recordID.recordName, route))
                 }
             }
-        } catch where Self.isRecordTypeNotFoundError(error) {
+        } catch where Self.isSchemaNotReadyError(error) {
             print("CloudKitStore: Record type \(Self.plannedRouteRecordType) not found in schema, returning empty")
             return []
         } catch {
@@ -424,12 +425,18 @@ actor CloudKitStore {
 
     // MARK: - Error Helpers
 
-    /// Checks if a CloudKit error indicates the record type doesn't exist in the schema.
-    /// This happens on a fresh CloudKit container before any records have been saved.
-    /// CloudKit auto-creates record types on first save, so this is a transient condition.
-    private static func isRecordTypeNotFoundError(_ error: Error) -> Bool {
+    /// Checks if a CloudKit error indicates the schema isn't ready for queries.
+    ///
+    /// This covers two cases on a fresh or newly-created CloudKit schema:
+    /// - Record type doesn't exist yet (no records have been saved)
+    /// - Fields aren't marked queryable (auto-created schema lacks indexes)
+    ///
+    /// Both are transient: CloudKit auto-creates record types on first save,
+    /// and these errors resolve once the schema is properly initialized.
+    private static func isSchemaNotReadyError(_ error: Error) -> Bool {
         let description = error.localizedDescription
         return description.contains("Did not find record type")
+            || description.contains("is not marked queryable")
     }
 
     // MARK: - Private Decoders
