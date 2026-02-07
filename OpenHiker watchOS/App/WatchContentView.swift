@@ -204,7 +204,7 @@ struct RegionsListView: View {
 /// Currently supports:
 /// - **GPS Accuracy**: High / Balanced / Low Power modes affecting battery life
 /// - **Units**: Metric (km, m) or Imperial (mi, ft) for distance and elevation
-/// - **Display**: Toggle scale bar visibility
+/// - **Display**: Toggle scale bar and UV index overlay visibility
 /// - **HealthKit**: Authorization status, authorize button, workout recording toggle
 /// - **App info**: Version number
 struct SettingsView: View {
@@ -215,6 +215,9 @@ struct SettingsView: View {
 
     /// Whether to show the map scale bar, persisted via `@AppStorage`.
     @AppStorage("showScale") private var showScale = true
+
+    /// Whether to show the UV index overlay on the map.
+    @AppStorage("showUVIndex") private var showUVIndex = true
 
     /// Whether to use metric units (km, m) or imperial (mi, ft).
     @AppStorage("useMetricUnits") private var useMetricUnits = true
@@ -245,6 +248,7 @@ struct SettingsView: View {
 
                 Section("Display") {
                     Toggle("Show Scale", isOn: $showScale)
+                    Toggle("Show UV Index", isOn: $showUVIndex)
                 }
 
                 healthKitSection
@@ -329,4 +333,5 @@ struct SettingsView: View {
         .environmentObject(WatchConnectivityReceiver.shared)
         .environmentObject(HealthKitManager())
         .environmentObject(RouteGuidance())
+        .environmentObject(UVIndexManager())
 }

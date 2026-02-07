@@ -37,6 +37,7 @@ import SwiftUI
 struct HikeStatsOverlay: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var healthKitManager: HealthKitManager
+    @EnvironmentObject var uvIndexManager: UVIndexManager
 
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
@@ -92,14 +93,24 @@ struct HikeStatsOverlay: View {
                     }
                 }
 
-                // Row 3: SpO2 (only when recent reading available)
-                if healthKitManager.isAuthorized,
-                   let spO2 = healthKitManager.currentSpO2 {
-                    HStack(spacing: 6) {
+                // Row 3: SpO2 and UV index
+                HStack(spacing: 6) {
+                    if healthKitManager.isAuthorized,
+                       let spO2 = healthKitManager.currentSpO2 {
                         statBadge(
                             icon: "lungs.fill",
                             value: HikeStatsFormatter.formatSpO2(spO2),
                             iconColor: .cyan
+                        )
+                    }
+
+                    // UV index (when available)
+                    if let uvIndex = uvIndexManager.currentUVIndex,
+                       let category = uvIndexManager.currentCategory {
+                        statBadge(
+                            icon: "sun.max.fill",
+                            value: "UV \(uvIndex)",
+                            iconColor: uvColorForCategory(category)
                         )
                     }
                 }
@@ -153,6 +164,20 @@ struct HikeStatsOverlay: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    /// Returns the SwiftUI color for a UV category following the WHO color scheme.
+    ///
+    /// - Parameter category: The UV exposure category.
+    /// - Returns: The corresponding SwiftUI ``Color``.
+    private func uvColorForCategory(_ category: UVCategory) -> Color {
+        switch category {
+        case .low: return .green
+        case .moderate: return .yellow
+        case .high: return .orange
+        case .veryHigh: return .red
+        case .extreme: return .purple
+        }
     }
 
     // MARK: - Auto-Hide Timer
