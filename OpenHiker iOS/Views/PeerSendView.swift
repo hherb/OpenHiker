@@ -17,21 +17,22 @@
 
 import SwiftUI
 
-/// iOS sheet view for receiving a downloaded region from a nearby device via MultipeerConnectivity.
+/// iOS sheet view for sending a downloaded region to another device via MultipeerConnectivity.
 ///
-/// Presented from a toolbar button on the ``RegionsListView`` (Downloaded Regions tab).
-/// Starts browsing for nearby devices immediately on appear and shows discovered peers
-/// in a list. Tapping a peer sends an invitation, after which the transfer begins
-/// automatically.
+/// Presented from a context menu on a region row in ``RegionsListView``.
+/// Starts advertising immediately on appear and shows a progress indicator
+/// while the transfer is in progress. Automatically stops advertising on disappear.
 ///
 /// ## Flow
-/// 1. Sheet opens → starts browsing for nearby devices.
-/// 2. Discovered devices appear in a list with their names.
-/// 3. User taps a device → invitation sent → connection established.
-/// 4. Sender begins transferring region files automatically.
-/// 5. Progress bar shows file transfer progress.
-/// 6. Transfer completes → region appears in Downloaded Regions.
-struct PeerReceiveView: View {
+/// 1. Sheet opens → starts advertising on local network.
+/// 2. Receiving device opens "Receive" and taps this device's name.
+/// 3. Connection established → transfer begins automatically.
+/// 4. Progress bar shows file transfer progress.
+/// 5. Transfer completes → success checkmark shown.
+struct PeerSendView: View {
+    /// The region to send to the receiving device.
+    let region: Region
+
     /// Environment action to dismiss the sheet.
     @Environment(\.dismiss) private var dismiss
 
@@ -42,17 +43,28 @@ struct PeerReceiveView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 // Header icon
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 44))
+                Image(systemName: "arrow.up.doc")
+                    .font(.system(size: 48))
                     .foregroundStyle(.blue)
                     .padding(.top, 20)
 
-                // Content based on state
-                contentView
+                Text(region.name)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Text(region.fileSizeFormatted)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Divider()
+                    .padding(.horizontal)
+
+                // Status
+                statusView
 
                 Spacer()
             }
-            .navigationTitle("Receive")
+            .navigationTitle("Share Region")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -72,29 +84,39 @@ struct PeerReceiveView: View {
             }
         }
         .onAppear {
-            peerService.startBrowsing()
+            peerService.startAdvertising(region: region)
         }
         .onDisappear {
-            peerService.stopBrowsing()
+            peerService.stopAdvertising()
         }
     }
 
-    /// The main content area, which changes based on the current transfer state.
+    /// The status section showing the current transfer state and progress.
     @ViewBuilder
-    private var contentView: some View {
+    private var statusView: some View {
         switch peerService.transferState {
         case .waitingForPeer:
-            peerListView
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Waiting for connection…")
+                    .foregroundStyle(.secondary)
+                Text("The receiving device should tap \"Receive\" and select this phone.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            .padding()
 
         case .connected:
             VStack(spacing: 12) {
                 Image(systemName: "link.circle.fill")
                     .font(.title)
                     .foregroundStyle(.green)
-                Text("Connected — waiting for transfer…")
+                Text("Connected — starting transfer…")
                     .foregroundStyle(.secondary)
             }
-            .padding()
 
         case .sendingManifest, .sendingMBTiles, .sendingRouting,
              .sendingSavedRoutes, .sendingPlannedRoutes, .sendingWaypoints:
@@ -121,7 +143,7 @@ struct PeerReceiveView: View {
                 Text("Transfer Complete")
                     .font(.headline)
                     .foregroundStyle(.green)
-                Text("Region and associated routes have been imported.")
+                Text("Region and associated routes have been sent.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -145,7 +167,7 @@ struct PeerReceiveView: View {
 
                 Button("Try Again") {
                     peerService.disconnect()
-                    peerService.startBrowsing()
+                    peerService.startAdvertising(region: region)
                 }
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 8)
@@ -154,44 +176,6 @@ struct PeerReceiveView: View {
 
         case .idle:
             EmptyView()
-        }
-    }
-
-    /// Displays a list of discovered peers, or a scanning indicator if none found yet.
-    @ViewBuilder
-    private var peerListView: some View {
-        if peerService.discoveredPeers.isEmpty {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Scanning for nearby devices…")
-                    .foregroundStyle(.secondary)
-                Text("The sender should open \"Share Region\" on their device.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            .padding()
-        } else {
-            List {
-                Section("Nearby Devices") {
-                    ForEach(peerService.discoveredPeers, id: \.self) { peer in
-                        Button {
-                            peerService.invitePeer(peer)
-                        } label: {
-                            HStack {
-                                Image(systemName: "iphone.radiowaves.left.and.right")
-                                    .foregroundStyle(.blue)
-                                Text(peer.displayName)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
         }
     }
 }

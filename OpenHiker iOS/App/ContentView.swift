@@ -407,8 +407,11 @@ struct RegionsListView: View {
     @ObservedObject private var storage = RegionStorage.shared
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
-    /// Whether the "Receive from Mac" peer transfer sheet is showing.
+    /// Whether the peer receive sheet is showing.
     @State private var showingPeerReceive = false
+
+    /// Region to send via peer-to-peer transfer (triggers the send sheet).
+    @State private var regionToSend: Region?
 
     var body: some View {
         NavigationStack {
@@ -425,6 +428,13 @@ struct RegionsListView: View {
                             RegionRowView(region: region, onTransfer: {
                                 transferToWatch(region)
                             })
+                            .contextMenu {
+                                Button {
+                                    regionToSend = region
+                                } label: {
+                                    Label("Share with nearby device", systemImage: "square.and.arrow.up")
+                                }
+                            }
                         }
                         .onDelete(perform: deleteRegions)
                     }
@@ -436,9 +446,9 @@ struct RegionsListView: View {
                     Button {
                         showingPeerReceive = true
                     } label: {
-                        Image(systemName: "laptopcomputer.and.arrow.down")
+                        Image(systemName: "square.and.arrow.down")
                     }
-                    .help("Receive region from Mac")
+                    .help("Receive from nearby device")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     EditButton()
@@ -450,6 +460,9 @@ struct RegionsListView: View {
         }
         .sheet(isPresented: $showingPeerReceive) {
             PeerReceiveView()
+        }
+        .sheet(item: $regionToSend) { region in
+            PeerSendView(region: region)
         }
     }
 

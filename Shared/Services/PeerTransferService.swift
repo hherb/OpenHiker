@@ -50,6 +50,16 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
     /// Timeout in seconds for peer invitations.
     static let invitationTimeout: TimeInterval = 60
 
+    // MARK: - Transfer Role
+
+    /// The role this device is playing in the current transfer session.
+    enum TransferRole {
+        /// This device is advertising and will send a region when a peer connects.
+        case sender
+        /// This device is browsing and will receive a region from a connected peer.
+        case receiver
+    }
+
     // MARK: - Transfer State
 
     /// The possible states of a region transfer.
@@ -135,6 +145,9 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
     /// Whether an invitation is currently pending (prevents duplicate invitations).
     private var isInviting = false
 
+    /// The current role for this transfer session (sender or receiver).
+    private var currentRole: TransferRole?
+
     // MARK: - Singleton
 
     /// Shared singleton instance.
@@ -181,6 +194,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         stopAdvertising()
         createSession()
 
+        currentRole = .sender
         regionToSend = region
         transferState = .waitingForPeer
         progress = 0
@@ -211,6 +225,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         stopBrowsing()
         createSession()
 
+        currentRole = .receiver
         discoveredPeers = []
         transferState = .waitingForPeer
         progress = 0
@@ -446,6 +461,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         regionToSend = nil
         receivedManifest = nil
         isInviting = false
+        currentRole = nil
 
         DispatchQueue.main.async {
             self.transferState = .idle
@@ -478,10 +494,10 @@ extension PeerTransferService: MCSessionDelegate {
                     self.connectedPeers.append(peerID)
                 }
                 self.transferState = .connected
-                // On macOS, auto-start sending once connected
-                #if os(macOS)
-                self.sendRegion(to: peerID)
-                #endif
+                // Auto-start sending if this device is the sender
+                if self.currentRole == .sender {
+                    self.sendRegion(to: peerID)
+                }
 
             case .notConnected:
                 self.connectedPeers.removeAll { $0 == peerID }
