@@ -66,6 +66,9 @@ struct MapView: View {
     /// Whether the map should auto-center on the user's GPS position.
     @State private var isCenteredOnUser = true
 
+    /// Whether heading-up mode is active (map rotates so travel direction points up).
+    @State private var isHeadingUp = true
+
     /// The SpriteKit scene displaying map tiles, or `nil` if no region is loaded.
     @State private var mapScene: MapScene?
 
@@ -142,6 +145,14 @@ struct MapView: View {
         .onChange(of: locationManager.heading) { _, newHeading in
             if let heading = newHeading {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
+                // In heading-up mode, refresh overlays since the map rotation changed
+                if isHeadingUp {
+                    if locationManager.isTracking {
+                        mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
+                    }
+                    refreshWaypointMarkers()
+                    refreshRouteLine()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
@@ -255,11 +266,11 @@ struct MapView: View {
     /// The bottom control bar with center-on-user, pin, tracking toggle, and region picker buttons.
     private var bottomControls: some View {
         HStack(spacing: 12) {
-            // Center on user button
+            // Center on user / heading-up button
             Button {
                 centerOnUser()
             } label: {
-                Image(systemName: isCenteredOnUser ? "location.fill" : "location")
+                Image(systemName: isCenteredOnUser && isHeadingUp ? "location.north.line.fill" : isCenteredOnUser ? "location.fill" : "location")
                     .font(.title3)
             }
             .buttonStyle(.plain)
@@ -306,11 +317,13 @@ struct MapView: View {
 
     // MARK: - Gestures
 
-    /// A drag gesture that disables auto-centering when the user pans the map.
+    /// A drag gesture that disables auto-centering and heading-up when the user pans the map.
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
                 isCenteredOnUser = false
+                isHeadingUp = false
+                mapScene?.isHeadingUpMode = false
                 // Pan the map
                 // This would require implementing pan logic in MapRenderer
             }
@@ -335,7 +348,9 @@ struct MapView: View {
             try mapRenderer.loadRegion(region)
             selectedRegion = region
             // Create the scene once after loading; SpriteView will reuse it
-            mapScene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
+            let scene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
+            scene.isHeadingUpMode = isHeadingUp
+            mapScene = scene
             refreshWaypointMarkers()
         } catch {
             errorMessage = "Failed to load map region: \(error.localizedDescription)"
@@ -353,6 +368,11 @@ struct MapView: View {
     private func updateUserPosition(_ location: CLLocation?) {
         guard let location = location else { return }
 
+        // Center map on user if enabled (must happen before marker/overlay updates)
+        if isCenteredOnUser {
+            mapRenderer.setCenter(location.coordinate)
+        }
+
         // Update position marker on map
         mapScene?.updatePositionMarker(coordinate: location.coordinate)
 
@@ -366,9 +386,8 @@ struct MapView: View {
             }
         }
 
-        // Center map on user if enabled
+        // Refresh overlays when centered (tiles already updated by setCenter)
         if isCenteredOnUser {
-            mapRenderer.setCenter(location.coordinate)
             refreshWaypointMarkers()
         }
 
@@ -382,7 +401,7 @@ struct MapView: View {
         uvIndexManager.updateUVIndex(for: location)
     }
 
-    /// Centers the map on the user's current GPS position.
+    /// Centers the map on the user's current GPS position and enables heading-up mode.
     ///
     /// If no location is available yet, requests a single location update.
     private func centerOnUser() {
@@ -392,7 +411,14 @@ struct MapView: View {
         }
 
         isCenteredOnUser = true
+        isHeadingUp = true
+        mapScene?.isHeadingUpMode = true
         mapRenderer.setCenter(location.coordinate)
+
+        // Apply current heading immediately
+        if let heading = locationManager.heading {
+            mapScene?.updateHeading(trueHeading: heading.trueHeading)
+        }
     }
 
     /// Loads all waypoints from the local ``WaypointStore`` and updates the map markers.

@@ -198,6 +198,7 @@ final class MapRenderer: ObservableObject {
 /// - A compass indicator in the top-right corner
 /// - A track trail polyline showing recorded hike points
 /// - A planned route polyline for turn-by-turn navigation
+/// - Heading-up map rotation with user position in lower third
 ///
 /// Tiles are organized in a 3x3 grid around the center tile, repositioned
 /// using Web Mercator math to achieve sub-tile-precision scrolling.
@@ -205,26 +206,30 @@ final class MapRenderer: ObservableObject {
 /// ## Node hierarchy
 /// ```
 /// Scene
-///   ├── tilesNode        ← Contains tile sprites (z=0)
-///   └── overlaysNode     ← Contains markers and compass (z>0)
-///         ├── routeNode (z=40) ← Planned route polyline (purple)
-///         ├── trackNode (z=50) ← Recorded track trail (orange)
-///         ├── waypointMarkers (z=75)
-///         ├── positionMarker (z=100)
-///         │     └── headingCone (z=99)
-///         └── compassNode (z=200)
+///   ├── mapContentNode   ← Rotates for heading-up display
+///   │     ├── tilesNode        ← Contains tile sprites (z=0)
+///   │     └── rotatingOverlaysNode ← Overlays that rotate with map
+///   │           ├── routeNode (z=40) ← Planned route polyline (purple)
+///   │           ├── trackNode (z=50) ← Recorded track trail (orange)
+///   │           └── waypointMarkers (z=75)
+///   ├── positionMarker (z=100) ← Stays screen-fixed in lower third
+///   │     └── headingCone (z=99)
+///   └── compassNode (z=200)    ← Stays screen-fixed, rotates to show north
 /// ```
 final class MapScene: SKScene {
     /// Weak reference to the renderer that provides tile data and coordinate state.
     private weak var renderer: MapRenderer?
 
+    /// Container node for tiles and map overlays. Rotated for heading-up display.
+    private let mapContentNode = SKNode()
+
     /// Parent node containing all tile sprites.
     private let tilesNode = SKNode()
 
-    /// Parent node for overlay elements (position marker, compass, track trail).
-    private let overlaysNode = SKNode()
+    /// Parent node for overlay elements that rotate with the map (route, track, waypoints).
+    private let rotatingOverlaysNode = SKNode()
 
-    /// The blue circle marking the user's current GPS position.
+    /// The blue circle marking the user's current GPS position (screen-fixed).
     private var positionMarker: SKShapeNode?
 
     /// A triangular cone on the position marker indicating compass heading.
@@ -245,6 +250,18 @@ final class MapScene: SKScene {
     /// Maximum number of textures to keep in the cache before evicting old entries.
     private let maxCacheSize = 100
 
+    /// Whether heading-up mode is active (map rotates so heading points up).
+    var isHeadingUpMode: Bool = true
+
+    /// The current heading in degrees (0 = north, 90 = east). Updated externally.
+    private var currentHeadingDegrees: Double = 0
+
+    /// The screen-space Y position of the user's position marker.
+    /// Placed in the lower third of the display so more map is visible ahead.
+    private var userScreenY: CGFloat {
+        size.height * 0.25
+    }
+
     // MARK: - Initialization
 
     /// Creates a new map scene with the given size and renderer.
@@ -262,8 +279,10 @@ final class MapScene: SKScene {
         backgroundColor = .darkGray
         scaleMode = .resizeFill
 
-        addChild(tilesNode)
-        addChild(overlaysNode)
+        // Map content node holds tiles and rotating overlays, and is rotated for heading-up
+        mapContentNode.addChild(tilesNode)
+        mapContentNode.addChild(rotatingOverlaysNode)
+        addChild(mapContentNode)
 
         setupPositionMarker()
         setupCompass()
@@ -280,6 +299,9 @@ final class MapScene: SKScene {
     /// The marker is an 8pt radius circle in iOS-blue with a white border. A triangular
     /// heading cone is added as a child node. The marker pulses between 1.0x and 1.15x
     /// scale to draw attention.
+    ///
+    /// In heading-up mode, the marker stays at a fixed screen position in the lower third.
+    /// The heading cone always points up (direction of travel) when heading-up is active.
     private func setupPositionMarker() {
         let marker = SKShapeNode(circleOfRadius: 8)
         marker.fillColor = UIColor(red: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
@@ -288,7 +310,7 @@ final class MapScene: SKScene {
         marker.zPosition = 100
         marker.isHidden = true
 
-        // Heading direction cone (triangle pointing in travel direction)
+        // Heading direction cone (triangle pointing up = direction of travel)
         let conePath = CGMutablePath()
         conePath.move(to: CGPoint(x: 0, y: 18))     // tip
         conePath.addLine(to: CGPoint(x: -7, y: 4))   // bottom-left
@@ -311,13 +333,15 @@ final class MapScene: SKScene {
         marker.run(SKAction.repeatForever(pulse))
 
         self.positionMarker = marker
-        overlaysNode.addChild(marker)
+        // Added directly to scene (not mapContentNode) so it stays screen-fixed
+        addChild(marker)
     }
 
     /// Creates the compass indicator in the top-right corner of the scene.
     ///
     /// The compass consists of a semi-transparent background circle, a red north
-    /// arrow, a white south arrow, and an "N" label.
+    /// arrow, a white south arrow, and an "N" label. In heading-up mode, the
+    /// compass rotates to indicate where north is relative to the current heading.
     private func setupCompass() {
         let compass = SKNode()
         compass.zPosition = 200
@@ -368,7 +392,8 @@ final class MapScene: SKScene {
         compass.position = CGPoint(x: size.width - 22, y: size.height - 22)
 
         self.compassNode = compass
-        overlaysNode.addChild(compass)
+        // Added directly to scene (not mapContentNode) so it stays screen-fixed
+        addChild(compass)
     }
 
     // MARK: - Scene Lifecycle
@@ -410,8 +435,10 @@ final class MapScene: SKScene {
             zoom: zoom
         )
 
-        // For a watch screen, we typically need a 3x3 grid of tiles
-        let visibleTiles = getVisibleTiles(around: centerTile, radius: 1)
+        // In heading-up mode, the map is rotated, so we need a larger grid to cover
+        // screen corners. A 5x5 grid ensures full coverage at any rotation angle.
+        let tileRadius = isHeadingUpMode ? 2 : 1
+        let visibleTiles = getVisibleTiles(around: centerTile, radius: tileRadius)
 
         // Remove tiles that are no longer visible
         let visibleSet = Set(visibleTiles)
@@ -529,11 +556,24 @@ final class MapScene: SKScene {
         tilesNode.addChild(placeholder)
     }
 
+    /// The screen-space anchor point where the map center coordinate is rendered.
+    ///
+    /// In heading-up mode this is the user's position in the lower third.
+    /// In north-up mode this is the screen center.
+    private var mapAnchorPoint: CGPoint {
+        if isHeadingUpMode {
+            return CGPoint(x: size.width / 2, y: userScreenY)
+        } else {
+            return CGPoint(x: size.width / 2, y: size.height / 2)
+        }
+    }
+
     /// Repositions all tile sprites based on the current center coordinate.
     ///
     /// Uses Web Mercator math to calculate the fractional pixel offset within the
     /// center tile, providing smooth sub-tile scrolling. Each tile is positioned
-    /// relative to the screen center based on its offset from the center tile.
+    /// relative to the map anchor point (lower third in heading-up mode, or screen
+    /// center in north-up mode).
     ///
     /// - Parameter centerTile: The tile coordinate at the map center.
     private func updateTilePositions(centerTile: TileCoordinate) {
@@ -554,6 +594,22 @@ final class MapScene: SKScene {
             y: CGFloat(yFraction - 0.5) * tileSize
         )
 
+        // When mapContentNode is positioned at the anchor and rotated, tile positions
+        // must be relative to (0,0) in mapContentNode's local coordinate space.
+        // If mapContentNode.position == anchor, then a child at (0,0) appears at anchor on screen.
+        // If mapContentNode.position == .zero (north-up), children are in absolute screen coords.
+        let offsetX: CGFloat
+        let offsetY: CGFloat
+        if isHeadingUpMode {
+            // mapContentNode is positioned at anchor, so (0,0) = anchor on screen
+            offsetX = 0
+            offsetY = 0
+        } else {
+            // mapContentNode at (0,0), so use anchor directly
+            offsetX = mapAnchorPoint.x
+            offsetY = mapAnchorPoint.y
+        }
+
         tilesNode.children.forEach { node in
             guard let tileName = node.name,
                   let tile = parseTileName(tileName) else { return }
@@ -562,8 +618,8 @@ final class MapScene: SKScene {
             let dy = tile.y - centerTile.y
 
             node.position = CGPoint(
-                x: size.width / 2 + CGFloat(dx) * tileSize + centerOffset.x,
-                y: size.height / 2 - CGFloat(dy) * tileSize + centerOffset.y
+                x: offsetX + CGFloat(dx) * tileSize + centerOffset.x,
+                y: offsetY - CGFloat(dy) * tileSize + centerOffset.y
             )
         }
     }
@@ -572,8 +628,9 @@ final class MapScene: SKScene {
 
     /// Updates the position marker to show the user's current GPS location.
     ///
-    /// Converts the geographic coordinate to screen position using Web Mercator
-    /// projection math, relative to the current map center.
+    /// In heading-up mode, the marker stays at a fixed screen position in the
+    /// lower third of the display — the map moves and rotates underneath it.
+    /// In north-up mode, the marker moves on screen relative to the map center.
     ///
     /// - Parameter coordinate: The user's current GPS coordinate.
     func updatePositionMarker(coordinate: CLLocationCoordinate2D) {
@@ -583,10 +640,97 @@ final class MapScene: SKScene {
             return
         }
 
+        if isHeadingUpMode {
+            // Fixed position in lower third of screen
+            positionMarker?.position = CGPoint(x: size.width / 2, y: userScreenY)
+        } else {
+            // Calculate pixel offset from map center
+            let zoom = renderer.currentZoom
+            let tileSize = MapRenderer.tileSize
+            let n = Double(1 << zoom)
+
+            let centerX = (center.longitude + 180.0) / 360.0 * n
+            let centerLatRad = center.latitude * .pi / 180.0
+            let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+
+            let posX = (coordinate.longitude + 180.0) / 360.0 * n
+            let posLatRad = coordinate.latitude * .pi / 180.0
+            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
+
+            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
+            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+
+            positionMarker?.position = CGPoint(x: screenX, y: screenY)
+        }
+        positionMarker?.isHidden = false
+    }
+
+    /// Updates the map rotation and heading indicators based on compass heading.
+    ///
+    /// In heading-up mode:
+    /// - Rotates the entire `mapContentNode` so the heading direction points up
+    /// - The heading cone always points straight up (direction of travel)
+    /// - The compass rotates to show where north is
+    ///
+    /// In north-up mode:
+    /// - The map stays fixed (north up)
+    /// - The heading cone rotates to show direction of travel
+    ///
+    /// - Parameter trueHeading: The compass heading in degrees (0 = north, 90 = east).
+    func updateHeading(trueHeading: Double) {
+        currentHeadingDegrees = trueHeading
+
+        if isHeadingUpMode {
+            // Rotate map so heading points up. The rotation pivot is at the
+            // mapContentNode's position, so we set its position to the user's
+            // screen location and rotate around that point.
+            let headingRadians = CGFloat(-trueHeading * .pi / 180.0)
+            let anchor = mapAnchorPoint
+            mapContentNode.position = anchor
+            mapContentNode.zRotation = headingRadians
+
+            // Heading cone always points up in heading-up mode (direction of travel)
+            headingCone?.zRotation = 0
+            headingCone?.isHidden = false
+
+            // Compass rotates to show north direction relative to heading
+            compassNode?.zRotation = headingRadians
+        } else {
+            // North-up mode: map doesn't rotate
+            mapContentNode.position = .zero
+            mapContentNode.zRotation = 0
+
+            // Rotate heading cone to show direction of travel
+            let rotation = -trueHeading * .pi / 180.0
+            headingCone?.zRotation = CGFloat(rotation)
+            headingCone?.isHidden = false
+
+            // Compass stays fixed (north is up)
+            compassNode?.zRotation = 0
+        }
+    }
+
+    /// Hides both the position marker and heading cone.
+    func hidePositionMarker() {
+        positionMarker?.isHidden = true
+        headingCone?.isHidden = true
+    }
+
+    // MARK: - Coordinate Projection
+
+    /// Projects a geographic coordinate to a position in the `mapContentNode`'s local coordinate space.
+    ///
+    /// This accounts for the heading-up offset so that overlays (track trail, route, waypoints)
+    /// positioned in `rotatingOverlaysNode` align correctly with the tiles.
+    ///
+    /// - Parameter coordinate: The geographic coordinate to project.
+    /// - Returns: The position in `mapContentNode` local space, or `nil` if no renderer/center is available.
+    private func projectToMapLocal(_ coordinate: CLLocationCoordinate2D) -> CGPoint? {
+        guard let renderer = renderer,
+              let center = renderer.centerCoordinate else { return nil }
+
         let zoom = renderer.currentZoom
         let tileSize = MapRenderer.tileSize
-
-        // Calculate pixel offset
         let n = Double(1 << zoom)
 
         let centerX = (center.longitude + 180.0) / 360.0 * n
@@ -597,34 +741,21 @@ final class MapScene: SKScene {
         let posLatRad = coordinate.latitude * .pi / 180.0
         let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
 
-        let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
-        let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+        // Same offset logic as updateTilePositions
+        let offsetX: CGFloat
+        let offsetY: CGFloat
+        if isHeadingUpMode {
+            offsetX = 0
+            offsetY = 0
+        } else {
+            offsetX = mapAnchorPoint.x
+            offsetY = mapAnchorPoint.y
+        }
 
-        positionMarker?.position = CGPoint(x: screenX, y: screenY)
-        positionMarker?.isHidden = false
-    }
-
-    /// Rotates the heading cone to point in the compass direction.
-    ///
-    /// Converts the true heading (clockwise degrees from north) to SpriteKit's
-    /// rotation system (counter-clockwise radians).
-    ///
-    /// - Parameter trueHeading: The compass heading in degrees (0 = north, 90 = east).
-    func updateHeading(trueHeading: Double) {
-        guard let cone = headingCone else { return }
-        // SpriteKit rotation is counter-clockwise in radians; heading is clockwise degrees from north
-        // In SpriteKit, 0 radians = pointing right, positive = counter-clockwise
-        // Our cone points up (north) by default. To rotate it to the heading:
-        // Convert heading (clockwise from north) to SpriteKit rotation (counter-clockwise from up)
-        let rotation = -trueHeading * .pi / 180.0
-        cone.zRotation = CGFloat(rotation)
-        cone.isHidden = false
-    }
-
-    /// Hides both the position marker and heading cone.
-    func hidePositionMarker() {
-        positionMarker?.isHidden = true
-        headingCone?.isHidden = true
+        return CGPoint(
+            x: offsetX + CGFloat(posX - centerX) * tileSize,
+            y: offsetY - CGFloat(posY - centerY) * tileSize
+        )
     }
 
     // MARK: - Track Trail
@@ -642,34 +773,19 @@ final class MapScene: SKScene {
         trackNode?.removeFromParent()
         trackNode = nil
 
-        guard let renderer = renderer,
-              let center = renderer.centerCoordinate,
-              trackPoints.count >= 2 else { return }
-
-        let zoom = renderer.currentZoom
-        let tileSize = MapRenderer.tileSize
-        let n = Double(1 << zoom)
-
-        let centerX = (center.longitude + 180.0) / 360.0 * n
-        let centerLatRad = center.latitude * .pi / 180.0
-        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+        guard trackPoints.count >= 2 else { return }
 
         let path = CGMutablePath()
         var started = false
 
         for point in trackPoints {
-            let posX = (point.coordinate.longitude + 180.0) / 360.0 * n
-            let posLatRad = point.coordinate.latitude * .pi / 180.0
-            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
-
-            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
-            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+            guard let screenPos = projectToMapLocal(point.coordinate) else { continue }
 
             if !started {
-                path.move(to: CGPoint(x: screenX, y: screenY))
+                path.move(to: screenPos)
                 started = true
             } else {
-                path.addLine(to: CGPoint(x: screenX, y: screenY))
+                path.addLine(to: screenPos)
             }
         }
 
@@ -682,7 +798,7 @@ final class MapScene: SKScene {
         trail.isAntialiased = true
 
         self.trackNode = trail
-        overlaysNode.addChild(trail)
+        rotatingOverlaysNode.addChild(trail)
     }
 
     // MARK: - Route Polyline
@@ -701,34 +817,19 @@ final class MapScene: SKScene {
         routeNode?.removeFromParent()
         routeNode = nil
 
-        guard let renderer = renderer,
-              let center = renderer.centerCoordinate,
-              coordinates.count >= 2 else { return }
-
-        let zoom = renderer.currentZoom
-        let tileSize = MapRenderer.tileSize
-        let n = Double(1 << zoom)
-
-        let centerX = (center.longitude + 180.0) / 360.0 * n
-        let centerLatRad = center.latitude * .pi / 180.0
-        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+        guard coordinates.count >= 2 else { return }
 
         let path = CGMutablePath()
         var started = false
 
         for coord in coordinates {
-            let posX = (coord.longitude + 180.0) / 360.0 * n
-            let posLatRad = coord.latitude * .pi / 180.0
-            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
-
-            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
-            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
+            guard let screenPos = projectToMapLocal(coord) else { continue }
 
             if !started {
-                path.move(to: CGPoint(x: screenX, y: screenY))
+                path.move(to: screenPos)
                 started = true
             } else {
-                path.addLine(to: CGPoint(x: screenX, y: screenY))
+                path.addLine(to: screenPos)
             }
         }
 
@@ -741,7 +842,7 @@ final class MapScene: SKScene {
         routeLine.isAntialiased = true
 
         self.routeNode = routeLine
-        overlaysNode.addChild(routeLine)
+        rotatingOverlaysNode.addChild(routeLine)
     }
 
     /// Removes the planned route polyline from the map.
@@ -763,46 +864,32 @@ final class MapScene: SKScene {
     ///
     /// - Parameter waypoints: The full list of waypoints to display on the map.
     func updateWaypointMarkers(waypoints: [Waypoint]) {
-        guard let renderer = renderer,
-              let center = renderer.centerCoordinate else { return }
-
-        let zoom = renderer.currentZoom
-        let tileSize = MapRenderer.tileSize
-
-        let n = Double(1 << zoom)
-        let centerX = (center.longitude + 180.0) / 360.0 * n
-        let centerLatRad = center.latitude * .pi / 180.0
-        let centerY = (1.0 - asinh(tan(centerLatRad)) / .pi) / 2.0 * n
+        guard renderer != nil else { return }
 
         // Build set of current waypoint IDs
         let currentIds = Set(waypoints.map { "waypoint-\($0.id.uuidString)" })
 
         // Remove markers that no longer exist
-        overlaysNode.children
+        rotatingOverlaysNode.children
             .filter { ($0.name ?? "").hasPrefix("waypoint-") && !currentIds.contains($0.name ?? "") }
             .forEach { $0.removeFromParent() }
 
         // Add or update markers
         for waypoint in waypoints {
             let nodeName = "waypoint-\(waypoint.id.uuidString)"
+            let coord = CLLocationCoordinate2D(latitude: waypoint.latitude, longitude: waypoint.longitude)
 
-            // Calculate screen position from lat/lon
-            let posX = (waypoint.longitude + 180.0) / 360.0 * n
-            let posLatRad = waypoint.latitude * .pi / 180.0
-            let posY = (1.0 - asinh(tan(posLatRad)) / .pi) / 2.0 * n
+            guard let screenPos = projectToMapLocal(coord) else { continue }
 
-            let screenX = size.width / 2 + CGFloat(posX - centerX) * tileSize
-            let screenY = size.height / 2 - CGFloat(posY - centerY) * tileSize
-
-            if let existingNode = overlaysNode.childNode(withName: nodeName) {
+            if let existingNode = rotatingOverlaysNode.childNode(withName: nodeName) {
                 // Reposition existing marker
-                existingNode.position = CGPoint(x: screenX, y: screenY)
+                existingNode.position = screenPos
             } else {
                 // Create new marker
                 let marker = createWaypointMarkerNode(for: waypoint)
                 marker.name = nodeName
-                marker.position = CGPoint(x: screenX, y: screenY)
-                overlaysNode.addChild(marker)
+                marker.position = screenPos
+                rotatingOverlaysNode.addChild(marker)
             }
         }
     }
