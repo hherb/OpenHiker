@@ -109,11 +109,19 @@ actor CloudSyncManager {
                 return
             }
 
-            // Set up push notification subscriptions
+            // Set up push notification subscriptions (may partially fail on first
+            // launch if record types haven't been created yet — that's OK)
             try await cloudStore.setupSubscriptions()
 
-            // Perform initial sync
+            // Perform initial sync (this creates record types via first push)
             await performSync()
+
+            // Retry subscriptions if they failed due to missing record types.
+            // After the sync above, record types should now exist.
+            if await !cloudStore.subscriptionsReady {
+                print("CloudSyncManager: Retrying subscriptions after initial sync")
+                try await cloudStore.setupSubscriptions()
+            }
         } catch {
             print("CloudSyncManager: Launch sync error: \(error.localizedDescription)")
         }

@@ -279,18 +279,24 @@ actor CloudKitStore {
 
     // MARK: - Subscription
 
-    /// Creates a CloudKit subscription for change notifications.
+    /// Whether subscriptions have been successfully created for all record types.
+    /// When `false`, ``setupSubscriptions()`` will retry on the next sync cycle.
+    private(set) var subscriptionsReady = false
+
+    /// Creates CloudKit subscriptions for change notifications.
     ///
     /// Subscribes to changes in all three record types so the app can be notified
-    /// of remote changes via push notifications.
-    ///
-    /// - Throws: ``CloudKitStoreError`` if subscription creation fails.
+    /// of remote changes via push notifications. Tolerates failures for individual
+    /// record types (e.g., when the schema hasn't been initialized yet) — the record
+    /// types are auto-created on first push, and subscriptions succeed on retry.
     func setupSubscriptions() async throws {
         let recordTypes = [
             Self.savedRouteRecordType,
             Self.waypointRecordType,
             Self.plannedRouteRecordType
         ]
+
+        var allSucceeded = true
 
         for recordType in recordTypes {
             let subscriptionID = "subscription-\(recordType)"
@@ -310,11 +316,17 @@ actor CloudKitStore {
             } catch let error as CKError where error.code == .serverRejectedRequest {
                 // Subscription already exists — this is fine
             } catch {
-                throw CloudKitStoreError.operationFailed(
-                    "Failed to create subscription for \(recordType): \(error.localizedDescription)"
-                )
+                // Record type may not exist yet (schema not initialized). This is
+                // expected on first launch before any records have been pushed.
+                // The types are auto-created on first save, and subscriptions will
+                // succeed on the next sync cycle.
+                print("CloudKitStore: Skipping subscription for \(recordType) " +
+                      "(will retry after first sync): \(error.localizedDescription)")
+                allSucceeded = false
             }
         }
+
+        subscriptionsReady = allSucceeded
     }
 
     // MARK: - Private Decoders

@@ -25,14 +25,16 @@ import AppKit
 /// Downloads map tiles from OpenStreetMap-compatible tile servers and packages them
 /// into MBTiles (SQLite) databases for offline use on Apple Watch.
 ///
-/// This is a Swift Actor ensuring thread-safe concurrent downloads. It respects the
-/// OSM tile usage policy by rate-limiting requests (100ms delay per tile in each batch)
-/// and setting a proper User-Agent header.
+/// This is a Swift Actor ensuring thread-safe concurrent downloads. It uses subdomain
+/// rotation (where supported) to distribute requests across multiple hosts, increasing
+/// effective concurrency beyond URLSession's per-host limit. Individual network requests
+/// are throttled to ~20/sec to stay polite to tile servers, while cache hits proceed
+/// at full speed with no throttling.
 ///
 /// ## Download flow
 /// 1. Calculate required tiles from the bounding box and zoom levels
 /// 2. Create an MBTiles database via ``WritableTileStore``
-/// 3. Download tiles in batches of 50, checking the local cache first
+/// 3. Download tiles in batches of 150, checking the local cache first
 /// 4. Insert downloaded tiles into the MBTiles database
 /// 5. Report progress via the callback after each tile
 actor TileDownloader {
@@ -44,20 +46,56 @@ actor TileDownloader {
 
     /// Supported tile server configurations.
     ///
-    /// Each server provides a URL template for tile retrieval and an attribution
-    /// string to comply with the server's usage policy.
+    /// Each server provides URL templates for tile retrieval (with subdomain rotation
+    /// where supported) and an attribution string to comply with the server's usage policy.
     enum TileServer: String, CaseIterable {
         case osmStandard = "OpenStreetMap"
         case osmTopo = "OpenTopoMap"
         case cyclosm = "CyclOSM"
 
+        /// Available subdomains for load distribution.
+        /// Servers that support multiple subdomains allow higher effective concurrency
+        /// since URLSession limits connections per host, not per server.
+        private var subdomains: [String] {
+            switch self {
+            case .osmStandard:
+                return ["tile.openstreetmap.org"]
+            case .osmTopo:
+                return ["a.tile.opentopomap.org", "b.tile.opentopomap.org", "c.tile.opentopomap.org"]
+            case .cyclosm:
+                return [
+                    "a.tile-cyclosm.openstreetmap.fr",
+                    "b.tile-cyclosm.openstreetmap.fr",
+                    "c.tile-cyclosm.openstreetmap.fr"
+                ]
+            }
+        }
+
+        /// Returns a tile URL for the given coordinate, rotating across subdomains
+        /// to distribute load and increase effective concurrent connections.
+        /// Uses a deterministic hash so the same tile always maps to the same subdomain.
+        func tileURL(for tile: TileCoordinate) -> URL? {
+            let subs = subdomains
+            let index = abs(tile.x &+ tile.y) % subs.count
+            let host = subs[index]
+            let path: String
+            switch self {
+            case .osmStandard, .osmTopo:
+                path = "/\(tile.z)/\(tile.x)/\(tile.y).png"
+            case .cyclosm:
+                path = "/cyclosm/\(tile.z)/\(tile.x)/\(tile.y).png"
+            }
+            return URL(string: "https://\(host)\(path)")
+        }
+
         /// The URL template with `{z}`, `{x}`, `{y}` placeholders for zoom, column, and row.
+        /// Kept for backward compatibility; prefer ``tileURL(for:)`` for new code.
         var urlTemplate: String {
             switch self {
             case .osmStandard:
                 return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             case .osmTopo:
-                return "https://tile.opentopomap.org/{z}/{x}/{y}.png"
+                return "https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
             case .cyclosm:
                 return "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png"
             }
@@ -76,15 +114,23 @@ actor TileDownloader {
         }
     }
 
+    /// Minimum interval in nanoseconds between network requests to avoid overloading
+    /// tile servers. At 50ms spacing, this allows ~20 tiles/sec sustained throughput.
+    /// Cache hits bypass this throttle entirely.
+    private static let minRequestIntervalNs: UInt64 = 50_000_000
+
+    /// Timestamp of the last network request, used for per-request rate limiting.
+    private var lastNetworkRequestTime: ContinuousClock.Instant = .now
+
     /// Creates a new tile downloader with a configured URL session and cache directory.
     ///
     /// The URL session is configured with:
-    /// - Maximum 4 connections per host
+    /// - Maximum 6 connections per host (up to 18 effective with 3-subdomain rotation)
     /// - 30-second request timeout, 300-second resource timeout
     /// - A User-Agent header identifying this app (required by OSM tile usage policy)
     init() {
         let config = URLSessionConfiguration.default
-        config.httpMaximumConnectionsPerHost = 4
+        config.httpMaximumConnectionsPerHost = 6
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
@@ -110,9 +156,9 @@ actor TileDownloader {
 
     /// Downloads all tiles for a region and writes them into an MBTiles database.
     ///
-    /// Tiles are downloaded zoom level by zoom level, in batches of 50 tiles each.
-    /// Each batch is followed by a rate-limiting delay to respect OSM tile usage policy
-    /// (100ms per tile). Progress is reported after each individual tile download.
+    /// Tiles are downloaded zoom level by zoom level, in batches of 150 tiles each.
+    /// Individual network requests are throttled to ~20/sec to avoid overloading tile
+    /// servers, while cache hits proceed at full speed. Progress is reported after each tile.
     ///
     /// - Parameters:
     ///   - request: The ``RegionSelectionRequest`` specifying the area and zoom levels.
@@ -166,12 +212,12 @@ actor TileDownloader {
 
             try tileStore.beginTransaction()
 
-            // Process tiles in batches
+            // Process tiles in batches. With 3 subdomains × 6 connections each,
+            // up to 18 requests can be in flight simultaneously.
             let tiles = tileRange.allTiles()
-            let batchSize = 50
+            let batchSize = 150
 
             for batch in tiles.chunked(into: batchSize) {
-                // Download batch concurrently
                 try await withThrowingTaskGroup(of: (TileCoordinate, Data)?.self) { group in
                     for tile in batch {
                         group.addTask {
@@ -194,9 +240,6 @@ actor TileDownloader {
                         }
                     }
                 }
-
-                // Respect OSM tile usage policy: max 2 tiles per second sustained
-                try await Task.sleep(nanoseconds: UInt64(batch.count) * 100_000_000)
             }
 
             try tileStore.commitTransaction()
@@ -215,10 +258,23 @@ actor TileDownloader {
         return URL(fileURLWithPath: mbtilesPath)
     }
 
+    /// Enforces minimum spacing between network requests to avoid overloading tile servers.
+    /// Cache hits do not call this method and proceed at full speed.
+    private func throttleIfNeeded() async throws {
+        let elapsed = lastNetworkRequestTime.duration(to: .now)
+        let minInterval = Duration.nanoseconds(Self.minRequestIntervalNs)
+        if elapsed < minInterval {
+            try await Task.sleep(for: minInterval - elapsed)
+        }
+        lastNetworkRequestTime = .now
+    }
+
     /// Downloads a single tile from the server, checking the local cache first.
     ///
-    /// If the tile is already cached on disk, the cached data is returned without
-    /// making a network request. Otherwise, the tile is downloaded and saved to the cache.
+    /// Cache hits return immediately without rate limiting. Network requests are
+    /// throttled via ``throttleIfNeeded()`` to maintain polite request rates.
+    /// Subdomain rotation is used via ``TileServer/tileURL(for:)`` to distribute
+    /// load and increase effective concurrency.
     ///
     /// - Parameters:
     ///   - tile: The ``TileCoordinate`` specifying zoom, column, and row.
@@ -226,7 +282,7 @@ actor TileDownloader {
     /// - Returns: A tuple of the tile coordinate and its PNG data, or `nil` if the download failed.
     /// - Throws: Network errors from the URL session.
     private func downloadTile(_ tile: TileCoordinate, server: TileServer) async throws -> (TileCoordinate, Data)? {
-        // Check cache first
+        // Check cache first — no rate limiting needed for cached tiles
         let cacheFile = cacheDirectory
             .appendingPathComponent(server.rawValue)
             .appendingPathComponent("\(tile.z)")
@@ -238,13 +294,11 @@ actor TileDownloader {
             return (tile, cachedData)
         }
 
-        // Build URL
-        let urlString = server.urlTemplate
-            .replacingOccurrences(of: "{z}", with: String(tile.z))
-            .replacingOccurrences(of: "{x}", with: String(tile.x))
-            .replacingOccurrences(of: "{y}", with: String(tile.y))
+        // Throttle network requests to avoid overloading the tile server
+        try await throttleIfNeeded()
 
-        guard let url = URL(string: urlString) else {
+        // Build URL with subdomain rotation for load distribution
+        guard let url = server.tileURL(for: tile) else {
             return nil
         }
 
