@@ -166,8 +166,8 @@ enum PDFExporter {
             size: CGSize(width: contentWidth * 2, height: mapSnapshotHeight * 2)
         )
 
-        // Generate elevation chart image
-        let chartImage = renderElevationChart(
+        // Generate elevation chart image (must run on MainActor for ImageRenderer)
+        let chartImage = await renderElevationChart(
             elevationData: elevationProfile,
             useMetric: useMetric
         )
@@ -323,6 +323,7 @@ enum PDFExporter {
     ///   - elevationData: The elevation profile data points.
     ///   - useMetric: Whether to use metric units.
     /// - Returns: A rendered chart image, or `nil` if the data is empty.
+    @MainActor
     private static func renderElevationChart(
         elevationData: [(distance: Double, elevation: Double)],
         useMetric: Bool

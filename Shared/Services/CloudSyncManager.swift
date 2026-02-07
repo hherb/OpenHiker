@@ -203,8 +203,9 @@ actor CloudSyncManager {
                 continue
             }
 
+            let routeToSave = route
             let recordID = try await retryWithBackoff {
-                try await self.cloudStore.save(route: route)
+                try await self.cloudStore.save(route: routeToSave)
             }
 
             // Update local record with CloudKit ID
@@ -225,8 +226,9 @@ actor CloudSyncManager {
                 continue
             }
 
+            let waypointToSave = waypoint
             let recordID = try await retryWithBackoff {
-                try await self.cloudStore.save(waypoint: waypoint)
+                try await self.cloudStore.save(waypoint: waypointToSave)
             }
 
             waypoint.cloudKitRecordID = recordID

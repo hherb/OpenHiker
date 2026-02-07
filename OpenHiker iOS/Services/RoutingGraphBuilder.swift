@@ -563,7 +563,7 @@ actor RoutingGraphBuilder {
             sqlite3_bind_int(edgeStmt, 14, edge.isOneway ? 1 : 0)
 
             if let geom = edge.geometry {
-                geom.withUnsafeBytes { ptr in
+                _ = geom.withUnsafeBytes { ptr in
                     sqlite3_bind_blob(edgeStmt, 15, ptr.baseAddress, Int32(geom.count), SQLITE_TRANSIENT)
                 }
             } else {
