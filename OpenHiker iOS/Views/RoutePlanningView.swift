@@ -79,9 +79,6 @@ struct RoutePlanningView: View {
     /// The annotation currently being repositioned via long-press, or `nil` if not active.
     @State private var repositioningAnnotation: RouteAnnotation?
 
-    /// The map camera position.
-    @State private var cameraPosition: MapCameraPosition = .automatic
-
     /// Map annotations (start, end, via-points).
     private var annotations: [RouteAnnotation] {
         var result: [RouteAnnotation] = []
@@ -188,65 +185,45 @@ struct RoutePlanningView: View {
 
     // MARK: - Map Content
 
-    /// The MapKit map view with tap gesture, annotations, and route polyline.
-    private var mapContent: some View {
-        MapReader { proxy in
-            Map(position: $cameraPosition) {
-                // Annotations
-                ForEach(annotations) { annotation in
-                    Annotation(
-                        annotation.label,
-                        coordinate: annotation.coordinate
-                    ) {
-                        annotationView(for: annotation)
-                    }
-                }
-
-                // Route polyline
-                if let route = computedRoute, route.coordinates.count >= 2 {
-                    MapPolyline(coordinates: route.coordinates)
-                        .stroke(.purple, lineWidth: 4)
-                }
-            }
-            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-            .onTapGesture { position in
-                if let coordinate = proxy.convert(position, from: .local) {
-                    handleMapTap(coordinate)
-                }
-            }
-        }
+    /// Path to the region's MBTiles file for offline topographic tile rendering.
+    private var regionMBTilesPath: String? {
+        guard let region = region else { return nil }
+        let url = RegionStorage.shared.mbtilesURL(for: region)
+        return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
     }
 
-    /// Returns the appropriate pin view for a route annotation.
-    ///
-    /// Tap removes the pin. Long-press enters reposition mode, which highlights the pin
-    /// with a pulsing ring and makes the next map tap reposition this pin.
-    ///
-    /// - Parameter annotation: The annotation to render.
-    /// - Returns: A colored circle view with tap and long-press gestures.
-    @ViewBuilder
-    private func annotationView(for annotation: RouteAnnotation) -> some View {
-        let isRepositioning = repositioningAnnotation?.id == annotation.id
+    /// Initial latitude span for the map, derived from the region's bounding box.
+    private var regionSpan: Double {
+        if let bb = region?.boundingBox {
+            return bb.north - bb.south
+        }
+        return 0.5
+    }
 
-        Circle()
-            .fill(annotation.color)
-            .frame(width: 28, height: 28)
-            .overlay(
-                Circle().stroke(isRepositioning ? .yellow : .white, lineWidth: isRepositioning ? 3 : 2)
-            )
-            .shadow(color: isRepositioning ? .yellow.opacity(0.6) : .black.opacity(0.2), radius: isRepositioning ? 6 : 2)
-            .scaleEffect(isRepositioning ? 1.3 : 1.0)
-            .animation(.easeInOut(duration: 0.3), value: isRepositioning)
-            .onTapGesture {
+    /// The `MKMapView`-based map with offline topographic tiles, annotations, and route polyline.
+    private var mapContent: some View {
+        RoutePlanningMapView(
+            mbtilesPath: regionMBTilesPath,
+            initialCenter: region?.boundingBox.center
+                ?? CLLocationCoordinate2D(latitude: 47.0, longitude: 11.0),
+            initialSpan: regionSpan,
+            annotations: annotations,
+            routeCoordinates: computedRoute?.coordinates ?? [],
+            repositioningAnnotationId: repositioningAnnotation?.id,
+            onMapTap: { coordinate in
+                handleMapTap(coordinate)
+            },
+            onAnnotationTap: { annotation in
                 if repositioningAnnotation != nil {
                     repositioningAnnotation = nil
                 } else {
                     removeAnnotation(annotation)
                 }
-            }
-            .onLongPressGesture(minimumDuration: 0.5) {
+            },
+            onAnnotationLongPress: { annotation in
                 repositioningAnnotation = annotation
             }
+        )
     }
 
     // MARK: - Mode Toggle

@@ -79,42 +79,63 @@ struct RouteDetailView: View {
 
     // MARK: - Map Section
 
-    /// The map showing the route polyline and start/end markers.
-    private var mapSection: some View {
-        Map {
-            // Route polyline
-            if route.coordinates.count >= 2 {
-                MapPolyline(coordinates: route.coordinates)
-                    .stroke(.purple, lineWidth: 4)
-            }
-
-            // Start marker
-            Annotation("Start", coordinate: route.startCoordinate) {
-                Circle()
-                    .fill(.green)
-                    .frame(width: 20, height: 20)
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
-            }
-
-            // End marker
-            Annotation("End", coordinate: route.endCoordinate) {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 20, height: 20)
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
-            }
-
-            // Via-point markers
-            ForEach(Array(route.viaPoints.enumerated()), id: \.offset) { index, via in
-                Annotation("Via \(index + 1)", coordinate: via) {
-                    Circle()
-                        .fill(.blue)
-                        .frame(width: 16, height: 16)
-                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
-                }
-            }
+    /// Path to the region's MBTiles file for offline topographic tile rendering.
+    ///
+    /// Looks up the region by the route's stored `regionId`, then resolves the MBTiles
+    /// file path via ``RegionStorage``. Returns `nil` if the region is unknown or the
+    /// file has been deleted.
+    private var routeMBTilesPath: String? {
+        guard let regionId = route.regionId,
+              let region = RegionStorage.shared.regions.first(where: { $0.id == regionId }) else {
+            return nil
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+        let url = RegionStorage.shared.mbtilesURL(for: region)
+        return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
+    }
+
+    /// Geographic center of the route, computed from the bounding box of all coordinates.
+    private var routeCenter: CLLocationCoordinate2D {
+        let lats = route.coordinates.map(\.latitude)
+        let lons = route.coordinates.map(\.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(),
+              let minLon = lons.min(), let maxLon = lons.max() else {
+            return route.startCoordinate
+        }
+        return CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
+    }
+
+    /// Latitude span of the route with 30% padding for comfortable viewing.
+    private var routeSpan: Double {
+        let lats = route.coordinates.map(\.latitude)
+        guard let minLat = lats.min(), let maxLat = lats.max() else { return 0.05 }
+        let padding: Double = 1.3
+        return (maxLat - minLat) * padding
+    }
+
+    /// Route annotations built from the saved start, end, and via-point coordinates.
+    private var routeAnnotations: [RouteAnnotation] {
+        var result: [RouteAnnotation] = []
+        result.append(RouteAnnotation(coordinate: route.startCoordinate, type: .start, index: 0))
+        for (i, via) in route.viaPoints.enumerated() {
+            result.append(RouteAnnotation(coordinate: via, type: .via, index: i))
+        }
+        result.append(RouteAnnotation(coordinate: route.endCoordinate, type: .end, index: 0))
+        return result
+    }
+
+    /// The map showing the route polyline and start/end markers on topographic tiles.
+    private var mapSection: some View {
+        RoutePlanningMapView(
+            mbtilesPath: routeMBTilesPath,
+            initialCenter: routeCenter,
+            initialSpan: routeSpan,
+            annotations: routeAnnotations,
+            routeCoordinates: route.coordinates,
+            repositioningAnnotationId: nil
+        )
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
