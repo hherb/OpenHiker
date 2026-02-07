@@ -142,10 +142,18 @@ actor CloudSyncManager {
         defer { isSyncing = false }
 
         do {
+            // When subscriptions aren't ready the CloudKit schema may not exist
+            // (e.g. fresh container or development schema reset). Force-push all
+            // local records so the record types get auto-created server-side.
+            let forceAll = await !cloudStore.subscriptionsReady
+            if forceAll {
+                print("CloudSyncManager: Schema not ready, force-pushing all local records")
+            }
+
             // Push local changes to CloudKit
-            try await pushRoutes()
-            try await pushWaypoints()
-            try await pushPlannedRoutes()
+            try await pushRoutes(forceAll: forceAll)
+            try await pushWaypoints(forceAll: forceAll)
+            try await pushPlannedRoutes(forceAll: forceAll)
 
             // Pull remote changes from CloudKit
             try await pullRoutes()
@@ -204,13 +212,16 @@ actor CloudSyncManager {
     /// - Have no `cloudKitRecordID` (never synced)
     /// - Have a `modifiedAt` timestamp (locally modified)
     ///
+    /// When `forceAll` is true, pushes every local record regardless of sync
+    /// state. This is used to re-initialize the CloudKit schema after a reset.
+    ///
     /// After successful upload, updates the local record with the CloudKit record ID.
-    private func pushRoutes() async throws {
+    private func pushRoutes(forceAll: Bool = false) async throws {
         let localRoutes = try RouteStore.shared.fetchAll()
 
         for var route in localRoutes {
             // Skip routes that are already synced and haven't been modified locally
-            if route.cloudKitRecordID != nil && route.modifiedAt == nil {
+            if !forceAll && route.cloudKitRecordID != nil && route.modifiedAt == nil {
                 continue
             }
 
@@ -228,12 +239,12 @@ actor CloudSyncManager {
 
     /// Pushes locally modified waypoints to CloudKit.
     ///
-    /// Same logic as ``pushRoutes()`` but for waypoints.
-    private func pushWaypoints() async throws {
+    /// Same logic as ``pushRoutes(forceAll:)`` but for waypoints.
+    private func pushWaypoints(forceAll: Bool = false) async throws {
         let localWaypoints = try WaypointStore.shared.fetchAll()
 
         for var waypoint in localWaypoints {
-            if waypoint.cloudKitRecordID != nil && waypoint.modifiedAt == nil {
+            if !forceAll && waypoint.cloudKitRecordID != nil && waypoint.modifiedAt == nil {
                 continue
             }
 
@@ -250,14 +261,14 @@ actor CloudSyncManager {
 
     /// Pushes locally modified planned routes to CloudKit.
     ///
-    /// Same logic as ``pushRoutes()`` but for planned routes. Uses
+    /// Same logic as ``pushRoutes(forceAll:)`` but for planned routes. Uses
     /// ``PlannedRouteStore`` (JSON file-based) instead of ``RouteStore`` (SQLite).
-    private func pushPlannedRoutes() async throws {
+    private func pushPlannedRoutes(forceAll: Bool = false) async throws {
         let localRoutes = PlannedRouteStore.shared.routes
 
         for var route in localRoutes {
             // Skip routes that are already synced and haven't been modified locally
-            if route.cloudKitRecordID != nil && route.modifiedAt == nil {
+            if !forceAll && route.cloudKitRecordID != nil && route.modifiedAt == nil {
                 continue
             }
 
