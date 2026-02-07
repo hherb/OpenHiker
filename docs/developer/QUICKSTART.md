@@ -26,10 +26,13 @@ open OpenHiker.xcodeproj
 
 ```bash
 # iOS (iPhone simulator)
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 15 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 
 # watchOS (Apple Watch simulator)
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)"
+
+# macOS
+xcodebuild -scheme "OpenHiker macOS" build
 ```
 
 ### Run in Xcode
@@ -58,12 +61,15 @@ OpenHiker/
 │
 ├── OpenHiker watchOS/       ← Apple Watch standalone app
 │   ├── App/                 ← Entry point (OpenHikerWatchApp) + WatchContentView (4-tab vertically-paged interface)
-│   ├── Views/               ← MapView (SpriteKit), stats overlay, navigation overlay, waypoint/save sheets
-│   └── Services/            ← MapRenderer, LocationManager, HealthKitManager, RouteGuidance
+│   ├── Views/               ← MapView (SpriteKit), stats overlay, stats dashboard, navigation overlay,
+│   │                          UV index overlay, waypoint/save sheets
+│   └── Services/            ← MapRenderer, LocationManager, HealthKitManager, UVIndexManager, RouteGuidance
 │
-├── OpenHiker macOS/         ← Native macOS planning & review app
+├── OpenHiker macOS/         ← Native macOS app (full feature parity with iOS)
 │   ├── App/                 ← Entry point (OpenHikerMacApp) + MacContentView (NavigationSplitView sidebar)
-│   ├── Views/               ← Hikes, waypoints, planned routes, community, settings views
+│   │                          + OpenHikerCommands (keyboard shortcuts & menus)
+│   ├── Views/               ← Region selector, trail map, route planning, hikes, waypoints, community,
+│   │                          settings, GPX import
 │   └── Services/            ← MacPDFExporter
 │
 └── docs/
@@ -77,7 +83,7 @@ OpenHiker/
 |--------|--------|-------------|
 | **OpenHiker** | `OpenHiker` | iPhone/iPad app — downloads map tiles, manages regions, plans routes, reviews past hikes, community |
 | **OpenHiker Watch App** | `OpenHiker Watch App` | Apple Watch app — offline map display, GPS tracking, live stats, turn-by-turn guidance |
-| **OpenHiker macOS** | `OpenHiker macOS` | Mac app — hike review hub, waypoint browser, planned routes, community, iCloud sync |
+| **OpenHiker macOS** | `OpenHiker macOS` | Mac app — region selection, tile downloading, route planning, hike review, waypoints, community, GPX import, iCloud sync |
 
 Files in `Shared/` are compiled into all targets. Platform-specific code uses conditional imports:
 
@@ -114,21 +120,24 @@ Files in `Shared/` are compiled into all targets. Platform-specific code uses co
 ┌──────────────────────┐
 │      Mac App         │
 │                      │
-│ MacHikesView         │
-│ MacWaypointsView     │
-│ MacPlannedRoutesView │
-│ MacCommunityView     │
+│ MacRegionSelectorView│ ← Region selection & tile downloading
+│ MacRoutePlanningView │ ← A* route planning
+│ MacHikesView         │ ← Hike review & export
+│ MacWaypointsView     │ ← Waypoint management
+│ MacPlannedRoutesView │ ← Planned routes
+│ MacCommunityView     │ ← Community route browser
+│ GPXImportHandler     │ ← GPX file import
 └──────────────────────┘
 ```
 
-1. **iOS downloads tiles** → `TileDownloader` (Swift Actor) fetches from OpenTopoMap → writes to MBTiles via `WritableTileStore`
-2. **iOS builds routing graphs** → `OSMDataDownloader` fetches PBF data → `RoutingGraphBuilder` builds graph → `RoutingStore` persists
-3. **iOS plans routes** → `RoutingEngine` computes A* paths → `PlannedRouteStore` saves planned routes
+1. **iOS/macOS downloads tiles** → `TileDownloader` (Swift Actor) fetches from OpenTopoMap with subdomain rotation → writes to MBTiles via `WritableTileStore`
+2. **iOS/macOS builds routing graphs** → `OSMDataDownloader` fetches PBF data → `RoutingGraphBuilder` builds graph → `RoutingStore` persists
+3. **iOS/macOS plans routes** → `RoutingEngine` computes A* paths → `PlannedRouteStore` saves planned routes
 4. **iOS transfers to watch** → `WatchTransferManager` sends `.mbtiles`, planned routes, and waypoints via `WCSession.transferFile()`
 5. **Watch receives & stores** → `WatchConnectivityReceiver` saves to `Documents/regions/`
 6. **Watch renders offline** → `MapRenderer` opens `TileStore` (read-only SQLite) → SpriteKit renders tiles with GPS overlay
 7. **Watch provides guidance** → `RouteGuidance` delivers turn-by-turn instructions with `NavigationOverlay` and haptic feedback
-8. **iCloud syncs across devices** → `CloudSyncManager` + `CloudKitStore` sync routes, waypoints, and regions to Mac and other devices
+8. **iCloud syncs across devices** → `CloudSyncManager` + `CloudKitStore` sync routes, waypoints, and regions across iOS and macOS devices
 
 ### iOS Tab Structure (iPhone)
 
@@ -158,14 +167,18 @@ The watch app uses a vertically-paged `TabView` with four tabs:
 
 ### macOS Sidebar Structure
 
-The Mac app uses a `NavigationSplitView` with four sidebar sections:
+The Mac app uses a `NavigationSplitView` with sidebar sections covering the full feature set:
 
 | Section | View | Purpose |
 |---------|------|---------|
+| Regions | `MacRegionSelectorView` | Region selection, tile downloading, routing graph building |
+| Downloaded | `MacRegionsListView` | Downloaded regions management |
+| Route Planning | `MacRoutePlanningView` | A* route planning with map interaction |
 | Hikes | `MacHikesView` | Hike history browser |
 | Waypoints | `MacWaypointsView` | Waypoints table view |
 | Planned Routes | `MacPlannedRoutesView` | Planned routes list |
 | Community | `MacCommunityView` | Community route browser |
+| Settings | `MacSettingsView` | App preferences |
 
 ### Key Singletons
 
@@ -177,7 +190,7 @@ The Mac app uses a `NavigationSplitView` with four sidebar sections:
 | `RouteStore.shared` | All | SQLite CRUD for saved hikes |
 | `RoutingStore.shared` | All | SQLite CRUD for routing graphs |
 | `PlannedRouteStore.shared` | All | SQLite CRUD for planned routes |
-| `RegionStorage.shared` | iOS | Manages downloaded region metadata |
+| `RegionStorage.shared` | iOS, macOS | Manages downloaded region metadata |
 | `CloudSyncManager.shared` | iOS, macOS | iCloud sync coordination |
 
 These are injected as `@StateObject` / `@EnvironmentObject` at the app entry point.
@@ -233,7 +246,7 @@ The watch map is rendered with **SpriteKit** (`MapScene`), not SwiftUI. This is 
 
 ### TileDownloader is a Swift Actor
 
-`TileDownloader` uses Swift's `actor` isolation for thread-safe concurrent downloads. It rate-limits requests to **100ms per tile** to respect the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Don't bypass this.
+`TileDownloader` uses Swift's `actor` isolation for thread-safe concurrent downloads. It uses **subdomain rotation** across `a`/`b`/`c` tile server hosts to increase effective concurrency (URLSession limits connections per host, so 3 subdomains × 6 connections = up to 18 concurrent requests). Individual network requests are throttled to **~20/sec** (50ms spacing) to stay polite to tile servers, while cache hits bypass throttling entirely. The tile cache in `Library/Caches/TileCache/` avoids re-downloading tiles across sessions.
 
 ### OSM PBF parsing pipeline
 
@@ -265,6 +278,8 @@ The routing data pipeline works as follows:
 ### iCloud sync
 
 `CloudSyncManager` coordinates sync between devices using `CloudKitStore` for CloudKit operations. Routes, waypoints, and region metadata sync across iOS and macOS devices. The Mac app shows sync status in its sidebar.
+
+On first launch, CloudKit subscriptions may fail because the record types (`SavedRoute`, `Waypoint`, `PlannedRoute`) don't exist in the schema yet. The sync manager handles this gracefully: it performs an initial sync (which creates the types via first push), then retries subscriptions. Subsequent launches succeed on the first try.
 
 ## Required Capabilities & Permissions
 
@@ -330,9 +345,11 @@ Start with these files to understand the core flow:
 | `OpenHiker watchOS/Views/MapView.swift` | How the offline map is displayed |
 | `OpenHiker watchOS/Services/LocationManager.swift` | GPS tracking, track recording, live stats |
 | `OpenHiker watchOS/Services/RouteGuidance.swift` | Turn-by-turn navigation engine |
-| `OpenHiker iOS/Services/TileDownloader.swift` | How tiles are fetched and stored |
+| `OpenHiker iOS/Services/TileDownloader.swift` | How tiles are fetched and stored (subdomain rotation, rate limiting) |
 | `OpenHiker iOS/Views/RoutePlanningView.swift` | Route planning UI with A* |
+| `OpenHiker macOS/Views/MacRegionSelectorView.swift` | macOS region selection & tile downloading |
 | `Shared/Services/RoutingEngine.swift` | The A* pathfinding implementation |
+| `Shared/Services/CloudSyncManager.swift` | iCloud sync coordination between devices |
 | `Shared/Storage/TileStore.swift` | The SQLite pattern all stores follow |
 
 ## Further Reading

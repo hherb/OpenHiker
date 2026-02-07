@@ -42,8 +42,10 @@ Perfect for:
 
 ### Live Hike Metrics & HealthKit
 - **Real-Time Stats Overlay** — Distance, elevation gain, duration displayed on the watch during hikes
+- **Stats Dashboard** — Dedicated dashboard view with comprehensive hike statistics
 - **HealthKit Integration** — Records heart rate, calories burned, and workout sessions
 - **Workout Recording** — Automatic HealthKit workout tracking while hiking
+- **UV Index Monitoring** — Real-time UV exposure data with sun safety overlay
 
 ### Waypoints & Pins
 - **Quick Mark on Watch** — Drop pins at points of interest with category presets
@@ -69,7 +71,8 @@ Perfect for:
 
 ### Multi-Platform & Export
 - **iPad Adaptive Layout** — `NavigationSplitView` with sidebar on iPad for a desktop-class experience
-- **Native macOS App** — Full planning and review hub with sidebar navigation, keyboard shortcuts, and iCloud sync status
+- **Native macOS App** — Full-featured planning hub with region selection, tile downloading, route planning, hike review, keyboard shortcuts, and iCloud sync
+- **GPX Import** — Import GPX tracks on macOS for review and conversion
 - **PDF & Markdown Export** — Generate hike reports with map snapshots and elevation profiles
 - **GPX Export** — Standard GPX 1.1 track export from the watch
 
@@ -84,18 +87,18 @@ Perfect for:
 ┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
 │   iPhone App     │   ───►   │  Apple Watch     │          │   Mac App        │
 │                  │  Watch   │                  │          │                  │
-│ • Select region  │ Connect  │ • View map       │          │ • Review hikes   │
-│ • Download tiles │  ivity   │ • GPS tracking   │  iCloud  │ • Browse routes  │
-│ • Plan routes    │          │ • Turn-by-turn   │ ◄──────► │ • View waypoints │
-│ • Review hikes   │          │ • Live stats     │          │ • Community      │
-│ • Community      │          │ • Offline nav    │          │                  │
+│ • Select region  │ Connect  │ • View map       │          │ • Select region  │
+│ • Download tiles │  ivity   │ • GPS tracking   │  iCloud  │ • Download tiles │
+│ • Plan routes    │          │ • Turn-by-turn   │ ◄──────► │ • Plan routes    │
+│ • Review hikes   │          │ • Live stats     │          │ • Review hikes   │
+│ • Community      │          │ • Offline nav    │          │ • Community      │
 └──────────────────┘          └──────────────────┘          └──────────────────┘
 ```
 
-1. **Select** — Use the iOS companion app to browse and select a hiking region
+1. **Select** — Use the iOS or macOS app to browse and select a hiking region
 2. **Download** — Tiles and optional routing data are fetched and stored in MBTiles/SQLite format
-3. **Transfer** — Maps and planned routes are sent to your Apple Watch via Watch Connectivity
-4. **Plan** — Create routes on iPhone with A* pathfinding, then send to watch
+3. **Transfer** — Maps and planned routes are sent to your Apple Watch via Watch Connectivity (iOS) or iCloud sync
+4. **Plan** — Create routes on iPhone or Mac with A* pathfinding, then send to watch
 5. **Hike** — Navigate offline with real-time GPS, turn-by-turn guidance, and live stats
 6. **Review** — Browse past hikes on iPhone, iPad, or Mac with track overlays and elevation profiles
 
@@ -209,6 +212,7 @@ OpenHiker/
 │   │   ├── HikeDetailView.swift         # Hike detail with track overlay
 │   │   ├── ElevationProfileView.swift   # Swift Charts elevation profile
 │   │   ├── RoutePlanningView.swift      # A* route planning UI
+│   │   ├── RoutePlanningMapView.swift   # MapKit view for route planning
 │   │   ├── RouteDetailView.swift        # Planned route detail & transfer
 │   │   ├── AddWaypointView.swift        # Waypoint creation with photos
 │   │   ├── WaypointDetailView.swift     # Waypoint detail & editing
@@ -219,7 +223,7 @@ OpenHiker/
 │   │   ├── ExportSheet.swift            # PDF/Markdown export
 │   │   └── SidebarView.swift            # iPad sidebar sections
 │   └── Services/
-│       ├── TileDownloader.swift         # Actor-based tile fetcher
+│       ├── TileDownloader.swift         # Actor-based tile fetcher with subdomain rotation
 │       ├── WatchTransferManager.swift   # WatchConnectivity file sender
 │       ├── RegionStorage.swift          # Downloaded region management
 │       ├── OSMDataDownloader.swift      # OSM PBF trail data download
@@ -234,24 +238,34 @@ OpenHiker/
 │   ├── Views/
 │   │   ├── MapView.swift                # SpriteKit offline map display
 │   │   ├── HikeStatsOverlay.swift       # Live stats during hike
+│   │   ├── HikeStatsDashboardView.swift # Comprehensive stats dashboard
 │   │   ├── NavigationOverlay.swift      # Turn-by-turn guidance overlay
+│   │   ├── UVIndexOverlay.swift         # UV exposure sun safety overlay
 │   │   ├── AddWaypointSheet.swift       # Quick waypoint creation
 │   │   └── SaveHikeSheet.swift          # Save completed hike
 │   └── Services/
 │       ├── MapRenderer.swift            # SpriteKit tile renderer
 │       ├── LocationManager.swift        # GPS tracking & track recording
 │       ├── HealthKitManager.swift       # Heart rate, workouts, SpO2
+│       ├── UVIndexManager.swift         # Real-time UV index monitoring
 │       └── RouteGuidance.swift          # Turn-by-turn navigation engine
 │
 └── OpenHiker macOS/           # Native macOS planning & review app
     ├── App/                   # Entry point, NavigationSplitView sidebar
+    │   └── OpenHikerCommands.swift      # Keyboard shortcuts & menu commands
     ├── Views/
+    │   ├── MacRegionSelectorView.swift  # Region selection & tile downloading
+    │   ├── MacTrailMapView.swift        # MapKit trail overlay display
+    │   ├── MacRegionsListView.swift     # Downloaded regions management
+    │   ├── MacRoutePlanningView.swift   # Route planning with A* pathfinding
     │   ├── MacHikesView.swift           # Hike history browser
     │   ├── MacHikeDetailView.swift      # Hike detail with map & profile
     │   ├── MacWaypointsView.swift       # Waypoints table view
+    │   ├── MacAddWaypointView.swift     # Waypoint creation
     │   ├── MacPlannedRoutesView.swift   # Planned routes list
     │   ├── MacCommunityView.swift       # Community route browser
-    │   └── MacSettingsView.swift        # App preferences
+    │   ├── MacSettingsView.swift        # App preferences
+    │   └── GPXImportHandler.swift       # GPX file import support
     └── Services/
         └── MacPDFExporter.swift         # macOS-specific PDF generation
 ```
@@ -262,10 +276,13 @@ OpenHiker/
 
 ```bash
 # iOS (iPhone/iPad simulator)
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 15 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 
 # watchOS (Apple Watch simulator)
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)"
+
+# macOS
+xcodebuild -scheme "OpenHiker macOS" build
 ```
 
 ### Release Build
