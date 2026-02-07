@@ -40,7 +40,7 @@ import Combine
 /// ## Thread Safety
 /// All `@Published` properties are updated on the main thread. The MPC delegate callbacks
 /// are dispatched to `DispatchQueue.main` before mutating state.
-class PeerTransferService: NSObject, ObservableObject {
+class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
 
     // MARK: - Constants
 
@@ -105,8 +105,8 @@ class PeerTransferService: NSObject, ObservableObject {
     /// The local peer identity, derived from the device name.
     private let myPeerID: MCPeerID
 
-    /// The active MPC session.
-    private let session: MCSession
+    /// The active MPC session. Recreated for each new transfer to avoid stale state.
+    private var session: MCSession!
 
     /// Advertiser for the macOS sender side.
     private var advertiser: MCNearbyServiceAdvertiser?
@@ -123,6 +123,9 @@ class PeerTransferService: NSObject, ObservableObject {
     /// Temporary storage for received manifest data (iOS side).
     private var receivedManifest: Region?
 
+    /// Whether an invitation is currently pending (prevents duplicate invitations).
+    private var isInviting = false
+
     // MARK: - Singleton
 
     /// Shared singleton instance.
@@ -138,13 +141,21 @@ class PeerTransferService: NSObject, ObservableObject {
         self.myPeerID = MCPeerID(displayName: UIDevice.current.name)
         #endif
 
-        self.session = MCSession(
+        super.init()
+        createSession()
+    }
+
+    /// Creates a fresh MCSession instance, replacing any existing one.
+    ///
+    /// MCSession objects can become unreliable after `disconnect()`, so we create
+    /// a new session for each transfer cycle instead of reusing a stale one.
+    private func createSession() {
+        session?.disconnect()
+        session = MCSession(
             peer: myPeerID,
             securityIdentity: nil,
             encryptionPreference: .none
         )
-
-        super.init()
         session.delegate = self
     }
 
@@ -157,9 +168,9 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// - Parameter region: The ``Region`` to send once a peer connects.
     func startAdvertising(region: Region) {
-        // Clean up any previous session state
-        session.disconnect()
+        // Create a fresh session to avoid stale state from previous transfers
         stopAdvertising()
+        createSession()
 
         regionToSend = region
         transferState = .waitingForPeer
@@ -187,13 +198,14 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// Called on iOS when the user opens the "Receive from Mac" sheet.
     func startBrowsing() {
-        // Clean up any previous session state
-        session.disconnect()
+        // Create a fresh session to avoid stale state from previous transfers
         stopBrowsing()
+        createSession()
 
         discoveredPeers = []
         transferState = .waitingForPeer
         progress = 0
+        isInviting = false
 
         print("PeerTransferService: Starting to browse for peers")
         browser = MCNearbyServiceBrowser(
@@ -216,6 +228,11 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// - Parameter peer: The ``MCPeerID`` of the Mac to connect to.
     func invitePeer(_ peer: MCPeerID) {
+        guard !isInviting else {
+            print("PeerTransferService: Ignoring duplicate invitation — already inviting")
+            return
+        }
+        isInviting = true
         print("PeerTransferService: Inviting peer '\(peer.displayName)' with timeout \(Self.invitationTimeout)s")
         browser?.invitePeer(
             peer,
@@ -341,6 +358,7 @@ class PeerTransferService: NSObject, ObservableObject {
         progressObservation = nil
         regionToSend = nil
         receivedManifest = nil
+        isInviting = false
 
         DispatchQueue.main.async {
             self.transferState = .idle
@@ -380,6 +398,7 @@ extension PeerTransferService: MCSessionDelegate {
 
             case .notConnected:
                 self.connectedPeers.removeAll { $0 == peerID }
+                self.isInviting = false
                 if self.connectedPeers.isEmpty {
                     // Only mark failed if we were mid-transfer
                     if case .sendingManifest = self.transferState { self.transferState = .failed("Peer disconnected") }
