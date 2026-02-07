@@ -62,6 +62,10 @@ private final class MBTilesTileOverlay: MKTileOverlay {
         do {
             let data = try tileStore.getTile(coordinate)
             result(data, nil)
+        } catch TileStoreError.tileNotFound {
+            // Expected for tiles outside the downloaded region — return empty data
+            // so MapKit shows a blank tile instead of logging an error.
+            result(nil, nil)
         } catch {
             result(nil, error)
         }
