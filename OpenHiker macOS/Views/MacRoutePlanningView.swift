@@ -37,6 +37,35 @@ struct MacRoutePlanningView: View {
     /// The region whose routing database and tiles to use.
     let region: Region
 
+    // MARK: - Layout Constants
+
+    /// Minimum width of the map panel.
+    private static let mapMinWidth: CGFloat = 400
+
+    /// Width of the side panel with stats and directions.
+    private static let sidePanelWidth: CGFloat = 320
+
+    /// Width of the routing mode picker in the toolbar.
+    private static let modePickerWidth: CGFloat = 180
+
+    /// Diameter of pin markers on the map.
+    private static let pinSize: CGFloat = 28
+
+    /// Route polyline stroke width in points.
+    private static let routeLineWidth: CGFloat = 4
+
+    /// Pin border stroke width in points.
+    private static let pinBorderWidth: CGFloat = 2
+
+    /// Shadow radius for pin markers.
+    private static let pinShadowRadius: CGFloat = 2
+
+    /// Width of direction instruction icons.
+    private static let directionIconWidth: CGFloat = 20
+
+    /// Corner radius for card-style panels.
+    private static let cardCornerRadius: CGFloat = 8
+
     // MARK: - Route State
 
     /// Hiking or cycling mode.
@@ -83,10 +112,10 @@ struct MacRoutePlanningView: View {
     var body: some View {
         HSplitView {
             mapView
-                .frame(minWidth: 400)
+                .frame(minWidth: Self.mapMinWidth)
 
             sidePanel
-                .frame(width: 320)
+                .frame(width: Self.sidePanelWidth)
         }
         .navigationTitle("Plan Route — \(region.name)")
         .toolbar {
@@ -96,7 +125,7 @@ struct MacRoutePlanningView: View {
                     Label("Cycling", systemImage: "bicycle").tag(RoutingMode.cycling)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 180)
+                .frame(width: Self.modePickerWidth)
 
                 if computedRoute != nil {
                     Button("Save Route") {
@@ -174,7 +203,7 @@ struct MacRoutePlanningView: View {
                 // Route polyline
                 if let route = computedRoute, route.coordinates.count >= 2 {
                     MapPolyline(coordinates: route.coordinates)
-                        .stroke(.purple, lineWidth: 4)
+                        .stroke(.purple, lineWidth: Self.routeLineWidth)
                 }
             }
             .mapStyle(.standard(elevation: .realistic, emphasis: .muted))
@@ -191,15 +220,20 @@ struct MacRoutePlanningView: View {
     }
 
     /// A colored pin marker for map annotations.
+    ///
+    /// - Parameters:
+    ///   - color: The background fill color for the pin circle.
+    ///   - icon: The SF Symbol name to display inside the pin.
+    /// - Returns: A circular pin marker view.
     private func pinView(color: Color, icon: String) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 14, weight: .bold))
+            .font(.system(size: Self.pinSize / 2, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
+            .frame(width: Self.pinSize, height: Self.pinSize)
             .background(color)
             .clipShape(Circle())
-            .overlay(Circle().stroke(.white, lineWidth: 2))
-            .shadow(radius: 2)
+            .overlay(Circle().stroke(.white, lineWidth: Self.pinBorderWidth))
+            .shadow(radius: Self.pinShadowRadius)
     }
 
     // MARK: - Side Panel
@@ -258,7 +292,7 @@ struct MacRoutePlanningView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: Self.cardCornerRadius))
     }
 
     /// Route statistics display.
@@ -285,7 +319,7 @@ struct MacRoutePlanningView: View {
             }
         }
         .padding()
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: Self.cardCornerRadius))
     }
 
     /// A single stat item.
@@ -306,7 +340,7 @@ struct MacRoutePlanningView: View {
                 ForEach(Array(turnInstructions.enumerated()), id: \.offset) { index, instruction in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: instruction.direction.sfSymbolName)
-                            .frame(width: 20)
+                            .frame(width: Self.directionIconWidth)
                             .foregroundStyle(.blue)
 
                         VStack(alignment: .leading, spacing: 2) {
@@ -415,6 +449,10 @@ struct MacRoutePlanningView: View {
     }
 
     /// Computes the route using the routing engine.
+    ///
+    /// Opens a ``RoutingStore`` for the region's routing database, creates a
+    /// ``RoutingEngine``, and runs A* pathfinding between the placed pins.
+    /// Results (route polyline + turn instructions) are dispatched to the main actor.
     private func computeRoute() {
         guard let start = startCoordinate, let end = endCoordinate else { return }
 
@@ -426,13 +464,14 @@ struct MacRoutePlanningView: View {
             do {
                 let routingDbPath = RegionStorage.shared.routingDbURL(for: region).path
 
-                let engine = RoutingEngine()
-                try engine.open(databasePath: routingDbPath)
+                let store = RoutingStore(path: routingDbPath)
+                try store.open()
+                let engine = RoutingEngine(store: store)
 
                 let route = try engine.findRoute(
                     from: start,
                     to: end,
-                    viaPoints: viaPoints,
+                    via: viaPoints,
                     mode: routingMode
                 )
 

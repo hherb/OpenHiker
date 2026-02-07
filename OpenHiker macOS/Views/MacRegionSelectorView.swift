@@ -31,6 +31,44 @@ import CoreLocation
 /// Downloaded regions sync to iPhone/Watch via iCloud.
 struct MacRegionSelectorView: View {
 
+    // MARK: - Layout Constants
+
+    /// Minimum width of the map section in the split view.
+    private static let mapSectionMinWidth: CGFloat = 500
+
+    /// Width of the download configuration side panel.
+    private static let downloadPanelWidth: CGFloat = 300
+
+    /// Width of the search popover.
+    private static let searchPopoverWidth: CGFloat = 320
+
+    /// Height of the search popover.
+    private static let searchPopoverHeight: CGFloat = 400
+
+    /// Maximum width of the progress card overlay.
+    private static let progressCardMaxWidth: CGFloat = 400
+
+    /// Opacity of the selected region polygon fill.
+    private static let selectionFillOpacity: Double = 0.15
+
+    /// Fraction of the visible map area captured as the download region.
+    private static let selectionScaleFactor: Double = 0.6
+
+    /// Default span (in degrees) for the map after a search result selection.
+    private static let searchResultSpan: Double = 0.2
+
+    /// Average tile size in bytes, used for download size estimation.
+    private static let averageTileSizeBytes: Int64 = 15_000
+
+    /// Corner radius for card-style overlays.
+    private static let cardCornerRadius: CGFloat = 12
+
+    /// Maximum zoom level supported by tile servers.
+    private static let absoluteMaxZoom: Int = 18
+
+    /// Minimum zoom level for region downloads.
+    private static let absoluteMinZoom: Int = 8
+
     // MARK: - Map State
 
     /// The current map camera position (region, center, zoom).
@@ -106,11 +144,11 @@ struct MacRegionSelectorView: View {
     var body: some View {
         HSplitView {
             mapSection
-                .frame(minWidth: 500)
+                .frame(minWidth: Self.mapSectionMinWidth)
 
             if showDownloadConfig, selectedRegion != nil {
                 downloadConfigPanel
-                    .frame(width: 300)
+                    .frame(width: Self.downloadPanelWidth)
             }
         }
         .navigationTitle("Select Region")
@@ -125,7 +163,7 @@ struct MacRegionSelectorView: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .popover(isPresented: $showSearch) {
                     searchPopover
-                        .frame(width: 320, height: 400)
+                        .frame(width: Self.searchPopoverWidth, height: Self.searchPopoverHeight)
                 }
 
                 Button(selectedRegion != nil ? "Clear Selection" : "Select Visible Area") {
@@ -168,7 +206,7 @@ struct MacRegionSelectorView: View {
             Map(position: $cameraPosition) {
                 if let region = selectedRegion {
                     MapPolygon(coordinates: regionCorners(region))
-                        .foregroundStyle(.blue.opacity(0.15))
+                        .foregroundStyle(.blue.opacity(Self.selectionFillOpacity))
                         .stroke(.blue, lineWidth: 2)
                 }
             }
@@ -188,7 +226,7 @@ struct MacRegionSelectorView: View {
 
                 if isDownloading, let progress = downloadProgress {
                     downloadProgressCard(progress)
-                        .frame(maxWidth: 400)
+                        .frame(maxWidth: Self.progressCardMaxWidth)
                         .padding()
                 } else if selectedRegion == nil {
                     instructionsCard
@@ -214,7 +252,7 @@ struct MacRegionSelectorView: View {
             }
         }
         .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Self.cardCornerRadius))
     }
 
     /// Download progress indicator overlay.
@@ -244,7 +282,7 @@ struct MacRegionSelectorView: View {
                 .tint(.blue)
         }
         .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Self.cardCornerRadius))
     }
 
     // MARK: - Download Config Panel
@@ -284,8 +322,8 @@ struct MacRegionSelectorView: View {
                     Text("Zoom Levels")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Stepper("Min: \(minZoom)", value: $minZoom, in: 8...maxZoom)
-                    Stepper("Max: \(maxZoom)", value: $maxZoom, in: minZoom...18)
+                    Stepper("Min: \(minZoom)", value: $minZoom, in: Self.absoluteMinZoom...maxZoom)
+                    Stepper("Max: \(maxZoom)", value: $maxZoom, in: minZoom...Self.absoluteMaxZoom)
                 }
 
                 // Estimates
@@ -299,7 +337,7 @@ struct MacRegionSelectorView: View {
                         HStack {
                             Label("~\(tiles) tiles", systemImage: "square.grid.3x3")
                             Spacer()
-                            Text("~\(ByteCountFormatter.string(fromByteCount: Int64(tiles) * 15_000, countStyle: .file))")
+                            Text("~\(ByteCountFormatter.string(fromByteCount: Int64(tiles) * Self.averageTileSizeBytes, countStyle: .file))")
                         }
                         .font(.caption)
 
@@ -364,7 +402,7 @@ struct MacRegionSelectorView: View {
                         withAnimation {
                             cameraPosition = .region(MKCoordinateRegion(
                                 center: location.coordinate,
-                                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
+                                span: MKCoordinateSpan(latitudeDelta: Self.searchResultSpan, longitudeDelta: Self.searchResultSpan)
                             ))
                         }
                     }
@@ -391,7 +429,7 @@ struct MacRegionSelectorView: View {
         guard let visibleRegion = cameraPosition.region else { return }
 
         // Use 60% of the visible area as the selection
-        let scaleFactor = 0.6
+        let scaleFactor = Self.selectionScaleFactor
         selectedRegion = MKCoordinateRegion(
             center: visibleRegion.center,
             span: MKCoordinateSpan(

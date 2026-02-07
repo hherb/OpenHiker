@@ -27,6 +27,23 @@ import CoreLocation
 struct MacAddWaypointView: View {
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Layout Constants
+
+    /// Maximum height of the photo preview image.
+    private static let photoPreviewMaxHeight: CGFloat = 150
+
+    /// Height of the empty photo drop zone.
+    private static let photoDropZoneHeight: CGFloat = 100
+
+    /// Corner radius for the photo well.
+    private static let photoCornerRadius: CGFloat = 8
+
+    /// Width of the dialog window.
+    private static let dialogWidth: CGFloat = 400
+
+    /// Height of the dialog window.
+    private static let dialogHeight: CGFloat = 500
+
     /// The latitude for the new waypoint.
     let latitude: Double
 
@@ -110,7 +127,7 @@ struct MacAddWaypointView: View {
             }
             .padding()
         }
-        .frame(width: 400, height: 500)
+        .frame(width: Self.dialogWidth, height: Self.dialogHeight)
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -125,17 +142,17 @@ struct MacAddWaypointView: View {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxHeight: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(maxHeight: Self.photoPreviewMaxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: Self.photoCornerRadius))
 
                 Button("Remove Photo") {
                     photoData = nil
                 }
                 .font(.caption)
             } else {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Self.photoCornerRadius)
                     .fill(isDragTargeted ? Color.blue.opacity(0.15) : Color.secondary.opacity(0.1))
-                    .frame(height: 100)
+                    .frame(height: Self.photoDropZoneHeight)
                     .overlay {
                         VStack(spacing: 4) {
                             Image(systemName: "photo.on.rectangle.angled")
@@ -160,27 +177,31 @@ struct MacAddWaypointView: View {
     // MARK: - Actions
 
     /// Saves the waypoint to ``WaypointStore``.
+    ///
+    /// Compresses the photo (if any) via ``PhotoCompressor`` and uses the
+    /// ``WaypointStore/insert(_:photo:thumbnail:)`` overload to persist both
+    /// the waypoint metadata and its photo data in a single transaction.
     private func saveWaypoint() {
-        // Compress photo if present
-        var compressedPhoto: Data?
-        if let data = photoData {
-            compressedPhoto = PhotoCompressor.compressData(data)
-        }
-
+        let hasAttachedPhoto = photoData != nil
         let waypoint = Waypoint(
             id: UUID(),
             latitude: latitude,
             longitude: longitude,
-            elevation: nil,
+            altitude: nil,
+            timestamp: Date(),
             label: label,
             category: category,
-            notes: notes,
-            photoData: compressedPhoto,
-            createdAt: Date()
+            note: notes,
+            hasPhoto: hasAttachedPhoto
         )
 
         do {
-            try WaypointStore.shared.insert(waypoint)
+            if let rawPhoto = photoData {
+                let compressed = PhotoCompressor.compressData(rawPhoto)
+                try WaypointStore.shared.insert(waypoint, photo: compressed, thumbnail: nil)
+            } else {
+                try WaypointStore.shared.insert(waypoint)
+            }
             onSave?(waypoint)
             dismiss()
         } catch {

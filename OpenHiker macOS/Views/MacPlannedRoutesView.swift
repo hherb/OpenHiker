@@ -66,7 +66,7 @@ struct MacPlannedRoutesView: View {
                             Divider()
                             Button("Delete", role: .destructive) {
                                 do {
-                                    try PlannedRouteStore.shared.delete(route.id)
+                                    try PlannedRouteStore.shared.delete(id: route.id)
                                 } catch {
                                     print("Error deleting route: \(error.localizedDescription)")
                                 }

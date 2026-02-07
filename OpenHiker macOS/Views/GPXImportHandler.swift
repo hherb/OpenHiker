@@ -128,24 +128,30 @@ enum GPXImportHandler {
 
         let name = result.name ?? url.deletingPathExtension().lastPathComponent
 
-        // Estimate duration using Naismith's rule: 5 km/h + 1h per 600m ascent
-        let baseDuration = totalDistance / 5000 * 3600
-        let climbDuration = elevationGain / 600 * 3600
+        // Naismith's rule: 5 km/h base pace + 1 hour per 600m of ascent
+        let naismithBasePaceKmH = 5.0
+        let naismithAscentPenaltyMetres = 600.0
+        let secondsPerHour = 3600.0
+        let baseDuration = (totalDistance / (naismithBasePaceKmH * 1000)) * secondsPerHour
+        let climbDuration = (elevationGain / naismithAscentPenaltyMetres) * secondsPerHour
         let estimatedDuration = baseDuration + climbDuration
 
+        let startCoordinate = coordinates.first!
+        let endCoordinate = coordinates.last!
+
         return PlannedRoute(
-            id: UUID(),
             name: name,
+            mode: .hiking,
+            startCoordinate: startCoordinate,
+            endCoordinate: endCoordinate,
             coordinates: coordinates,
+            turnInstructions: [],
             totalDistance: totalDistance,
             estimatedDuration: estimatedDuration,
             elevationGain: elevationGain,
             elevationLoss: elevationLoss,
-            elevationProfile: elevationProfile,
-            turnInstructions: [],
-            mode: .hiking,
             regionId: nil,
-            createdAt: Date()
+            elevationProfile: elevationProfile.isEmpty ? nil : elevationProfile
         )
     }
 }
