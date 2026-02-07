@@ -65,7 +65,10 @@ struct RoutePlanningMapView: UIViewRepresentable {
     let initialCenter: CLLocationCoordinate2D
 
     /// Initial map span in degrees latitude (typically from the region's bounding box height).
-    let initialSpan: Double
+    let initialLatSpan: Double
+
+    /// Initial map span in degrees longitude (typically from the region's bounding box width).
+    let initialLonSpan: Double
 
     /// Route annotations to display (start, end, via-points).
     let annotations: [RouteAnnotation]
@@ -100,10 +103,14 @@ struct RoutePlanningMapView: UIViewRepresentable {
         mapView.addOverlay(overlay, level: .aboveLabels)
         context.coordinator.currentTileOverlay = overlay
 
-        // Set initial region from the selected region's bounding box
+        // Set initial region from the selected region's bounding box with 5% padding
+        let padding = 1.05
         let region = MKCoordinateRegion(
             center: initialCenter,
-            span: MKCoordinateSpan(latitudeDelta: initialSpan, longitudeDelta: initialSpan)
+            span: MKCoordinateSpan(
+                latitudeDelta: initialLatSpan * padding,
+                longitudeDelta: initialLonSpan * padding
+            )
         )
         mapView.setRegion(region, animated: false)
 

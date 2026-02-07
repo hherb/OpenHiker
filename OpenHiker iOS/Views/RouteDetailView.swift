@@ -108,11 +108,19 @@ struct RouteDetailView: View {
     }
 
     /// Latitude span of the route with 30% padding for comfortable viewing.
-    private var routeSpan: Double {
+    private var routeLatSpan: Double {
         let lats = route.coordinates.map(\.latitude)
         guard let minLat = lats.min(), let maxLat = lats.max() else { return 0.05 }
         let padding: Double = 1.3
         return (maxLat - minLat) * padding
+    }
+
+    /// Longitude span of the route with 30% padding for comfortable viewing.
+    private var routeLonSpan: Double {
+        let lons = route.coordinates.map(\.longitude)
+        guard let minLon = lons.min(), let maxLon = lons.max() else { return 0.05 }
+        let padding: Double = 1.3
+        return (maxLon - minLon) * padding
     }
 
     /// Route annotations built from the saved start, end, and via-point coordinates.
@@ -131,7 +139,8 @@ struct RouteDetailView: View {
         RoutePlanningMapView(
             mbtilesPath: routeMBTilesPath,
             initialCenter: routeCenter,
-            initialSpan: routeSpan,
+            initialLatSpan: routeLatSpan,
+            initialLonSpan: routeLonSpan,
             annotations: routeAnnotations,
             routeCoordinates: route.coordinates,
             repositioningAnnotationId: nil

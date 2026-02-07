@@ -192,8 +192,13 @@ struct RoutePlanningView: View {
     }
 
     /// Initial latitude span for the map, derived from the region's bounding box.
-    private var regionSpan: Double {
+    private var regionLatSpan: Double {
         region.boundingBox.north - region.boundingBox.south
+    }
+
+    /// Initial longitude span for the map, derived from the region's bounding box.
+    private var regionLonSpan: Double {
+        region.boundingBox.east - region.boundingBox.west
     }
 
     /// The `MKMapView`-based map with offline topographic tiles, annotations, and route polyline.
@@ -201,7 +206,8 @@ struct RoutePlanningView: View {
         RoutePlanningMapView(
             mbtilesPath: regionMBTilesPath,
             initialCenter: region.boundingBox.center,
-            initialSpan: regionSpan,
+            initialLatSpan: regionLatSpan,
+            initialLonSpan: regionLonSpan,
             annotations: annotations,
             routeCoordinates: computedRoute?.coordinates ?? [],
             repositioningAnnotationId: repositioningAnnotation?.id,

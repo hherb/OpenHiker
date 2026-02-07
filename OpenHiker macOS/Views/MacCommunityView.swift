@@ -48,8 +48,8 @@ struct MacCommunityView: View {
         let query = searchText.lowercased()
         return routes.filter { entry in
             entry.name.lowercased().contains(query) ||
-            entry.country.lowercased().contains(query) ||
-            entry.area.lowercased().contains(query)
+            entry.region.country.lowercased().contains(query) ||
+            entry.region.area.lowercased().contains(query)
         }
     }
 
@@ -102,19 +102,19 @@ struct MacCommunityView: View {
                 Text(entry.name)
                     .font(.headline)
                 Spacer()
-                Text(entry.country)
+                Text("\(entry.region.area), \(entry.region.country)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             HStack {
                 Label(
-                    HikeStatsFormatter.formatDistance(entry.distance, useMetric: true),
+                    HikeStatsFormatter.formatDistance(entry.stats.distanceMeters, useMetric: true),
                     systemImage: "ruler"
                 )
                 Spacer()
                 Label(
-                    "+\(HikeStatsFormatter.formatElevation(entry.elevationGain, useMetric: true))",
+                    "+\(HikeStatsFormatter.formatElevation(entry.stats.elevationGainMeters, useMetric: true))",
                     systemImage: "arrow.up.right"
                 )
                 Spacer()
@@ -132,7 +132,7 @@ struct MacCommunityView: View {
         errorMessage = nil
 
         do {
-            let index = try await GitHubRouteService.shared.fetchRouteIndex()
+            let index = try await GitHubRouteService.shared.fetchIndex()
             routes = index.routes
         } catch {
             errorMessage = error.localizedDescription

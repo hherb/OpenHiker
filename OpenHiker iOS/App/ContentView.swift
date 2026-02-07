@@ -205,7 +205,7 @@ struct PlannedRoutesListView: View {
             .onAppear {
                 routeStore.loadAll()
             }
-            .sheet(item: $selectedRegion) { region in
+            .fullScreenCover(item: $selectedRegion) { region in
                 RoutePlanningView(region: region)
             }
             .sheet(isPresented: $showingRegionPicker) {
