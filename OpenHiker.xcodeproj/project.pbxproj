@@ -144,6 +144,10 @@
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
 		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
+		1A000001000000000000004F /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
+		1A0000010000000000000050 /* PeerReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000050 /* PeerReceiveView.swift */; };
+		1C0000010000000000000030 /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
+		1C0000010000000000000031 /* MacPeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000013 /* MacPeerSendView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -256,6 +260,9 @@
 		2C0000010000000000000010 /* MacAddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAddWaypointView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000011 /* MacTrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrailMapView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000012 /* MacAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MacAssets.xcassets; sourceTree = "<group>"; };
+		2A000001000000000000004F /* PeerTransferService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerTransferService.swift; sourceTree = "<group>"; };
+		2A0000010000000000000050 /* PeerReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerReceiveView.swift; sourceTree = "<group>"; };
+		2C0000010000000000000013 /* MacPeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPeerSendView.swift; sourceTree = "<group>"; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
 		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
@@ -351,6 +358,7 @@
 				2A000001000000000000004B /* WaypointsListView.swift */,
 				2A000001000000000000004D /* TrailMapView.swift */,
 				2A000001000000000000004E /* RoutePlanningMapView.swift */,
+				2A0000010000000000000050 /* PeerReceiveView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -453,6 +461,7 @@
 				2A0000010000000000000045 /* HikeSummaryExporter.swift */,
 				2A0000010000000000000046 /* CloudKitStore.swift */,
 				2A0000010000000000000047 /* CloudSyncManager.swift */,
+				2A000001000000000000004F /* PeerTransferService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -532,6 +541,7 @@
 				2C0000010000000000000009 /* MacSettingsView.swift */,
 				2C0000010000000000000010 /* MacAddWaypointView.swift */,
 				2C000001000000000000000F /* GPXImportHandler.swift */,
+				2C0000010000000000000013 /* MacPeerSendView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -738,6 +748,8 @@
 				1A000001000000000000004B /* WaypointsListView.swift in Sources */,
 				1A000001000000000000004C /* TrailMapView.swift in Sources */,
 				1A000001000000000000004E /* RoutePlanningMapView.swift in Sources */,
+				1A000001000000000000004F /* PeerTransferService.swift in Sources */,
+				1A0000010000000000000050 /* PeerReceiveView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -833,6 +845,8 @@
 				1C000001000000000000002C /* GPXImportHandler.swift in Sources */,
 				1C000001000000000000002D /* MacAddWaypointView.swift in Sources */,
 				1C000001000000000000002E /* MacTrailMapView.swift in Sources */,
+				1C0000010000000000000030 /* PeerTransferService.swift in Sources */,
+				1C0000010000000000000031 /* MacPeerSendView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

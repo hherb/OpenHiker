@@ -407,6 +407,9 @@ struct RegionsListView: View {
     @ObservedObject private var storage = RegionStorage.shared
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
+    /// Whether the "Receive from Mac" peer transfer sheet is showing.
+    @State private var showingPeerReceive = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -429,11 +432,24 @@ struct RegionsListView: View {
             }
             .navigationTitle("Downloaded Regions")
             .toolbar {
-                EditButton()
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingPeerReceive = true
+                    } label: {
+                        Image(systemName: "laptopcomputer.and.arrow.down")
+                    }
+                    .help("Receive region from Mac")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    EditButton()
+                }
             }
         }
         .onAppear {
             storage.loadRegions()
+        }
+        .sheet(isPresented: $showingPeerReceive) {
+            PeerReceiveView()
         }
     }
 

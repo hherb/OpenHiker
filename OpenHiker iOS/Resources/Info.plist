@@ -22,6 +22,13 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_openhiker-xfer._tcp</string>
+		<string>_openhiker-xfer._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OpenHiker uses the local network to receive map regions from a nearby Mac.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>OpenHiker needs your location to show your position on the map and download relevant map tiles.</string>
 	<key>UIApplicationSceneManifest</key>

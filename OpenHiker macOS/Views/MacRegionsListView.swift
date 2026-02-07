@@ -32,6 +32,9 @@ struct MacRegionsListView: View {
     /// Currently selected region for detail view.
     @State private var selectedRegion: Region?
 
+    /// Region to send via MultipeerConnectivity (triggers the send sheet).
+    @State private var regionToSend: Region?
+
     var body: some View {
         Group {
             if storage.regions.isEmpty {
@@ -46,10 +49,8 @@ struct MacRegionsListView: View {
                         regionRow(region)
                             .tag(region)
                             .contextMenu {
-                                Button("Sync to iPhone via iCloud") {
-                                    Task {
-                                        await CloudSyncManager.shared.performSync()
-                                    }
+                                Button("Send to iPhone") {
+                                    regionToSend = region
                                 }
                                 Divider()
                                 Button("Delete", role: .destructive) {
@@ -74,6 +75,9 @@ struct MacRegionsListView: View {
         }
         .onAppear {
             storage.loadRegions()
+        }
+        .sheet(item: $regionToSend) { region in
+            MacPeerSendView(region: region)
         }
     }
 
