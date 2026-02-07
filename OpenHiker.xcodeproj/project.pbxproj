@@ -1114,6 +1114,7 @@
 				DEVELOPMENT_TEAM = X5DWXB4283;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "OpenHiker macOS/Resources/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (C) 2024-2026 Dr Horst Herb. Licensed under AGPL-3.0.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "OpenHiker needs your location to show your position on the map.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1143,6 +1144,7 @@
 				DEVELOPMENT_TEAM = X5DWXB4283;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "OpenHiker macOS/Resources/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (C) 2024-2026 Dr Horst Herb. Licensed under AGPL-3.0.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "OpenHiker needs your location to show your position on the map.";
 				LD_RUNPATH_SEARCH_PATHS = (

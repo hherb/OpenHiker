@@ -48,7 +48,7 @@ class PeerTransferService: NSObject, ObservableObject {
     static let serviceType = "openhiker-xfer"
 
     /// Timeout in seconds for peer invitations.
-    static let invitationTimeout: TimeInterval = 30
+    static let invitationTimeout: TimeInterval = 60
 
     // MARK: - Transfer State
 
@@ -141,7 +141,7 @@ class PeerTransferService: NSObject, ObservableObject {
         self.session = MCSession(
             peer: myPeerID,
             securityIdentity: nil,
-            encryptionPreference: .required
+            encryptionPreference: .none
         )
 
         super.init()
@@ -157,10 +157,15 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// - Parameter region: The ``Region`` to send once a peer connects.
     func startAdvertising(region: Region) {
+        // Clean up any previous session state
+        session.disconnect()
+        stopAdvertising()
+
         regionToSend = region
         transferState = .waitingForPeer
         progress = 0
 
+        print("PeerTransferService: Starting to advertise for region '\(region.name)'")
         advertiser = MCNearbyServiceAdvertiser(
             peer: myPeerID,
             discoveryInfo: ["region": region.name],
@@ -182,10 +187,15 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// Called on iOS when the user opens the "Receive from Mac" sheet.
     func startBrowsing() {
+        // Clean up any previous session state
+        session.disconnect()
+        stopBrowsing()
+
         discoveredPeers = []
         transferState = .waitingForPeer
         progress = 0
 
+        print("PeerTransferService: Starting to browse for peers")
         browser = MCNearbyServiceBrowser(
             peer: myPeerID,
             serviceType: Self.serviceType
@@ -206,6 +216,7 @@ class PeerTransferService: NSObject, ObservableObject {
     ///
     /// - Parameter peer: The ``MCPeerID`` of the Mac to connect to.
     func invitePeer(_ peer: MCPeerID) {
+        print("PeerTransferService: Inviting peer '\(peer.displayName)' with timeout \(Self.invitationTimeout)s")
         browser?.invitePeer(
             peer,
             to: session,
@@ -346,6 +357,15 @@ extension PeerTransferService: MCSessionDelegate {
 
     /// Called when a peer's connection state changes.
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        let stateDesc: String
+        switch state {
+        case .connected: stateDesc = "connected"
+        case .connecting: stateDesc = "connecting"
+        case .notConnected: stateDesc = "notConnected"
+        @unknown default: stateDesc = "unknown"
+        }
+        print("PeerTransferService: Peer '\(peerID.displayName)' state changed to \(stateDesc)")
+
         DispatchQueue.main.async {
             switch state {
             case .connected:
