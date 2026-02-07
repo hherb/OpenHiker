@@ -55,29 +55,57 @@ Perfect for:
 - **Hike History on iPhone** — Browse past hikes with track overlays and elevation profiles (Swift Charts)
 - **Track Compression** — Efficient storage of recorded tracks using the Ramer-Douglas-Peucker algorithm
 
+### Offline Routing Engine
+- **A\* Pathfinding** — Fully offline route computation using OSM trail data from Geofabrik
+- **Elevation-Aware** — Copernicus DEM GLO-30 elevation data with hiking cost function based on Naismith's rule
+- **Compact Routing Graphs** — SQLite-based routing database (~5–20 MB per 50×50 km region)
+- **OSM PBF Parsing** — Direct Protocol Buffer parsing of OpenStreetMap extracts
+
+### Route Planning & Turn-by-Turn Guidance
+- **Route Planning on iPhone** — Tap start/end/via-points, compute optimal paths, view route stats
+- **Turn-by-Turn on Watch** — Route polyline overlay, upcoming turn instructions, haptic feedback
+- **Off-Route Detection** — Automatic re-routing when you leave the planned path
+- **Hiking & Cycling Modes** — Activity-specific routing with appropriate cost functions
+
+### Multi-Platform & Export
+- **iPad Adaptive Layout** — `NavigationSplitView` with sidebar on iPad for a desktop-class experience
+- **Native macOS App** — Full planning and review hub with sidebar navigation, keyboard shortcuts, and iCloud sync status
+- **PDF & Markdown Export** — Generate hike reports with map snapshots and elevation profiles
+- **GPX Export** — Standard GPX 1.1 track export from the watch
+
+### Community Route Sharing
+- **Browse Shared Routes** — Discover routes shared by the community
+- **Upload Your Routes** — Share your planned routes with other hikers
+- **iCloud Sync** — Routes, waypoints, and regions sync across your devices via CloudKit
+
 ## How It Works
 
 ```
-┌─────────────────┐          ┌─────────────────┐
-│   iOS App       │   ───►   │  Apple Watch    │
-│                 │  WiFi    │                 │
-│ • Select region │ Transfer │ • View map      │
-│ • Download tiles│          │ • GPS tracking  │
-│ • Manage maps   │          │ • Offline nav   │
-└─────────────────┘          └─────────────────┘
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│   iPhone App     │   ───►   │  Apple Watch     │          │   Mac App        │
+│                  │  Watch   │                  │          │                  │
+│ • Select region  │ Connect  │ • View map       │          │ • Review hikes   │
+│ • Download tiles │  ivity   │ • GPS tracking   │  iCloud  │ • Browse routes  │
+│ • Plan routes    │          │ • Turn-by-turn   │ ◄──────► │ • View waypoints │
+│ • Review hikes   │          │ • Live stats     │          │ • Community      │
+│ • Community      │          │ • Offline nav    │          │                  │
+└──────────────────┘          └──────────────────┘          └──────────────────┘
 ```
 
 1. **Select** — Use the iOS companion app to browse and select a hiking region
-2. **Download** — Tiles are fetched from OpenTopoMap and stored in MBTiles format
-3. **Transfer** — Maps are sent to your Apple Watch via Watch Connectivity
-4. **Hike** — Navigate offline with real-time GPS position on your watch
+2. **Download** — Tiles and optional routing data are fetched and stored in MBTiles/SQLite format
+3. **Transfer** — Maps and planned routes are sent to your Apple Watch via Watch Connectivity
+4. **Plan** — Create routes on iPhone with A* pathfinding, then send to watch
+5. **Hike** — Navigate offline with real-time GPS, turn-by-turn guidance, and live stats
+6. **Review** — Browse past hikes on iPhone, iPad, or Mac with track overlays and elevation profiles
 
 ## Installation
 
 ### Requirements
 
-- iOS 17.0+ (iPhone companion app)
+- iOS 17.0+ (iPhone/iPad companion app)
 - watchOS 10.0+ (Apple Watch app)
+- macOS 14.0+ (Mac app)
 - Xcode 15.0+
 
 ### From Source
@@ -95,22 +123,32 @@ Build and run on your devices using Xcode.
 ### Downloading a Region
 
 1. Open OpenHiker on your iPhone
-2. Navigate to the area you want to hike
+2. Navigate to the **Regions** tab and browse the map
 3. Tap **Select Area** and draw a rectangle around your hiking region
-4. Review the estimated download size and tile count
-5. Tap **Download** and wait for completion
-6. The region will automatically transfer to your paired Apple Watch
+4. Optionally enable routing data download for offline route planning
+5. Review the estimated download size and tile count
+6. Tap **Download** and wait for completion
+7. The region will automatically transfer to your paired Apple Watch
+
+### Planning a Route
+
+1. Navigate to the **Routes** tab on your iPhone
+2. Tap **+** and select a downloaded region with routing data
+3. Tap on the map to set start, end, and via-points
+4. The routing engine computes the optimal path with distance and elevation stats
+5. Send the planned route to your Apple Watch
 
 ### On the Trail
 
 1. Open OpenHiker on your Apple Watch
-2. Select your downloaded region
+2. Select your downloaded region from the **Regions** tab
 3. Your current position is shown with a pulsing blue dot
 4. Use the Digital Crown to zoom in/out
 5. Pan by swiping on the display
-6. View live stats (distance, elevation, duration) on the overlay
-7. Tap to drop waypoint pins at points of interest
-8. Save your hike when finished to review later
+6. If following a planned route, turn-by-turn guidance appears with haptic alerts
+7. View live stats (distance, elevation, duration) on the overlay
+8. Tap to drop waypoint pins at points of interest
+9. Save your hike when finished to review later
 
 ### GPS Modes
 
@@ -119,57 +157,103 @@ To preserve battery, OpenHiker offers configurable GPS accuracy:
 | Mode | Update Interval | Best For |
 |------|-----------------|----------|
 | High | Continuous | Technical navigation, unfamiliar terrain |
-| Standard | 10 seconds | General hiking |
+| Balanced | 10 seconds | General hiking |
 | Low Power | 30 seconds | Long hikes, battery conservation |
 
 ### Reviewing Past Hikes
 
-1. Open OpenHiker on your iPhone
-2. Navigate to the **Hikes** tab
+1. Open OpenHiker on your iPhone, iPad, or Mac
+2. Navigate to the **Hikes** tab (or section)
 3. Browse your saved hikes with distance, duration, and elevation stats
 4. Tap a hike to see the track overlaid on a map with elevation profile
-5. View associated waypoints and photos from the trail
+5. Export hikes as PDF or Markdown reports
 
 ## Architecture
 
 ```
 OpenHiker/
-├── Shared/                    # Cross-platform code
-│   ├── Models/
+├── Shared/                    # Cross-platform code (iOS, watchOS, macOS)
+│   ├── Models/                # Data types
 │   │   ├── TileCoordinate.swift
 │   │   ├── Region.swift
 │   │   ├── Waypoint.swift
 │   │   ├── SavedRoute.swift
-│   │   └── HikeStatistics.swift
-│   ├── Storage/
-│   │   ├── TileStore.swift    # MBTiles SQLite wrapper
+│   │   ├── HikeStatistics.swift
+│   │   ├── PlannedRoute.swift
+│   │   ├── RoutingGraph.swift
+│   │   ├── TurnInstruction.swift
+│   │   ├── ActivityType.swift
+│   │   └── SharedRoute.swift
+│   ├── Storage/               # SQLite data stores
+│   │   ├── TileStore.swift
 │   │   ├── WaypointStore.swift
-│   │   └── RouteStore.swift
+│   │   ├── RouteStore.swift
+│   │   └── RoutingStore.swift
+│   ├── Services/              # Shared business logic
+│   │   ├── RoutingEngine.swift
+│   │   ├── CloudKitStore.swift
+│   │   ├── CloudSyncManager.swift
+│   │   ├── GitHubRouteService.swift
+│   │   └── HikeSummaryExporter.swift
 │   └── Utilities/
-│       └── TrackCompression.swift
+│       ├── TrackCompression.swift
+│       ├── RouteExporter.swift
+│       └── PhotoCompressor.swift
 │
-├── OpenHiker iOS/             # iPhone companion app
+├── OpenHiker iOS/             # iPhone & iPad companion app
+│   ├── App/                   # Entry point, adaptive layout (TabView / NavigationSplitView)
 │   ├── Views/
-│   │   ├── RegionSelectorView.swift
-│   │   ├── AddWaypointView.swift
-│   │   ├── WaypointDetailView.swift
-│   │   ├── HikesListView.swift
-│   │   ├── HikeDetailView.swift
-│   │   └── ElevationProfileView.swift
+│   │   ├── RegionSelectorView.swift     # MapKit region selection & download
+│   │   ├── TrailMapView.swift           # Trail overlay map display
+│   │   ├── HikesListView.swift          # Saved hike history
+│   │   ├── HikeDetailView.swift         # Hike detail with track overlay
+│   │   ├── ElevationProfileView.swift   # Swift Charts elevation profile
+│   │   ├── RoutePlanningView.swift      # A* route planning UI
+│   │   ├── RouteDetailView.swift        # Planned route detail & transfer
+│   │   ├── AddWaypointView.swift        # Waypoint creation with photos
+│   │   ├── WaypointDetailView.swift     # Waypoint detail & editing
+│   │   ├── WaypointsListView.swift      # All waypoints browser
+│   │   ├── CommunityBrowseView.swift    # Browse shared routes
+│   │   ├── CommunityRouteDetailView.swift
+│   │   ├── RouteUploadView.swift        # Share routes with community
+│   │   ├── ExportSheet.swift            # PDF/Markdown export
+│   │   └── SidebarView.swift            # iPad sidebar sections
 │   └── Services/
-│       ├── TileDownloader.swift
-│       └── WatchTransferManager.swift
+│       ├── TileDownloader.swift         # Actor-based tile fetcher
+│       ├── WatchTransferManager.swift   # WatchConnectivity file sender
+│       ├── RegionStorage.swift          # Downloaded region management
+│       ├── OSMDataDownloader.swift      # OSM PBF trail data download
+│       ├── PBFParser.swift              # Protocol Buffer parser
+│       ├── ProtobufReader.swift         # Low-level protobuf reader
+│       ├── RoutingGraphBuilder.swift    # Builds routing graphs from OSM data
+│       ├── ElevationDataManager.swift   # Copernicus DEM elevation data
+│       └── PDFExporter.swift            # PDF report generation
 │
-└── OpenHiker watchOS/         # Apple Watch app
+├── OpenHiker watchOS/         # Apple Watch standalone app
+│   ├── App/                   # Entry point, 4-tab vertically-paged interface
+│   ├── Views/
+│   │   ├── MapView.swift                # SpriteKit offline map display
+│   │   ├── HikeStatsOverlay.swift       # Live stats during hike
+│   │   ├── NavigationOverlay.swift      # Turn-by-turn guidance overlay
+│   │   ├── AddWaypointSheet.swift       # Quick waypoint creation
+│   │   └── SaveHikeSheet.swift          # Save completed hike
+│   └── Services/
+│       ├── MapRenderer.swift            # SpriteKit tile renderer
+│       ├── LocationManager.swift        # GPS tracking & track recording
+│       ├── HealthKitManager.swift       # Heart rate, workouts, SpO2
+│       └── RouteGuidance.swift          # Turn-by-turn navigation engine
+│
+└── OpenHiker macOS/           # Native macOS planning & review app
+    ├── App/                   # Entry point, NavigationSplitView sidebar
     ├── Views/
-    │   ├── MapView.swift
-    │   ├── HikeStatsOverlay.swift
-    │   ├── AddWaypointSheet.swift
-    │   └── SaveHikeSheet.swift
+    │   ├── MacHikesView.swift           # Hike history browser
+    │   ├── MacHikeDetailView.swift      # Hike detail with map & profile
+    │   ├── MacWaypointsView.swift       # Waypoints table view
+    │   ├── MacPlannedRoutesView.swift   # Planned routes list
+    │   ├── MacCommunityView.swift       # Community route browser
+    │   └── MacSettingsView.swift        # App preferences
     └── Services/
-        ├── MapRenderer.swift  # SpriteKit tile renderer
-        ├── LocationManager.swift
-        └── HealthKitManager.swift
+        └── MacPDFExporter.swift         # macOS-specific PDF generation
 ```
 
 ## Building
@@ -177,7 +261,10 @@ OpenHiker/
 ### Debug Build
 
 ```bash
+# iOS (iPhone/iPad simulator)
 xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 15 Pro"
+
+# watchOS (Apple Watch simulator)
 xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)"
 ```
 
@@ -196,16 +283,19 @@ OpenHiker is under active development. Here's what's been completed and what's c
 | 1 | Live Hike Metrics & HealthKit | Done |
 | 2 | Waypoints & Pins | Done |
 | 3 | Save Routes & Review Past Hikes | Done |
-| 4 | Custom Offline Routing Engine | Planned |
-| 5 | Route Planning & Active Guidance | Planned |
-| 6 | Multi-Platform & Export | Planned |
+| 4 | Custom Offline Routing Engine | Done |
+| 5 | Route Planning & Active Guidance | Done |
+| 6.3 | Export (PDF/Markdown) | Done |
+| 6.2 | iPad Adaptive Layouts | Done |
+| 6.4 | iCloud Sync | Done |
+| 6.1 | Native macOS App | Done |
+| — | Community Route Sharing | Done |
 
-### Upcoming Highlights
+### What's Next
 
-- **Offline Routing Engine** — A* pathfinding using OSM trail data from Geofabrik and Copernicus DEM elevation data, with a hiking cost function based on Naismith's rule
-- **Route Planning & Turn-by-Turn Guidance** — Plan routes on iPhone, get haptic-guided navigation on the watch with off-route detection and re-routing
-- **Multi-Platform** — Adaptive layouts for iPad and Mac as a planning & review hub
-- **Export** — Generate PDF and Markdown hike reports with map snapshots, elevation profiles, and photo galleries
+- Polish and bug fixes across all platforms
+- Expanded test coverage
+- App Store release preparation
 
 See [docs/planning/roadmap.md](docs/planning/roadmap.md) for the full roadmap with technical details.
 
@@ -216,8 +306,8 @@ All map and routing data is free and globally available:
 | Data | Source | License |
 |------|--------|---------|
 | Map tiles | [OpenTopoMap](https://opentopomap.org/) | CC-BY-SA |
-| Trail data (planned) | [Geofabrik](https://download.geofabrik.de/) OSM extracts | ODbL |
-| Elevation (planned) | [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/) | CC-BY-4.0 |
+| Trail data | [Geofabrik](https://download.geofabrik.de/) OSM extracts | ODbL |
+| Elevation | [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/) | CC-BY-4.0 |
 
 ## Contributing
 
