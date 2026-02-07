@@ -310,7 +310,11 @@ enum RoutingError: Error, LocalizedError {
     /// The start or end coordinate could not be snapped to a nearby routing node.
     case noNearbyNode(CLLocationCoordinate2D)
     /// A* exhausted all reachable nodes without finding a path to the destination.
-    case noRouteFound
+    /// - Parameters:
+    ///   - exploredNodes: Number of graph nodes visited during the search.
+    ///   - closestApproachMetres: Shortest straight-line distance from any explored
+    ///     node to the destination (helps diagnose disconnected sub-graphs).
+    case noRouteFound(exploredNodes: Int, closestApproachMetres: Double)
     /// A via-point could not be snapped to the graph.
     case viaPointNotReachable(index: Int, coordinate: CLLocationCoordinate2D)
     /// The routing database is corrupt or has an unexpected schema.
@@ -325,8 +329,17 @@ enum RoutingError: Error, LocalizedError {
         case .noNearbyNode(let coord):
             return String(format: "No trail found near (%.4f, %.4f). Try a point closer to a trail.",
                           coord.latitude, coord.longitude)
-        case .noRouteFound:
-            return "No route could be found between the selected points. They may be on disconnected trail networks."
+        case .noRouteFound(let explored, let closest):
+            if closest < 100 {
+                return "No route could be found between the selected points. "
+                    + "The trail network may have a gap near the destination. "
+                    + "Try moving the endpoint slightly. "
+                    + "(\(explored) nodes searched, closest approach: \(Int(closest)) m)"
+            }
+            return "No route could be found between the selected points. "
+                + "They may be on disconnected trail networks. "
+                + "Try re-downloading the region to rebuild the routing graph. "
+                + "(\(explored) nodes searched, closest approach: \(Int(closest)) m)"
         case .viaPointNotReachable(let index, let coord):
             return String(format: "Via-point %d at (%.4f, %.4f) is not near any trail.",
                           index + 1, coord.latitude, coord.longitude)

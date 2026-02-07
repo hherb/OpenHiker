@@ -133,19 +133,26 @@ actor RoutingGraphBuilder {
             nodeElevations: nodeElevations
         )
 
-        // Step 5: Write to SQLite
-        progress("Writing routing database...", 0.70)
-        try writeToSQLite(
+        // Step 5: Filter to largest connected component
+        progress("Filtering disconnected trail fragments...", 0.65)
+        let (filteredNodes, filteredEdges) = filterToLargestComponent(
             junctionNodeIds: junctionNodeIds,
+            edges: costEdges
+        )
+
+        // Step 6: Write to SQLite
+        progress("Writing routing database...", 0.75)
+        try writeToSQLite(
+            junctionNodeIds: filteredNodes,
             nodes: nodes,
             nodeElevations: nodeElevations,
-            edges: costEdges,
+            edges: filteredEdges,
             outputPath: outputPath,
             boundingBox: boundingBox
         )
 
-        let nodeCountResult = junctionNodeIds.count
-        let edgeCountResult = costEdges.count
+        let nodeCountResult = filteredNodes.count
+        let edgeCountResult = filteredEdges.count
         progress("Routing graph complete: \(nodeCountResult) nodes, \(edgeCountResult) edges", 1.0)
     }
 
@@ -208,17 +215,40 @@ actor RoutingGraphBuilder {
             var intermediateCoords: [CLLocationCoordinate2D] = []
             var segmentDistance: Double = 0
             var prevCoord: CLLocationCoordinate2D?
+            // Track whether the segment start node actually exists in the dict.
+            // If not, we must skip edges until we find a valid start.
+            var segmentStartValid = false
 
             if let startNode = nodes[segmentStartId] {
                 prevCoord = CLLocationCoordinate2D(
                     latitude: startNode.latitude, longitude: startNode.longitude
                 )
+                segmentStartValid = true
             }
 
             for i in 1..<refs.count {
                 let nodeId = refs[i]
-                guard let node = nodes[nodeId] else { continue }
+                guard let node = nodes[nodeId] else {
+                    // Node missing from dictionary — break the current segment
+                    // and reset so the next valid node becomes a fresh start.
+                    segmentStartValid = false
+                    intermediateCoords = []
+                    segmentDistance = 0
+                    prevCoord = nil
+                    continue
+                }
                 let coord = CLLocationCoordinate2D(latitude: node.latitude, longitude: node.longitude)
+
+                if !segmentStartValid {
+                    // Recover: this is the first valid node after a gap.
+                    // Start a new segment from here.
+                    segmentStartId = nodeId
+                    segmentStartValid = true
+                    prevCoord = coord
+                    intermediateCoords = []
+                    segmentDistance = 0
+                    continue
+                }
 
                 // Accumulate distance
                 if let prev = prevCoord {
@@ -230,18 +260,21 @@ actor RoutingGraphBuilder {
                 prevCoord = coord
 
                 if junctions.contains(nodeId) || i == refs.count - 1 {
-                    // End of segment — create an edge
-                    edges.append(RawEdge(
-                        fromNodeId: segmentStartId,
-                        toNodeId: nodeId,
-                        intermediateCoords: intermediateCoords,
-                        distance: segmentDistance,
-                        tags: way.tags,
-                        osmWayId: way.id
-                    ))
+                    // End of segment — create an edge only if both endpoints exist
+                    if nodes[segmentStartId] != nil {
+                        edges.append(RawEdge(
+                            fromNodeId: segmentStartId,
+                            toNodeId: nodeId,
+                            intermediateCoords: intermediateCoords,
+                            distance: segmentDistance,
+                            tags: way.tags,
+                            osmWayId: way.id
+                        ))
+                    }
 
                     // Reset for next segment
                     segmentStartId = nodeId
+                    segmentStartValid = true
                     intermediateCoords = []
                     segmentDistance = 0
                 } else {
@@ -422,7 +455,86 @@ actor RoutingGraphBuilder {
         return cost
     }
 
-    // MARK: - Step 4: Write to SQLite
+    // MARK: - Step 4: Filter to Largest Connected Component
+
+    /// Identify connected components in the routing graph and keep only the largest.
+    ///
+    /// OSM data frequently contains small isolated trail fragments (dead-end spurs,
+    /// disconnected paths) that create unreachable islands in the routing graph.
+    /// When a user taps near one of these fragments, the start/end snaps to a node
+    /// on the island, and A* can never reach the main network — resulting in a
+    /// "no route found" error even though the route looks obvious on the map.
+    ///
+    /// This method uses BFS to find all connected components, then discards all
+    /// components except the largest one.
+    ///
+    /// - Parameters:
+    ///   - junctionNodeIds: All junction node IDs in the graph.
+    ///   - edges: All computed edges.
+    /// - Returns: Filtered `(nodeIds, edges)` containing only the largest component.
+    private func filterToLargestComponent(
+        junctionNodeIds: Set<Int64>,
+        edges: [CostEdge]
+    ) -> (Set<Int64>, [CostEdge]) {
+        // Build adjacency list (undirected, since most trails are bidirectional)
+        var adjacency: [Int64: [Int64]] = [:]
+        for nodeId in junctionNodeIds {
+            adjacency[nodeId] = []
+        }
+        for edge in edges {
+            adjacency[edge.fromNodeId, default: []].append(edge.toNodeId)
+            if !edge.isOneway {
+                adjacency[edge.toNodeId, default: []].append(edge.fromNodeId)
+            }
+        }
+
+        // BFS to find connected components
+        var visited = Set<Int64>()
+        var components: [Set<Int64>] = []
+
+        for nodeId in junctionNodeIds {
+            guard !visited.contains(nodeId) else { continue }
+
+            var component = Set<Int64>()
+            var queue: [Int64] = [nodeId]
+            visited.insert(nodeId)
+
+            while !queue.isEmpty {
+                let current = queue.removeFirst()
+                component.insert(current)
+
+                for neighbor in adjacency[current] ?? [] {
+                    guard !visited.contains(neighbor) else { continue }
+                    visited.insert(neighbor)
+                    queue.append(neighbor)
+                }
+            }
+
+            components.append(component)
+        }
+
+        // Find the largest component
+        guard let largestComponent = components.max(by: { $0.count < $1.count }) else {
+            return (junctionNodeIds, edges)
+        }
+
+        let discardedComponents = components.count - 1
+        let discardedNodes = junctionNodeIds.count - largestComponent.count
+        if discardedComponents > 0 {
+            print("[RoutingGraphBuilder] Filtered \(discardedComponents) disconnected component(s), "
+                + "discarding \(discardedNodes) isolated nodes. "
+                + "Largest component: \(largestComponent.count) nodes.")
+        }
+
+        // Filter edges to only those within the largest component
+        let filteredEdges = edges.filter {
+            largestComponent.contains($0.fromNodeId) && largestComponent.contains($0.toNodeId)
+        }
+
+        return (largestComponent, filteredEdges)
+    }
+
+    // MARK: - Step 5: Write to SQLite
 
     /// Write the complete routing graph to a SQLite database.
     ///
@@ -530,7 +642,13 @@ actor RoutingGraphBuilder {
         }
         sqlite3_finalize(nodeStmt)
 
-        // Insert edges
+        // Insert edges — filter out any edges whose endpoints were not inserted
+        // (can happen when a junction node ID exists but the node data is missing)
+        let insertedNodeIds = Set(junctionNodeIds.filter { nodes[$0] != nil })
+        let validEdges = edges.filter {
+            insertedNodeIds.contains($0.fromNodeId) && insertedNodeIds.contains($0.toNodeId)
+        }
+
         let insertEdgeSQL = """
             INSERT INTO routing_edges
             (from_node, to_node, distance, elevation_gain, elevation_loss,
@@ -543,7 +661,7 @@ actor RoutingGraphBuilder {
             throw BuildError.databaseCreationFailed(String(cString: sqlite3_errmsg(db)))
         }
 
-        for edge in edges {
+        for edge in validEdges {
             sqlite3_reset(edgeStmt)
             sqlite3_bind_int64(edgeStmt, 1, edge.fromNodeId)
             sqlite3_bind_int64(edgeStmt, 2, edge.toNodeId)
@@ -588,8 +706,8 @@ actor RoutingGraphBuilder {
             ("version", "1"),
             ("created_at", ISO8601DateFormatter().string(from: Date())),
             ("bounding_box", "\(boundingBox.west),\(boundingBox.south),\(boundingBox.east),\(boundingBox.north)"),
-            ("node_count", String(junctionNodeIds.count)),
-            ("edge_count", String(edges.count)),
+            ("node_count", String(insertedNodeIds.count)),
+            ("edge_count", String(validEdges.count)),
             ("elevation_source", "copernicus_srtm")
         ]
 

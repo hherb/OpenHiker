@@ -220,6 +220,9 @@ final class RoutingEngine {
         // Closed set
         var closedSet = Set<Int64>()
 
+        // Track the closest approach to the destination for diagnostics
+        var closestApproachMetres: Double = heuristic(from: startNode, to: endNode)
+
         while let current = openSet.extractMin() {
             let currentId = current.nodeId
 
@@ -264,14 +267,19 @@ final class RoutingEngine {
 
                     // We need the neighbour node for the heuristic
                     if let neighbourNode = try store.getNode(neighbourId) {
-                        let f = tentativeG + heuristic(from: neighbourNode, to: endNode)
+                        let h = heuristic(from: neighbourNode, to: endNode)
+                        closestApproachMetres = min(closestApproachMetres, h)
+                        let f = tentativeG + h
                         openSet.insert(AStarEntry(nodeId: neighbourId, fScore: f))
                     }
                 }
             }
         }
 
-        throw RoutingError.noRouteFound
+        throw RoutingError.noRouteFound(
+            exploredNodes: closedSet.count,
+            closestApproachMetres: closestApproachMetres
+        )
     }
 
     /// Admissible A* heuristic: straight-line haversine distance.
