@@ -83,7 +83,7 @@ struct MacPeerSendView: View {
             }
         }
         .padding(30)
-        .frame(width: 360, height: 380)
+        .frame(width: 360, height: 420)
         .onAppear {
             peerService.startAdvertising(region: region)
         }
@@ -105,6 +105,13 @@ struct MacPeerSendView: View {
                 Text("Open \"Receive from Mac\" on your iPhone")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+
+                if let vpnWarning = peerService.vpnWarning {
+                    Label(vpnWarning, systemImage: "exclamationmark.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                }
             }
 
         case .connected:

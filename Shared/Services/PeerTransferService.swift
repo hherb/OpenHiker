@@ -119,6 +119,9 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
     /// Transfer progress as a fraction from 0.0 to 1.0.
     @Published var progress: Double = 0
 
+    /// Warning message shown when a VPN is detected that may interfere with peer discovery.
+    @Published var vpnWarning: String?
+
     // MARK: - Private Properties
 
     /// The local peer identity, derived from the device name.
@@ -181,6 +184,50 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         session.delegate = self
     }
 
+    // MARK: - VPN Detection
+
+    /// Checks whether any VPN tunnel interfaces are active on this device.
+    ///
+    /// VPNs can interfere with MultipeerConnectivity by routing local network traffic
+    /// through the tunnel, preventing AWDL and Bonjour discovery from working.
+    /// This method inspects the system's network interfaces for common VPN interface
+    /// name prefixes (`utun`, `ipsec`, `ppp`, `tap`, `tun`).
+    ///
+    /// - Returns: `true` if a VPN tunnel interface is detected.
+    static func isVPNActive() -> Bool {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else {
+            return false
+        }
+        defer { freeifaddrs(ifaddr) }
+
+        let vpnPrefixes = ["utun", "ipsec", "ppp", "tap", "tun"]
+        var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let addr = current {
+            let name = String(cString: addr.pointee.ifa_name)
+            if vpnPrefixes.contains(where: { name.hasPrefix($0) }) {
+                // utun0 exists on all Apple devices (for system services), skip it
+                if name == "utun0" {
+                    current = addr.pointee.ifa_next
+                    continue
+                }
+                return true
+            }
+            current = addr.pointee.ifa_next
+        }
+        return false
+    }
+
+    /// Checks for active VPN and updates the ``vpnWarning`` property.
+    private func checkForVPN() {
+        if Self.isVPNActive() {
+            vpnWarning = "A VPN appears to be active. This may prevent peer-to-peer connections. Consider disabling your VPN if the connection fails."
+            print("PeerTransferService: VPN detected — warning user")
+        } else {
+            vpnWarning = nil
+        }
+    }
+
     // MARK: - Advertiser (macOS Sender)
 
     /// Starts advertising this device as available for region transfer.
@@ -198,6 +245,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         regionToSend = region
         transferState = .waitingForPeer
         progress = 0
+        checkForVPN()
 
         print("PeerTransferService: Starting to advertise for region '\(region.name)'")
         advertiser = MCNearbyServiceAdvertiser(
@@ -230,6 +278,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         transferState = .waitingForPeer
         progress = 0
         isInviting = false
+        checkForVPN()
 
         print("PeerTransferService: Starting to browse for peers")
         browser = MCNearbyServiceBrowser(
@@ -468,6 +517,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
             self.discoveredPeers = []
             self.connectedPeers = []
             self.progress = 0
+            self.vpnWarning = nil
         }
     }
 }

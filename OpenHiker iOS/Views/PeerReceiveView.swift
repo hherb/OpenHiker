@@ -170,6 +170,15 @@ struct PeerReceiveView: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
+
+                if let vpnWarning = peerService.vpnWarning {
+                    Label(vpnWarning, systemImage: "exclamationmark.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                }
             }
             .padding()
         } else {
