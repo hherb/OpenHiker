@@ -487,6 +487,17 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
         }
     }
 
+    /// Fetches all planned routes associated with a given region.
+    ///
+    /// Reads from disk directly to ensure all routes are included regardless
+    /// of whether the in-memory cache is up to date.
+    ///
+    /// - Parameter regionId: The UUID of the region to match.
+    /// - Returns: An array of ``PlannedRoute`` objects with matching `regionId`.
+    func fetchForRegion(_ regionId: UUID) -> [PlannedRoute] {
+        loadAllFromDisk().filter { $0.regionId == regionId }
+    }
+
     /// Returns the file URL for a planned route's JSON file.
     ///
     /// Used when preparing the file for WatchConnectivity transfer.

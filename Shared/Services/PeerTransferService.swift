@@ -66,6 +66,12 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         case sendingMBTiles
         /// Sending/receiving the routing database.
         case sendingRouting
+        /// Sending/receiving saved routes (recorded hikes).
+        case sendingSavedRoutes
+        /// Sending/receiving planned routes.
+        case sendingPlannedRoutes
+        /// Sending/receiving waypoints.
+        case sendingWaypoints
         /// Transfer completed successfully.
         case completed
         /// Transfer failed with an error message.
@@ -80,6 +86,9 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
             case .sendingManifest: return "Sending manifest…"
             case .sendingMBTiles: return "Sending map tiles…"
             case .sendingRouting: return "Sending routing data…"
+            case .sendingSavedRoutes: return "Sending recorded hikes…"
+            case .sendingPlannedRoutes: return "Sending planned routes…"
+            case .sendingWaypoints: return "Sending waypoints…"
             case .completed: return "Transfer complete"
             case .failed(let msg): return "Failed: \(msg)"
             }
@@ -154,7 +163,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
         session = MCSession(
             peer: myPeerID,
             securityIdentity: nil,
-            encryptionPreference: .none
+            encryptionPreference: .optional
         )
         session.delegate = self
     }
@@ -244,11 +253,15 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
 
     // MARK: - Send Region (macOS)
 
-    /// Sends the queued region to all connected peers.
+    /// Sends the queued region and all associated routes to a connected peer.
     ///
-    /// Sends three resources in sequence: manifest JSON, MBTiles file, and
-    /// optionally the routing database. Each resource name is prefixed with
-    /// its type (`manifest:`, `mbtiles:`, `routing:`) followed by the region UUID.
+    /// Sends resources in sequence:
+    /// 1. `manifest:<uuid>` — JSON-encoded ``Region`` metadata
+    /// 2. `mbtiles:<uuid>` — the MBTiles tile database file
+    /// 3. `routing:<uuid>` — the routing graph database (if available)
+    /// 4. `savedroutes:<uuid>` — JSON array of ``SavedRoute``s associated with this region
+    /// 5. `plannedroutes:<uuid>` — JSON array of ``PlannedRoute``s associated with this region
+    /// 6. `waypoints:<uuid>` — JSON array of ``Waypoint``s from the transferred saved routes
     ///
     /// - Parameter peer: The connected peer to send to.
     private func sendRegion(to peer: MCPeerID) {
@@ -261,17 +274,21 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
 
         Task { @MainActor in
             do {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                let tmpDir = FileManager.default.temporaryDirectory
+                let regionId = region.id.uuidString
+
                 // Step 1: Send manifest
                 transferState = .sendingManifest
                 progress = 0
-                let manifestData = try JSONEncoder().encode(region)
-                let manifestURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("manifest_\(region.id.uuidString).json")
+                let manifestData = try encoder.encode(region)
+                let manifestURL = tmpDir.appendingPathComponent("manifest_\(regionId).json")
                 try manifestData.write(to: manifestURL)
 
                 try await sendResource(
                     at: manifestURL,
-                    withName: "manifest:\(region.id.uuidString)",
+                    withName: "manifest:\(regionId)",
                     toPeer: peer
                 )
                 try? FileManager.default.removeItem(at: manifestURL)
@@ -287,7 +304,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
 
                 try await sendResource(
                     at: mbtilesURL,
-                    withName: "mbtiles:\(region.id.uuidString)",
+                    withName: "mbtiles:\(regionId)",
                     toPeer: peer
                 )
 
@@ -299,11 +316,81 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
                     if FileManager.default.fileExists(atPath: routingURL.path) {
                         try await sendResource(
                             at: routingURL,
-                            withName: "routing:\(region.id.uuidString)",
+                            withName: "routing:\(regionId)",
                             toPeer: peer
                         )
                     }
                 }
+
+                // Step 4: Send saved routes (recorded hikes) for this region
+                let savedRoutes = (try? RouteStore.shared.fetchForRegion(region.id)) ?? []
+                if !savedRoutes.isEmpty {
+                    transferState = .sendingSavedRoutes
+                    progress = 0
+                    let savedRoutesData = try encoder.encode(savedRoutes)
+                    let savedRoutesURL = tmpDir.appendingPathComponent("savedroutes_\(regionId).json")
+                    try savedRoutesData.write(to: savedRoutesURL)
+
+                    try await sendResource(
+                        at: savedRoutesURL,
+                        withName: "savedroutes:\(regionId)",
+                        toPeer: peer
+                    )
+                    try? FileManager.default.removeItem(at: savedRoutesURL)
+                    print("PeerTransferService: Sent \(savedRoutes.count) saved route(s)")
+
+                    // Step 5: Send waypoints for the transferred saved routes
+                    let waypointStore = WaypointStore.shared
+                    var allWaypoints: [Waypoint] = []
+                    for route in savedRoutes {
+                        let routeWaypoints = (try? waypointStore.fetchForHike(route.id)) ?? []
+                        allWaypoints.append(contentsOf: routeWaypoints)
+                    }
+                    if !allWaypoints.isEmpty {
+                        transferState = .sendingWaypoints
+                        progress = 0
+                        let waypointsData = try encoder.encode(allWaypoints)
+                        let waypointsURL = tmpDir.appendingPathComponent("waypoints_\(regionId).json")
+                        try waypointsData.write(to: waypointsURL)
+
+                        try await sendResource(
+                            at: waypointsURL,
+                            withName: "waypoints:\(regionId)",
+                            toPeer: peer
+                        )
+                        try? FileManager.default.removeItem(at: waypointsURL)
+                        print("PeerTransferService: Sent \(allWaypoints.count) waypoint(s)")
+                    }
+                }
+
+                // Step 6: Send planned routes for this region
+                let plannedRoutes = PlannedRouteStore.shared.fetchForRegion(region.id)
+                if !plannedRoutes.isEmpty {
+                    transferState = .sendingPlannedRoutes
+                    progress = 0
+                    let plannedRoutesData = try encoder.encode(plannedRoutes)
+                    let plannedRoutesURL = tmpDir.appendingPathComponent("plannedroutes_\(regionId).json")
+                    try plannedRoutesData.write(to: plannedRoutesURL)
+
+                    try await sendResource(
+                        at: plannedRoutesURL,
+                        withName: "plannedroutes:\(regionId)",
+                        toPeer: peer
+                    )
+                    try? FileManager.default.removeItem(at: plannedRoutesURL)
+                    print("PeerTransferService: Sent \(plannedRoutes.count) planned route(s)")
+                }
+
+                // Send completion sentinel so receiver knows all resources are done
+                let doneData = Data("done".utf8)
+                let doneURL = tmpDir.appendingPathComponent("done_\(regionId).txt")
+                try doneData.write(to: doneURL)
+                try await sendResource(
+                    at: doneURL,
+                    withName: "done:\(regionId)",
+                    toPeer: peer
+                )
+                try? FileManager.default.removeItem(at: doneURL)
 
                 transferState = .completed
                 progress = 1.0
@@ -401,9 +488,13 @@ extension PeerTransferService: MCSessionDelegate {
                 self.isInviting = false
                 if self.connectedPeers.isEmpty {
                     // Only mark failed if we were mid-transfer
-                    if case .sendingManifest = self.transferState { self.transferState = .failed("Peer disconnected") }
-                    else if case .sendingMBTiles = self.transferState { self.transferState = .failed("Peer disconnected") }
-                    else if case .sendingRouting = self.transferState { self.transferState = .failed("Peer disconnected") }
+                    switch self.transferState {
+                    case .sendingManifest, .sendingMBTiles, .sendingRouting,
+                         .sendingSavedRoutes, .sendingPlannedRoutes, .sendingWaypoints:
+                        self.transferState = .failed("Peer disconnected")
+                    default:
+                        break
+                    }
                 }
 
             case .connecting:
@@ -441,6 +532,12 @@ extension PeerTransferService: MCSessionDelegate {
                 self.transferState = .sendingMBTiles
             } else if resourceName.hasPrefix("routing:") {
                 self.transferState = .sendingRouting
+            } else if resourceName.hasPrefix("savedroutes:") {
+                self.transferState = .sendingSavedRoutes
+            } else if resourceName.hasPrefix("plannedroutes:") {
+                self.transferState = .sendingPlannedRoutes
+            } else if resourceName.hasPrefix("waypoints:") {
+                self.transferState = .sendingWaypoints
             }
             self.progress = 0
         }
@@ -518,14 +615,8 @@ extension PeerTransferService: MCSessionDelegate {
                 try FileManager.default.moveItem(at: localURL, to: destURL)
                 print("PeerTransferService: Saved MBTiles to \(destURL.lastPathComponent)")
 
-                // If the region has no routing data, save it now
-                if !region.hasRoutingData {
-                    RegionStorage.shared.saveRegion(region)
-                    transferState = .completed
-                    progress = 1.0
-                    receivedManifest = nil
-                    print("PeerTransferService: Region '\(region.name)' saved (no routing data)")
-                }
+                // Save region metadata now so the region is available even if routes follow
+                RegionStorage.shared.saveRegion(region)
             } catch {
                 transferState = .failed("Failed to save MBTiles: \(error.localizedDescription)")
             }
@@ -541,17 +632,69 @@ extension PeerTransferService: MCSessionDelegate {
                     try FileManager.default.removeItem(at: destURL)
                 }
                 try FileManager.default.moveItem(at: localURL, to: destURL)
+                // Re-save region metadata to reflect routing data availability
                 RegionStorage.shared.saveRegion(region)
-                transferState = .completed
-                progress = 1.0
-                receivedManifest = nil
-                print("PeerTransferService: Region '\(region.name)' saved with routing data")
+                print("PeerTransferService: Saved routing DB for '\(region.name)'")
             } catch {
                 transferState = .failed("Failed to save routing DB: \(error.localizedDescription)")
             }
 
+        case "savedroutes":
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let data = try Data(contentsOf: localURL)
+                let routes = try decoder.decode([SavedRoute].self, from: data)
+                for route in routes {
+                    try RouteStore.shared.insert(route)
+                }
+                print("PeerTransferService: Imported \(routes.count) saved route(s)")
+            } catch {
+                print("PeerTransferService: Failed to import saved routes: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: localURL)
+
+        case "plannedroutes":
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let data = try Data(contentsOf: localURL)
+                let routes = try decoder.decode([PlannedRoute].self, from: data)
+                for route in routes {
+                    try PlannedRouteStore.shared.save(route)
+                }
+                print("PeerTransferService: Imported \(routes.count) planned route(s)")
+            } catch {
+                print("PeerTransferService: Failed to import planned routes: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: localURL)
+
+        case "waypoints":
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let data = try Data(contentsOf: localURL)
+                let waypoints = try decoder.decode([Waypoint].self, from: data)
+                for waypoint in waypoints {
+                    try WaypointStore.shared.insert(waypoint)
+                }
+                print("PeerTransferService: Imported \(waypoints.count) waypoint(s)")
+            } catch {
+                print("PeerTransferService: Failed to import waypoints: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: localURL)
+
+        case "done":
+            let regionName = receivedManifest?.name ?? "unknown"
+            transferState = .completed
+            progress = 1.0
+            receivedManifest = nil
+            print("PeerTransferService: Transfer complete for '\(regionName)'")
+            try? FileManager.default.removeItem(at: localURL)
+
         default:
-            transferState = .failed("Unknown resource type: \(prefix)")
+            print("PeerTransferService: Unknown resource type '\(prefix)', ignoring")
+            try? FileManager.default.removeItem(at: localURL)
         }
     }
 }
@@ -586,8 +729,10 @@ extension PeerTransferService: MCNearbyServiceBrowserDelegate {
 
     /// Called when a nearby Mac is discovered.
     func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
+        print("PeerTransferService: Discovered peer '\(peerID.displayName)'")
         DispatchQueue.main.async {
-            if !self.discoveredPeers.contains(peerID) {
+            // Filter by displayName since MCPeerID equality is object-identity based
+            if !self.discoveredPeers.contains(where: { $0.displayName == peerID.displayName }) {
                 self.discoveredPeers.append(peerID)
             }
         }

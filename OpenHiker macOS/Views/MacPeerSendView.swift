@@ -116,7 +116,8 @@ struct MacPeerSendView: View {
                     .foregroundStyle(.secondary)
             }
 
-        case .sendingManifest, .sendingMBTiles, .sendingRouting:
+        case .sendingManifest, .sendingMBTiles, .sendingRouting,
+             .sendingSavedRoutes, .sendingPlannedRoutes, .sendingWaypoints:
             VStack(spacing: 12) {
                 ProgressView(value: peerService.progress)
                     .progressViewStyle(.linear)

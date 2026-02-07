@@ -396,6 +396,38 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
         }
     }
 
+    /// Fetches all saved routes associated with a given region.
+    ///
+    /// - Parameter regionId: The UUID of the region to match.
+    /// - Returns: An array of ``SavedRoute`` objects with matching `regionId`.
+    /// - Throws: ``RouteStoreError`` if the query fails.
+    func fetchForRegion(_ regionId: UUID) throws -> [SavedRoute] {
+        try queue.sync {
+            guard let db = db else {
+                throw RouteStoreError.databaseNotOpen
+            }
+
+            let sql = "SELECT * FROM saved_routes WHERE region_id = ? ORDER BY start_time DESC"
+            var statement: OpaquePointer?
+
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(statement) }
+
+            let idString = regionId.uuidString
+            sqlite3_bind_text(statement, 1, idString, -1, Self.sqliteTransient)
+
+            var routes: [SavedRoute] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let route = parseRouteRow(statement) {
+                    routes.append(route)
+                }
+            }
+            return routes
+        }
+    }
+
     /// Fetches a single saved route by its UUID.
     ///
     /// - Parameter id: The UUID of the route to fetch.

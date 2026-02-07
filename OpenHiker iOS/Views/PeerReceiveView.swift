@@ -96,7 +96,8 @@ struct PeerReceiveView: View {
             }
             .padding()
 
-        case .sendingManifest, .sendingMBTiles, .sendingRouting:
+        case .sendingManifest, .sendingMBTiles, .sendingRouting,
+             .sendingSavedRoutes, .sendingPlannedRoutes, .sendingWaypoints:
             VStack(spacing: 16) {
                 ProgressView(value: peerService.progress)
                     .progressViewStyle(.linear)
@@ -117,10 +118,10 @@ struct PeerReceiveView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 48))
                     .foregroundStyle(.green)
-                Text("Region Received")
+                Text("Transfer Complete")
                     .font(.headline)
                     .foregroundStyle(.green)
-                Text("The region is now available in your Downloaded Regions.")
+                Text("Region and associated routes have been imported.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
