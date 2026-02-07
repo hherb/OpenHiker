@@ -20,7 +20,9 @@ import SwiftUI
 /// macOS-specific menu commands for the OpenHiker app.
 ///
 /// Adds custom commands to the macOS menu bar:
+/// - **File > Import GPX...** (Cmd+I): Import GPX route files
 /// - **File > Sync with iCloud** (Cmd+Shift+S): Triggers a manual iCloud sync
+/// - **File > Send to iPhone** (Cmd+Shift+P): Push routes to iPhone via iCloud
 ///
 /// These commands integrate with the macOS system menu bar and follow
 /// Apple's Human Interface Guidelines for macOS command naming.
@@ -29,12 +31,31 @@ struct OpenHikerCommands: Commands {
     var body: some Commands {
         // Add to the existing File menu
         CommandGroup(after: .saveItem) {
+            Button("Import GPX...") {
+                Task { @MainActor in
+                    let count = await GPXImportHandler.presentImportPanel()
+                    if count > 0 {
+                        PlannedRouteStore.shared.loadAll()
+                    }
+                }
+            }
+            .keyboardShortcut("i", modifiers: .command)
+
+            Divider()
+
             Button("Sync with iCloud") {
                 Task {
                     await CloudSyncManager.shared.performSync()
                 }
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
+
+            Button("Send Routes to iPhone") {
+                Task {
+                    await CloudSyncManager.shared.performSync()
+                }
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
         }
     }
 }

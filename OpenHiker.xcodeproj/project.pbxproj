@@ -133,6 +133,11 @@
 		1C0000010000000000000026 /* ElevationDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000035 /* ElevationDataManager.swift */; };
 		1C0000010000000000000027 /* RoutingGraphBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000036 /* RoutingGraphBuilder.swift */; };
 		1C0000010000000000000028 /* OSMDataDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000037 /* OSMDataDownloader.swift */; };
+		1C0000010000000000000029 /* MacRegionSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000C /* MacRegionSelectorView.swift */; };
+		1C000001000000000000002A /* MacRegionsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000D /* MacRegionsListView.swift */; };
+		1C000001000000000000002B /* MacRoutePlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000E /* MacRoutePlanningView.swift */; };
+		1C000001000000000000002C /* GPXImportHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000F /* GPXImportHandler.swift */; };
+		1C000001000000000000002D /* MacAddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000010 /* MacAddWaypointView.swift */; };
 		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
@@ -242,6 +247,11 @@
 		2C0000010000000000000009 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		2C000001000000000000000A /* MacPDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPDFExporter.swift; sourceTree = "<group>"; };
 		2C000001000000000000000B /* OpenHiker macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker macOS.entitlements"; sourceTree = "<group>"; };
+		2C000001000000000000000C /* MacRegionSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRegionSelectorView.swift; sourceTree = "<group>"; };
+		2C000001000000000000000D /* MacRegionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRegionsListView.swift; sourceTree = "<group>"; };
+		2C000001000000000000000E /* MacRoutePlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRoutePlanningView.swift; sourceTree = "<group>"; };
+		2C000001000000000000000F /* GPXImportHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPXImportHandler.swift; sourceTree = "<group>"; };
+		2C0000010000000000000010 /* MacAddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAddWaypointView.swift; sourceTree = "<group>"; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
 		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
@@ -506,12 +516,17 @@
 		5D0000010000000000000003 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				2C000001000000000000000C /* MacRegionSelectorView.swift */,
+				2C000001000000000000000D /* MacRegionsListView.swift */,
 				2C0000010000000000000004 /* MacHikesView.swift */,
 				2C0000010000000000000005 /* MacHikeDetailView.swift */,
 				2C0000010000000000000006 /* MacWaypointsView.swift */,
 				2C0000010000000000000007 /* MacPlannedRoutesView.swift */,
+				2C000001000000000000000E /* MacRoutePlanningView.swift */,
 				2C0000010000000000000008 /* MacCommunityView.swift */,
 				2C0000010000000000000009 /* MacSettingsView.swift */,
+				2C0000010000000000000010 /* MacAddWaypointView.swift */,
+				2C000001000000000000000F /* GPXImportHandler.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -805,6 +820,11 @@
 				1C0000010000000000000026 /* ElevationDataManager.swift in Sources */,
 				1C0000010000000000000027 /* RoutingGraphBuilder.swift in Sources */,
 				1C0000010000000000000028 /* OSMDataDownloader.swift in Sources */,
+				1C0000010000000000000029 /* MacRegionSelectorView.swift in Sources */,
+				1C000001000000000000002A /* MacRegionsListView.swift in Sources */,
+				1C000001000000000000002B /* MacRoutePlanningView.swift in Sources */,
+				1C000001000000000000002C /* GPXImportHandler.swift in Sources */,
+				1C000001000000000000002D /* MacAddWaypointView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

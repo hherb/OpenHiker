@@ -17,17 +17,34 @@
 
 import SwiftUI
 
-/// macOS view for browsing planned routes.
+/// macOS view for browsing and creating planned routes.
 ///
 /// Displays planned routes in a list with name, distance, elevation, and duration.
-/// Route planning is only available on iOS (where the MapKit interactive view is
-/// used); this view is read-only for reviewing routes synced via iCloud.
+/// Users can create new routes by selecting a downloaded region with routing data
+/// and opening the interactive ``MacRoutePlanningView``.
+///
+/// Routes can also be imported from GPX files via the File > Import GPX menu command.
 struct MacPlannedRoutesView: View {
     /// Reference to the shared planned route store for observation.
     @ObservedObject private var routeStore = PlannedRouteStore.shared
 
+    /// Shared region storage to find regions with routing data.
+    @ObservedObject private var regionStorage = RegionStorage.shared
+
     /// User preference for metric units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
+
+    /// The selected region for route planning.
+    @State private var selectedPlanningRegion: Region?
+
+    /// Whether the route planning sheet is shown.
+    @State private var showRoutePlanning = false
+
+    /// The number of routes imported in the last GPX import.
+    @State private var importCount = 0
+
+    /// Whether the import success alert is shown.
+    @State private var showImportSuccess = false
 
     var body: some View {
         Group {
@@ -35,17 +52,64 @@ struct MacPlannedRoutesView: View {
                 ContentUnavailableView(
                     "No Planned Routes",
                     systemImage: "point.topleft.down.to.point.bottomright.curvepath",
-                    description: Text("Plan routes in the iOS app and they will sync here via iCloud.")
+                    description: Text("Create a route below or import a GPX file via File > Import GPX.")
                 )
             } else {
                 List(routeStore.routes) { route in
                     routeRow(route)
+                        .contextMenu {
+                            Button("Send to iPhone via iCloud") {
+                                Task {
+                                    await CloudSyncManager.shared.performSync()
+                                }
+                            }
+                            Divider()
+                            Button("Delete", role: .destructive) {
+                                do {
+                                    try PlannedRouteStore.shared.delete(route.id)
+                                } catch {
+                                    print("Error deleting route: \(error.localizedDescription)")
+                                }
+                            }
+                        }
                 }
             }
         }
         .navigationTitle("Planned Routes")
         .toolbar {
-            ToolbarItem(placement: .automatic) {
+            ToolbarItemGroup {
+                // Plan new route menu (only shows regions with routing data)
+                Menu {
+                    let routableRegions = regionStorage.regions.filter(\.hasRoutingData)
+                    if routableRegions.isEmpty {
+                        Text("Download a region with routing data first")
+                    } else {
+                        ForEach(routableRegions) { region in
+                            Button(region.name) {
+                                selectedPlanningRegion = region
+                                showRoutePlanning = true
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Plan Route", systemImage: "plus")
+                }
+                .help("Plan a new route on a downloaded region")
+
+                Button {
+                    Task { @MainActor in
+                        let count = await GPXImportHandler.presentImportPanel()
+                        if count > 0 {
+                            routeStore.loadAll()
+                            importCount = count
+                            showImportSuccess = true
+                        }
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("Import GPX file")
+
                 Button {
                     routeStore.loadAll()
                 } label: {
@@ -53,6 +117,17 @@ struct MacPlannedRoutesView: View {
                 }
                 .help("Refresh route list")
             }
+        }
+        .sheet(isPresented: $showRoutePlanning) {
+            if let region = selectedPlanningRegion {
+                MacRoutePlanningView(region: region)
+                    .frame(minWidth: 900, minHeight: 600)
+            }
+        }
+        .alert("GPX Imported", isPresented: $showImportSuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("\(importCount) route(s) imported successfully.")
         }
     }
 

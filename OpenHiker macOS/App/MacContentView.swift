@@ -19,14 +19,18 @@ import SwiftUI
 
 /// The sections available in the macOS sidebar.
 ///
-/// Subset of the iOS ``SidebarSection`` -- excludes watch-specific and region
-/// download sections that are iOS-only.
+/// Full feature parity with the iOS sidebar, including region downloading
+/// and route planning that were previously iOS-only.
 enum MacSidebarSection: String, CaseIterable, Identifiable {
+    /// Interactive map for selecting and downloading regions.
+    case regions = "Regions"
+    /// List of downloaded offline map regions.
+    case downloaded = "Downloaded"
     /// Saved hike history.
     case hikes = "Hikes"
     /// All waypoints across hikes.
     case waypoints = "Waypoints"
-    /// Planned routes list.
+    /// Planned routes list and route planning.
     case routes = "Planned Routes"
     /// Community route browser.
     case community = "Community"
@@ -36,6 +40,8 @@ enum MacSidebarSection: String, CaseIterable, Identifiable {
     /// SF Symbol icon for this section.
     var iconName: String {
         switch self {
+        case .regions: return "map"
+        case .downloaded: return "arrow.down.circle"
         case .hikes: return "figure.hiking"
         case .waypoints: return "mappin.and.ellipse"
         case .routes: return "point.topleft.down.to.point.bottomright.curvepath"
@@ -114,6 +120,10 @@ struct MacContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch selectedSection {
+        case .regions:
+            MacRegionSelectorView()
+        case .downloaded:
+            MacRegionsListView()
         case .hikes:
             MacHikesView()
         case .waypoints:
