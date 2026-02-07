@@ -162,10 +162,8 @@ struct PlannedRoutesListView: View {
     /// Closure to navigate the user to the Regions tab for downloading a new region.
     var onNavigateToRegions: () -> Void = {}
 
-    /// Whether the route planning sheet is displayed.
-    @State private var showingRoutePlanning = false
-
     /// The selected region for route planning (needs routing data).
+    /// Setting this non-nil triggers the route planning sheet via `.sheet(item:)`.
     @State private var selectedRegion: Region?
 
     /// Whether the region picker is displayed.
@@ -207,8 +205,8 @@ struct PlannedRoutesListView: View {
             .onAppear {
                 routeStore.loadAll()
             }
-            .sheet(isPresented: $showingRoutePlanning) {
-                RoutePlanningView(region: selectedRegion)
+            .sheet(item: $selectedRegion) { region in
+                RoutePlanningView(region: region)
             }
             .sheet(isPresented: $showingRegionPicker) {
                 regionPickerSheet
@@ -294,9 +292,14 @@ struct PlannedRoutesListView: View {
                             Section {
                                 ForEach(routableRegions) { region in
                                     Button {
-                                        selectedRegion = region
+                                        let picked = region
                                         showingRegionPicker = false
-                                        showingRoutePlanning = true
+                                        // Delay presenting the route planning sheet until the
+                                        // region picker sheet has finished dismissing.
+                                        // Setting selectedRegion triggers .sheet(item:).
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                            selectedRegion = picked
+                                        }
                                     } label: {
                                         regionRow(region, enabled: true)
                                     }

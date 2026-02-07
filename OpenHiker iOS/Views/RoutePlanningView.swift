@@ -37,8 +37,8 @@ struct RoutePlanningView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
     @Environment(\.dismiss) private var dismiss
 
-    /// The region whose routing database to use.
-    let region: Region?
+    /// The region whose routing database and map tiles to use.
+    let region: Region
 
     /// The routing mode: hiking or cycling.
     @State private var routingMode: RoutingMode = .hiking
@@ -187,25 +187,20 @@ struct RoutePlanningView: View {
 
     /// Path to the region's MBTiles file for offline topographic tile rendering.
     private var regionMBTilesPath: String? {
-        guard let region = region else { return nil }
         let url = RegionStorage.shared.mbtilesURL(for: region)
         return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
     }
 
     /// Initial latitude span for the map, derived from the region's bounding box.
     private var regionSpan: Double {
-        if let bb = region?.boundingBox {
-            return bb.north - bb.south
-        }
-        return 0.5
+        region.boundingBox.north - region.boundingBox.south
     }
 
     /// The `MKMapView`-based map with offline topographic tiles, annotations, and route polyline.
     private var mapContent: some View {
         RoutePlanningMapView(
             mbtilesPath: regionMBTilesPath,
-            initialCenter: region?.boundingBox.center
-                ?? CLLocationCoordinate2D(latitude: 47.0, longitude: 11.0),
+            initialCenter: region.boundingBox.center,
             initialSpan: regionSpan,
             annotations: annotations,
             routeCoordinates: computedRoute?.coordinates ?? [],
@@ -430,10 +425,6 @@ struct RoutePlanningView: View {
         via: [CLLocationCoordinate2D],
         mode: RoutingMode
     ) throws -> ComputedRoute {
-        guard let region = region else {
-            throw RoutingError.noRoutingData
-        }
-
         let storage = RegionStorage.shared
         let routingDbURL = storage.routingDbURL(for: region)
 
@@ -461,7 +452,7 @@ struct RoutePlanningView: View {
             computedRoute: route,
             name: name,
             mode: routingMode,
-            regionId: region?.id
+            regionId: region.id
         )
 
         do {
