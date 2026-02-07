@@ -75,7 +75,7 @@ struct ContentView: View {
                 }
                 .tag(2)
 
-            PlannedRoutesListView()
+            PlannedRoutesListView(onNavigateToRegions: { selectedTab = 0 })
                 .tabItem {
                     Label("Routes", systemImage: "arrow.triangle.turn.up.right.diamond")
                 }
@@ -121,7 +121,7 @@ struct ContentView: View {
                 }
             case .routes:
                 NavigationStack {
-                    PlannedRoutesListView()
+                    PlannedRoutesListView(onNavigateToRegions: { sidebarSelection = .regions })
                 }
             case .waypoints:
                 NavigationStack {
@@ -152,11 +152,15 @@ struct ContentView: View {
 ///
 /// Each route shows its name, distance, estimated time, and creation date.
 /// Tapping a route opens ``RouteDetailView`` for full details and watch transfer.
-/// The "Plan Route" button opens ``RoutePlanningView`` for interactive route creation.
+/// The "+" button opens a region picker so the user can choose a downloaded region
+/// (with routing data) before entering ``RoutePlanningView``.
 struct PlannedRoutesListView: View {
     @ObservedObject private var routeStore = PlannedRouteStore.shared
     @ObservedObject private var regionStorage = RegionStorage.shared
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+
+    /// Closure to navigate the user to the Regions tab for downloading a new region.
+    var onNavigateToRegions: () -> Void = {}
 
     /// Whether the route planning sheet is displayed.
     @State private var showingRoutePlanning = false
@@ -170,6 +174,11 @@ struct PlannedRoutesListView: View {
     /// Regions that have routing data available.
     private var routableRegions: [Region] {
         regionStorage.regions.filter { $0.hasRoutingData }
+    }
+
+    /// Regions that have been downloaded but lack routing data.
+    private var nonRoutableRegions: [Region] {
+        regionStorage.regions.filter { !$0.hasRoutingData }
     }
 
     var body: some View {
@@ -189,16 +198,7 @@ struct PlannedRoutesListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        if routableRegions.count == 1 {
-                            selectedRegion = routableRegions.first
-                            showingRoutePlanning = true
-                        } else if routableRegions.isEmpty {
-                            // No routing data available
-                            selectedRegion = nil
-                            showingRoutePlanning = true
-                        } else {
-                            showingRegionPicker = true
-                        }
+                        showingRegionPicker = true
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -265,21 +265,67 @@ struct PlannedRoutesListView: View {
         .padding(.vertical, 4)
     }
 
-    /// A sheet for picking which region to plan a route in.
+    /// A sheet for picking which downloaded region to plan a route in.
+    ///
+    /// Handles three cases:
+    /// - **No regions at all**: guides the user to download a region first.
+    /// - **Regions without routing data**: shows them as disabled with an explanation.
+    /// - **Routable regions**: lists them for selection, opening ``RoutePlanningView``.
     private var regionPickerSheet: some View {
         NavigationStack {
-            List(routableRegions) { region in
-                Button {
-                    selectedRegion = region
-                    showingRegionPicker = false
-                    showingRoutePlanning = true
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(region.name)
-                            .font(.headline)
-                        Text("\(region.tileCount) tiles")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            Group {
+                if regionStorage.regions.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Regions Downloaded", systemImage: "map")
+                    } description: {
+                        Text("Download a map region with routing data enabled before planning a route.")
+                    } actions: {
+                        Button {
+                            showingRegionPicker = false
+                            onNavigateToRegions()
+                        } label: {
+                            Label("Go to Regions", systemImage: "map.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List {
+                        if !routableRegions.isEmpty {
+                            Section {
+                                ForEach(routableRegions) { region in
+                                    Button {
+                                        selectedRegion = region
+                                        showingRegionPicker = false
+                                        showingRoutePlanning = true
+                                    } label: {
+                                        regionRow(region, enabled: true)
+                                    }
+                                }
+                            } header: {
+                                Text("Ready for Route Planning")
+                            }
+                        }
+
+                        if !nonRoutableRegions.isEmpty {
+                            Section {
+                                ForEach(nonRoutableRegions) { region in
+                                    regionRow(region, enabled: false)
+                                }
+                            } header: {
+                                Text("No Routing Data")
+                            } footer: {
+                                Text("Re-download these regions with routing enabled to plan routes on them.")
+                            }
+                        }
+
+                        Section {
+                            Button {
+                                showingRegionPicker = false
+                                onNavigateToRegions()
+                            } label: {
+                                Label("Download New Region", systemImage: "square.and.arrow.down")
+                            }
+                        }
                     }
                 }
             }
@@ -290,6 +336,44 @@ struct PlannedRoutesListView: View {
                 }
             }
         }
+    }
+
+    /// A row displaying region info in the picker sheet.
+    ///
+    /// - Parameters:
+    ///   - region: The region to display.
+    ///   - enabled: Whether the region is selectable (has routing data).
+    /// - Returns: A styled row view.
+    private func regionRow(_ region: Region, enabled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(region.name)
+                    .font(.headline)
+                Spacer()
+                if enabled {
+                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+            }
+
+            HStack {
+                Label("\(region.tileCount) tiles", systemImage: "square.grid.3x3")
+                Spacer()
+                Label(
+                    String(format: "%.1f km²", region.areaCoveredKm2),
+                    systemImage: "map"
+                )
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Text("Zoom \(region.zoomLevels.lowerBound)-\(region.zoomLevels.upperBound)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+        .opacity(enabled ? 1.0 : 0.5)
     }
 
     /// Deletes planned routes at the given index offsets.
