@@ -25,11 +25,12 @@ import HealthKit
 /// map tiles rendered via SpriteKit. It receives map data from the iOS companion app
 /// through WatchConnectivity.
 ///
-/// Four environment objects are injected into the view hierarchy:
+/// Five environment objects are injected into the view hierarchy:
 /// - ``LocationManager``: Provides GPS location, heading, and track recording
 /// - ``WatchConnectivityReceiver``: Handles file reception from the iOS app
 /// - ``HealthKitManager``: Manages HealthKit workouts, heart rate, and SpO2
 /// - ``RouteGuidance``: Turn-by-turn navigation engine for planned routes
+/// - ``UVIndexManager``: Real-time UV index via WeatherKit
 @main
 struct OpenHikerWatchApp: App {
     /// GPS location and heading manager for the watch.
@@ -44,6 +45,9 @@ struct OpenHikerWatchApp: App {
     /// Route guidance engine for turn-by-turn navigation on the watch.
     @StateObject private var routeGuidance = RouteGuidance()
 
+    /// UV index manager for real-time UV exposure data via WeatherKit.
+    @StateObject private var uvIndexManager = UVIndexManager()
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()
@@ -51,6 +55,7 @@ struct OpenHikerWatchApp: App {
                 .environmentObject(connectivityManager)
                 .environmentObject(healthKitManager)
                 .environmentObject(routeGuidance)
+                .environmentObject(uvIndexManager)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()

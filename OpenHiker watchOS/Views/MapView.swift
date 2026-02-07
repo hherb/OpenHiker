@@ -37,6 +37,7 @@ struct MapView: View {
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
     @EnvironmentObject var healthKitManager: HealthKitManager
     @EnvironmentObject var routeGuidance: RouteGuidance
+    @EnvironmentObject var uvIndexManager: UVIndexManager
 
     /// Whether to record hikes as workouts in Apple Health.
     @AppStorage("recordWorkouts") private var recordWorkouts = true
@@ -99,6 +100,9 @@ struct MapView: View {
 
                 // Hike stats overlay (distance, elevation, time, vitals)
                 HikeStatsOverlay()
+
+                // UV index overlay (WeatherKit-based)
+                UVIndexOverlay()
 
                 // Navigation overlay for route guidance
                 NavigationOverlay(guidance: routeGuidance)
@@ -342,7 +346,8 @@ struct MapView: View {
 
     /// Updates the position marker and track trail when the user's GPS location changes.
     ///
-    /// Also feeds the new location to ``HealthKitManager`` for workout route recording.
+    /// Also feeds the new location to ``HealthKitManager`` for workout route recording
+    /// and to ``UVIndexManager`` for UV index updates.
     ///
     /// - Parameter location: The new location, or `nil` if unavailable.
     private func updateUserPosition(_ location: CLLocation?) {
@@ -372,6 +377,9 @@ struct MapView: View {
             routeGuidance.updateLocation(location)
             refreshRouteLine()
         }
+
+        // Update UV index (rate-limited internally to once per 10 minutes)
+        uvIndexManager.updateUVIndex(for: location)
     }
 
     /// Centers the map on the user's current GPS position.
@@ -504,4 +512,5 @@ struct RegionPickerSheet: View {
         .environmentObject(WatchConnectivityReceiver.shared)
         .environmentObject(HealthKitManager())
         .environmentObject(RouteGuidance())
+        .environmentObject(UVIndexManager())
 }

@@ -126,6 +126,9 @@
 		1C000001000000000000001F /* PhotoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000043 /* PhotoCompressor.swift */; };
 		1C0000010000000000000020 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 		1C0000010000000000000021 /* ElevationProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000023 /* ElevationProfileView.swift */; };
+		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
+		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
+		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -232,6 +235,9 @@
 		2C000001000000000000000A /* MacPDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPDFExporter.swift; sourceTree = "<group>"; };
 		2C000001000000000000000B /* OpenHiker macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker macOS.entitlements"; sourceTree = "<group>"; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
+		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
+		F10000010000000000000002 /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -247,6 +253,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B0000010000000000000009 /* HealthKit.framework in Frameworks */,
+				1B000001000000000000004A /* WeatherKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -378,6 +385,7 @@
 				2B0000010000000000000010 /* AddWaypointSheet.swift */,
 				2B0000010000000000000011 /* SaveHikeSheet.swift */,
 				2B0000010000000000000013 /* NavigationOverlay.swift */,
+				2B0000010000000000000015 /* UVIndexOverlay.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -389,6 +397,7 @@
 				2B0000010000000000000005 /* LocationManager.swift */,
 				2B0000010000000000000008 /* HealthKitManager.swift */,
 				2B0000010000000000000012 /* RouteGuidance.swift */,
+				2B0000010000000000000014 /* UVIndexManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -736,6 +745,8 @@
 				1B0000010000000000000045 /* HikeSummaryExporter.swift in Sources */,
 				1B0000010000000000000046 /* CloudKitStore.swift in Sources */,
 				1B0000010000000000000047 /* CloudSyncManager.swift in Sources */,
+				1B0000010000000000000048 /* UVIndexManager.swift in Sources */,
+				1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
