@@ -552,12 +552,23 @@ struct RegionSelectorView: View {
                     }
                 }
 
+                // Build routing graph if requested (default: true)
+                var routingDataBuilt = false
+                if request.includeRoutingData {
+                    routingDataBuilt = await buildRoutingGraph(
+                        boundingBox: boundingBox,
+                        mbtilesURL: mbtilesURL,
+                        totalTiles: totalTiles
+                    )
+                }
+
                 await MainActor.run {
                     // Save the region to storage
                     let region = regionStorage.createRegion(
                         from: request,
                         mbtilesURL: mbtilesURL,
-                        tileCount: totalTiles
+                        tileCount: totalTiles,
+                        hasRoutingData: routingDataBuilt
                     )
                     regionStorage.saveRegion(region)
 
@@ -578,6 +589,83 @@ struct RegionSelectorView: View {
                     print("Download failed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    /// Downloads OSM trail data, elevation data, and builds a routing graph for the region.
+    ///
+    /// This is called after tile download completes when `includeRoutingData` is enabled.
+    /// If the routing build fails, the error is logged but the download is not considered
+    /// failed — the user still gets their map tiles, just without route planning.
+    ///
+    /// - Parameters:
+    ///   - boundingBox: The geographic area for trail data and routing.
+    ///   - mbtilesURL: The downloaded MBTiles file URL (used to derive the region UUID).
+    ///   - totalTiles: Total tile count for progress reporting.
+    /// - Returns: `true` if the routing graph was built successfully, `false` otherwise.
+    private func buildRoutingGraph(
+        boundingBox: BoundingBox,
+        mbtilesURL: URL,
+        totalTiles: Int
+    ) async -> Bool {
+        let regionIdString = mbtilesURL.deletingPathExtension().lastPathComponent
+        let regionId = UUID(uuidString: regionIdString) ?? UUID()
+        let routingDbURL = regionStorage.routingDbURL(
+            for: Region(
+                id: regionId,
+                name: "",
+                boundingBox: boundingBox,
+                zoomLevels: 0...0,
+                tileCount: 0,
+                fileSizeBytes: 0
+            )
+        )
+
+        do {
+            // Step 1: Download and parse OSM trail data
+            await MainActor.run {
+                self.downloadProgress = RegionDownloadProgress(
+                    regionId: regionId,
+                    totalTiles: totalTiles,
+                    downloadedTiles: totalTiles,
+                    currentZoom: 0,
+                    status: .downloadingTrailData
+                )
+            }
+
+            let osmDownloader = OSMDataDownloader()
+            let (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
+                boundingBox: boundingBox
+            ) { _, _ in }
+
+            // Step 2: Build routing graph (elevation is fetched internally by the builder)
+            await MainActor.run {
+                self.downloadProgress = RegionDownloadProgress(
+                    regionId: regionId,
+                    totalTiles: totalTiles,
+                    downloadedTiles: totalTiles,
+                    currentZoom: 0,
+                    status: .buildingRoutingGraph
+                )
+            }
+
+            let graphBuilder = RoutingGraphBuilder()
+            let elevationManager = ElevationDataManager()
+            try await graphBuilder.buildGraph(
+                ways: ways,
+                nodes: nodes,
+                elevationManager: elevationManager,
+                outputPath: routingDbURL.path,
+                boundingBox: boundingBox
+            ) { _, _ in }
+
+            print("Routing graph built successfully: \(routingDbURL.path)")
+            return true
+        } catch {
+            print("Routing graph build failed (non-fatal): \(error.localizedDescription)")
+            // Clean up partial routing database if it exists
+            try? FileManager.default.removeItem(at: routingDbURL)
+            return false
         }
     }
 

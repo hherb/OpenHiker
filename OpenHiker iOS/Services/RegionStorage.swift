@@ -118,6 +118,10 @@ class RegionStorage: ObservableObject {
         let mbtilesURL = regionsDirectory.appendingPathComponent(region.mbtilesFilename)
         try? fileManager.removeItem(at: mbtilesURL)
 
+        // Delete the routing database file if it exists
+        let routingURL = regionsDirectory.appendingPathComponent(region.routingDbFilename)
+        try? fileManager.removeItem(at: routingURL)
+
         // Update metadata
         var allRegions = regions
         allRegions.removeAll { $0.id == region.id }
@@ -171,7 +175,8 @@ class RegionStorage: ObservableObject {
     func createRegion(
         from request: RegionSelectionRequest,
         mbtilesURL: URL,
-        tileCount: Int
+        tileCount: Int,
+        hasRoutingData: Bool = false
     ) -> Region {
         let fileSize = (try? fileManager.attributesOfItem(atPath: mbtilesURL.path)[.size] as? Int64) ?? 0
 
@@ -181,7 +186,8 @@ class RegionStorage: ObservableObject {
             boundingBox: request.boundingBox,
             zoomLevels: request.zoomLevels,
             tileCount: tileCount,
-            fileSizeBytes: fileSize
+            fileSizeBytes: fileSize,
+            hasRoutingData: hasRoutingData
         )
     }
 
