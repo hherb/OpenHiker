@@ -12,12 +12,12 @@ OpenHiker is a dual-platform iOS/watchOS app for offline hiking navigation on Ap
 
 Build iOS app:
 ```bash
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 15 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
 ```
 
 Build watchOS app:
 ```bash
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)"
 ```
 
 The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with corresponding schemes. There are no third-party dependencies — only Apple frameworks and the system SQLite3 library.
