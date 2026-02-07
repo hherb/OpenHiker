@@ -19,30 +19,27 @@ import SwiftUI
 
 /// The main entry point for the native macOS OpenHiker app.
 ///
-/// This app provides the macOS-specific interface for reviewing hikes, browsing
-/// waypoints, managing planned routes, and exporting data. It does not include
-/// watch connectivity or region downloading (those are iOS-only features).
-///
-/// The macOS app relies on iCloud sync (``CloudSyncManager``) to receive hike
-/// data from the iOS/watchOS companion apps.
+/// This app provides a full-featured macOS interface including region downloading,
+/// route planning, hike review, waypoint management, and community route browsing.
+/// Route sync to iPhone/Watch works via iCloud (Mac → iCloud → iPhone → Watch).
 ///
 /// ## Window Structure
-/// Uses a three-column ``NavigationSplitView`` with:
-/// - **Sidebar**: Section navigation (Hikes, Waypoints, Routes, Community)
-/// - **List**: Items within the selected section
-/// - **Detail**: Full detail for the selected item
+/// Uses a ``NavigationSplitView`` with:
+/// - **Sidebar**: Section navigation (Regions, Downloaded, Hikes, Waypoints, Routes, Community)
+/// - **Detail**: Full detail for the selected section
 ///
 /// ## Commands
 /// Adds macOS-specific menu commands via ``OpenHikerCommands``:
-/// - File > Export Hike... (Cmd+E)
+/// - File > Import GPX... (Cmd+I)
 /// - File > Sync with iCloud (Cmd+Shift+S)
+/// - File > Send Routes to iPhone (Cmd+Shift+P)
 @main
 struct OpenHikerMacApp: App {
 
     var body: some Scene {
         WindowGroup {
             MacContentView()
-                .frame(minWidth: 800, minHeight: 500)
+                .frame(minWidth: 900, minHeight: 600)
                 .onAppear {
                     initializeStores()
                     initializeCloudSync()

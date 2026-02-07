@@ -16,7 +16,11 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Downloads map tiles from OpenStreetMap-compatible tile servers and packages them
 /// into MBTiles (SQLite) databases for offline use on Apple Watch.
@@ -87,7 +91,11 @@ actor TileDownloader {
 
         // Set a proper User-Agent as required by OSM tile usage policy
         config.httpAdditionalHeaders = [
+            #if os(macOS)
+            "User-Agent": "OpenHiker/1.0 (macOS; hiking navigation app)"
+            #else
             "User-Agent": "OpenHiker/1.0 (iOS; hiking navigation app)"
+            #endif
         ]
 
         self.session = URLSession(configuration: config)
