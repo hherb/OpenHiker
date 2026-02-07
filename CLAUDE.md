@@ -29,6 +29,7 @@ The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with c
 - **`Shared/`** — Code compiled into both targets
   - `Models/` — `Region`, `TileCoordinate`, `RegionMetadata` data types
   - `Storage/` — `TileStore` (read-only) and `WritableTileStore` for MBTiles SQLite access
+  - `Services/` — `PeerTransferService` (P2P sharing), `RoutingEngine`, `CloudSyncManager`, `CloudKitStore`
 - **`OpenHiker iOS/`** — iPhone companion app
   - `App/` — `OpenHikerApp` entry point, `ContentView` (TabView with 3 tabs)
   - `Views/` — `RegionSelectorView` (MapKit-based region selection)
@@ -44,6 +45,7 @@ The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with c
 2. iOS: `WatchTransferManager` sends `.mbtiles` file to watch via `WCSession.transferFile()`
 3. Watch: `WatchConnectivityReceiver` receives file → saves to `Documents/regions/` → persists `RegionMetadata` as JSON
 4. Watch: `MapRenderer` opens `TileStore` (read-only SQLite) → `MapScene` (SpriteKit) renders tiles with GPS overlay
+5. P2P: `PeerTransferService.shared` transfers regions + routes between devices via MultipeerConnectivity (no internet required)
 
 ### Important Technical Details
 
@@ -53,6 +55,7 @@ The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with c
 - **Cross-platform conditional imports** — `TileStore.swift` uses `#if canImport(UIKit)` / `#elseif canImport(WatchKit)` for platform-specific image types.
 - **Singletons for connectivity** — `WatchConnectivityManager.shared` (iOS) and `WatchConnectivityReceiver.shared` (watchOS) are injected as `@EnvironmentObject`.
 - **State persistence** — Region metadata as JSON files in Documents, tile data as MBTiles (SQLite), user preferences via `@AppStorage`.
+- **Peer-to-peer transfer** — `PeerTransferService` (Shared) uses MultipeerConnectivity for device-to-device region sharing. Uses role-based architecture (`TransferRole.sender`/`.receiver`) instead of platform guards. MCSession is recreated per transfer cycle; encryption preference is `.optional` (not `.none`). Sequential resource protocol: `manifest:` → `mbtiles:` → `routing:` → `savedroutes:` → `plannedroutes:` → `waypoints:` → `done:`. Views: `PeerSendView` (iOS), `PeerReceiveView` (iOS), `MacPeerSendView` (macOS).
 
 ## Xcode Project File Management (CRITICAL)
 

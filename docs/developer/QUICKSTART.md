@@ -192,6 +192,7 @@ The Mac app uses a `NavigationSplitView` with sidebar sections covering the full
 | `PlannedRouteStore.shared` | All | SQLite CRUD for planned routes |
 | `RegionStorage.shared` | iOS, macOS | Manages downloaded region metadata |
 | `CloudSyncManager.shared` | iOS, macOS | iCloud sync coordination |
+| `PeerTransferService.shared` | iOS, macOS | Peer-to-peer region & route sharing via MultipeerConnectivity |
 
 These are injected as `@StateObject` / `@EnvironmentObject` at the app entry point.
 
@@ -360,6 +361,7 @@ Start with these files to understand the core flow:
 - [Phase 3: Save Routes Developer Guide](phase3-save-routes-developer-guide.md) — Route persistence and hike review
 - [Phase 5: Route Planning & Guidance](phase5-route-planning-guidance.md) — Route planning and turn-by-turn guidance
 - [Phase 6: Multi-Platform & Export](phase6-multiplatform-export-developer-guide.md) — macOS, iPad, PDF/Markdown export
+- [Peer-to-Peer Sharing](peer-to-peer-sharing.md) — MultipeerConnectivity region & route transfer
 - [Routing Engine](routing-engine.md) — A* routing engine internals
 
 ## CI

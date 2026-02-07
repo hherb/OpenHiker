@@ -76,6 +76,11 @@ Perfect for:
 - **PDF & Markdown Export** — Generate hike reports with map snapshots and elevation profiles
 - **GPX Export** — Standard GPX 1.1 track export from the watch
 
+### Peer-to-Peer Sharing
+- **Device-to-Device Transfer** — Share downloaded regions directly between iPhones or from Mac to iPhone, no internet required
+- **Complete Bundle** — Automatically includes all associated saved routes, planned routes, and waypoints
+- **Hiking Group Ready** — Perfect for sharing maps at the trailhead before heading into areas without coverage
+
 ### Community Route Sharing
 - **Browse Shared Routes** — Discover routes shared by the community
 - **Upload Your Routes** — Share your planned routes with other hikers
@@ -92,15 +97,23 @@ Perfect for:
 │ • Plan routes    │          │ • Turn-by-turn   │ ◄──────► │ • Plan routes    │
 │ • Review hikes   │          │ • Live stats     │          │ • Review hikes   │
 │ • Community      │          │ • Offline nav    │          │ • Community      │
-└──────────────────┘          └──────────────────┘          └──────────────────┘
+└──────┬───────────┘          └──────────────────┘          └──────┬───────────┘
+       │                                                          │
+       │◄─── Peer-to-Peer (MultipeerConnectivity) ──────────────►│
+       │     Share regions, routes & waypoints directly           │
+       │     between devices — no internet required               │
+       │◄──────────────────────────────────────────────────────►  │
+       │         iPhone ◄──► iPhone (P2P)                         │
+       └──────────────────────────────────────────────────────────┘
 ```
 
 1. **Select** — Use the iOS or macOS app to browse and select a hiking region
 2. **Download** — Tiles and optional routing data are fetched and stored in MBTiles/SQLite format
 3. **Transfer** — Maps and planned routes are sent to your Apple Watch via Watch Connectivity (iOS) or iCloud sync
-4. **Plan** — Create routes on iPhone or Mac with A* pathfinding, then send to watch
-5. **Hike** — Navigate offline with real-time GPS, turn-by-turn guidance, and live stats
-6. **Review** — Browse past hikes on iPhone, iPad, or Mac with track overlays and elevation profiles
+4. **Share** — Share downloaded regions with nearby devices via peer-to-peer transfer (no internet needed)
+5. **Plan** — Create routes on iPhone or Mac with A* pathfinding, then send to watch
+6. **Hike** — Navigate offline with real-time GPS, turn-by-turn guidance, and live stats
+7. **Review** — Browse past hikes on iPhone, iPad, or Mac with track overlays and elevation profiles
 
 ## Installation
 
@@ -163,6 +176,17 @@ To preserve battery, OpenHiker offers configurable GPS accuracy:
 | Balanced | 10 seconds | General hiking |
 | Low Power | 30 seconds | Long hikes, battery conservation |
 
+### Sharing with Nearby Devices
+
+Share your downloaded regions (with all routes and waypoints) directly with another iPhone or from your Mac — no internet needed:
+
+1. **Sender:** Long-press a region in **Downloaded Regions** → tap **"Share with nearby device"**
+2. **Receiver:** Tap the download-arrow button in the toolbar → tap the sender's device name
+3. Transfer starts automatically — progress bar shows each step
+4. When complete, the region and all routes appear on the receiver's device
+
+See [Peer-to-Peer Sharing Guide](docs/user/peer-to-peer-sharing.md) for detailed instructions and troubleshooting.
+
 ### Reviewing Past Hikes
 
 1. Open OpenHiker on your iPhone, iPad, or Mac
@@ -196,6 +220,7 @@ OpenHiker/
 │   │   ├── RoutingEngine.swift
 │   │   ├── CloudKitStore.swift
 │   │   ├── CloudSyncManager.swift
+│   │   ├── PeerTransferService.swift  # P2P region & route sharing via MultipeerConnectivity
 │   │   ├── GitHubRouteService.swift
 │   │   └── HikeSummaryExporter.swift
 │   └── Utilities/
@@ -220,6 +245,8 @@ OpenHiker/
 │   │   ├── CommunityBrowseView.swift    # Browse shared routes
 │   │   ├── CommunityRouteDetailView.swift
 │   │   ├── RouteUploadView.swift        # Share routes with community
+│   │   ├── PeerSendView.swift           # P2P sender sheet (share region with nearby device)
+│   │   ├── PeerReceiveView.swift        # P2P receiver sheet (receive region from nearby device)
 │   │   ├── ExportSheet.swift            # PDF/Markdown export
 │   │   └── SidebarView.swift            # iPad sidebar sections
 │   └── Services/
@@ -264,6 +291,7 @@ OpenHiker/
     │   ├── MacAddWaypointView.swift     # Waypoint creation
     │   ├── MacPlannedRoutesView.swift   # Planned routes list
     │   ├── MacCommunityView.swift       # Community route browser
+    │   ├── MacPeerSendView.swift        # P2P sender sheet (send region to iPhone)
     │   ├── MacSettingsView.swift        # App preferences
     │   └── GPXImportHandler.swift       # GPX file import support
     └── Services/
@@ -307,6 +335,7 @@ OpenHiker is under active development. Here's what's been completed and what's c
 | 6.4 | iCloud Sync | Done |
 | 6.1 | Native macOS App | Done |
 | — | Community Route Sharing | Done |
+| — | Peer-to-Peer Region & Route Sharing | Done |
 
 ### What's Next
 
