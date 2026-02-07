@@ -17,14 +17,14 @@
 
 import SwiftUI
 
-/// A translucent overlay displaying live hike statistics on the watch map.
+/// A compact translucent overlay displaying distance and duration on the watch map.
 ///
-/// This view shows real-time metrics during an active hike:
+/// Shows only the two most essential at-a-glance metrics during an active hike:
 /// - **Distance** walked (km or mi, locale-aware)
-/// - **Elevation gain** (m or ft)
 /// - **Elapsed time** (HH:MM:SS)
-/// - **Heart rate** (BPM, when HealthKit is authorized and data available)
-/// - **SpO2** (%, when a recent reading exists)
+///
+/// Full health stats (heart rate, SpO2, elevation, UV, speed) are available on
+/// the dedicated ``HikeStatsDashboardView`` accessible by swiping down from the map.
 ///
 /// The overlay uses compact capsule badges with `.ultraThinMaterial` backgrounds
 /// to avoid obscuring the map. It auto-hides after ``autoHideDelaySec`` seconds
@@ -32,12 +32,8 @@ import SwiftUI
 ///
 /// ## Visibility Rules
 /// - Only visible when `locationManager.isTracking == true`
-/// - Heart rate row only appears when `healthKitManager.isAuthorized` and data exists
-/// - SpO2 only appears when a reading less than 5 minutes old exists
 struct HikeStatsOverlay: View {
     @EnvironmentObject var locationManager: LocationManager
-    @EnvironmentObject var healthKitManager: HealthKitManager
-    @EnvironmentObject var uvIndexManager: UVIndexManager
 
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
@@ -53,70 +49,21 @@ struct HikeStatsOverlay: View {
 
     var body: some View {
         if locationManager.isTracking && isVisible {
-            VStack(alignment: .leading, spacing: 4) {
-                // Row 1: Distance and time
-                HStack(spacing: 6) {
-                    statBadge(
-                        icon: "figure.walk",
-                        value: HikeStatsFormatter.formatDistance(
-                            locationManager.totalDistance,
-                            useMetric: useMetricUnits
-                        )
+            HStack(spacing: 6) {
+                statBadge(
+                    icon: "figure.walk",
+                    value: HikeStatsFormatter.formatDistance(
+                        locationManager.totalDistance,
+                        useMetric: useMetricUnits
                     )
+                )
 
-                    statBadge(
-                        icon: "clock",
-                        value: HikeStatsFormatter.formatDuration(
-                            locationManager.duration ?? 0
-                        )
+                statBadge(
+                    icon: "clock",
+                    value: HikeStatsFormatter.formatDuration(
+                        locationManager.duration ?? 0
                     )
-                }
-
-                // Row 2: Elevation gain
-                HStack(spacing: 6) {
-                    statBadge(
-                        icon: "arrow.up.right",
-                        value: HikeStatsFormatter.formatElevation(
-                            locationManager.elevationGain,
-                            useMetric: useMetricUnits
-                        )
-                    )
-
-                    // Heart rate (only when authorized and data available)
-                    if healthKitManager.isAuthorized,
-                       let hr = healthKitManager.currentHeartRate {
-                        statBadge(
-                            icon: "heart.fill",
-                            value: HikeStatsFormatter.formatHeartRate(hr),
-                            iconColor: .red
-                        )
-                    }
-                }
-
-                // Row 3: SpO2 and UV index (only when at least one is available)
-                if hasSpO2 || hasCurrentUV {
-                    HStack(spacing: 6) {
-                        if healthKitManager.isAuthorized,
-                           let spO2 = healthKitManager.currentSpO2 {
-                            statBadge(
-                                icon: "lungs.fill",
-                                value: HikeStatsFormatter.formatSpO2(spO2),
-                                iconColor: .cyan
-                            )
-                        }
-
-                        // UV index (when available and not stale)
-                        if uvIndexManager.isReadingCurrent,
-                           let uvIndex = uvIndexManager.currentUVIndex,
-                           let category = uvIndexManager.currentCategory {
-                            statBadge(
-                                icon: "sun.max.fill",
-                                value: "UV \(uvIndex)",
-                                iconColor: category.displayColor
-                            )
-                        }
-                    }
-                }
+                )
             }
             .padding(.horizontal, 8)
             .padding(.top, 24)
@@ -167,16 +114,6 @@ struct HikeStatsOverlay: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background(.ultraThinMaterial, in: Capsule())
-    }
-
-    /// Whether a recent SpO2 reading is available for display.
-    private var hasSpO2: Bool {
-        healthKitManager.isAuthorized && healthKitManager.currentSpO2 != nil
-    }
-
-    /// Whether a current (non-stale) UV index reading is available for display.
-    private var hasCurrentUV: Bool {
-        uvIndexManager.isReadingCurrent && uvIndexManager.currentUVIndex != nil
     }
 
     // MARK: - Auto-Hide Timer

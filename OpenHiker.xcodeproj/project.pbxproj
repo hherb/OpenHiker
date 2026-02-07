@@ -128,6 +128,7 @@
 		1C0000010000000000000021 /* ElevationProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000023 /* ElevationProfileView.swift */; };
 		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
+		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
 		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 /* End PBXBuildFile section */
 
@@ -237,6 +238,7 @@
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
 		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
+		2B0000010000000000000016 /* HikeStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsDashboardView.swift; sourceTree = "<group>"; };
 		F10000010000000000000002 /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -386,6 +388,7 @@
 				2B0000010000000000000011 /* SaveHikeSheet.swift */,
 				2B0000010000000000000013 /* NavigationOverlay.swift */,
 				2B0000010000000000000015 /* UVIndexOverlay.swift */,
+				2B0000010000000000000016 /* HikeStatsDashboardView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -747,6 +750,7 @@
 				1B0000010000000000000047 /* CloudSyncManager.swift in Sources */,
 				1B0000010000000000000048 /* UVIndexManager.swift in Sources */,
 				1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */,
+				1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

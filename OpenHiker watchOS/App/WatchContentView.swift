@@ -19,7 +19,8 @@ import SwiftUI
 
 /// The root content view of the watchOS app.
 ///
-/// Presents a vertically-paged tab interface with four tabs:
+/// Presents a vertically-paged tab interface with five tabs:
+/// - **Stats**: Live hike health and distance dashboard (``HikeStatsDashboardView``)
 /// - **Map**: The SpriteKit-based offline map with GPS overlay (``MapView``)
 /// - **Routes**: List of planned routes for turn-by-turn navigation (``WatchPlannedRoutesView``)
 /// - **Regions**: List of available offline map regions (``RegionsListView``)
@@ -29,29 +30,33 @@ struct WatchContentView: View {
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
     @EnvironmentObject var routeGuidance: RouteGuidance
 
-    /// The currently selected tab index (0 = Map, 1 = Routes, 2 = Regions, 3 = Settings).
-    @State private var selectedTab = 0
+    /// The currently selected tab index (0 = Stats, 1 = Map, 2 = Routes, 3 = Regions, 4 = Settings).
+    @State private var selectedTab = 1
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            // Hike Stats Dashboard (swipe down from map)
+            HikeStatsDashboardView()
+                .tag(0)
+
             // Map View
             MapView()
-                .tag(0)
+                .tag(1)
 
             // Planned Routes
             WatchPlannedRoutesView(onStartNavigation: { route in
                 routeGuidance.start(route: route)
-                selectedTab = 0 // Switch to map view for guidance
+                selectedTab = 1 // Switch to map view for guidance
             })
-            .tag(1)
+            .tag(2)
 
             // Regions List
             RegionsListView()
-                .tag(2)
+                .tag(3)
 
             // Settings
             SettingsView()
-                .tag(3)
+                .tag(4)
         }
         .tabViewStyle(.verticalPage)
     }
