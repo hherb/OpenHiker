@@ -37,9 +37,6 @@ struct MacPlannedRoutesView: View {
     /// The selected region for route planning.
     @State private var selectedPlanningRegion: Region?
 
-    /// Whether the route planning sheet is shown.
-    @State private var showRoutePlanning = false
-
     /// The number of routes imported in the last GPX import.
     @State private var importCount = 0
 
@@ -47,6 +44,24 @@ struct MacPlannedRoutesView: View {
     @State private var showImportSuccess = false
 
     var body: some View {
+        Group {
+            if let region = selectedPlanningRegion {
+                MacRoutePlanningView(region: region, onDismiss: {
+                    selectedPlanningRegion = nil
+                })
+            } else {
+                routeListView
+            }
+        }
+        .alert("GPX Imported", isPresented: $showImportSuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("\(importCount) route(s) imported successfully.")
+        }
+    }
+
+    /// The route list with toolbar, shown when no region is selected for planning.
+    private var routeListView: some View {
         Group {
             if routeStore.routes.isEmpty {
                 ContentUnavailableView(
@@ -78,7 +93,6 @@ struct MacPlannedRoutesView: View {
         .navigationTitle("Planned Routes")
         .toolbar {
             ToolbarItemGroup {
-                // Plan new route menu (only shows regions with routing data)
                 Menu {
                     let routableRegions = regionStorage.regions.filter(\.hasRoutingData)
                     if routableRegions.isEmpty {
@@ -87,7 +101,6 @@ struct MacPlannedRoutesView: View {
                         ForEach(routableRegions) { region in
                             Button(region.name) {
                                 selectedPlanningRegion = region
-                                showRoutePlanning = true
                             }
                         }
                     }
@@ -117,17 +130,6 @@ struct MacPlannedRoutesView: View {
                 }
                 .help("Refresh route list")
             }
-        }
-        .sheet(isPresented: $showRoutePlanning) {
-            if let region = selectedPlanningRegion {
-                MacRoutePlanningView(region: region)
-                    .frame(minWidth: 900, minHeight: 600)
-            }
-        }
-        .alert("GPX Imported", isPresented: $showImportSuccess) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("\(importCount) route(s) imported successfully.")
         }
     }
 
