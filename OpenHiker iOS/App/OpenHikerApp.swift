@@ -40,6 +40,7 @@ struct OpenHikerApp: App {
                     initializeWaypointStore()
                     initializeRouteStore()
                     initializePlannedRouteStore()
+                    initializeCloudSync()
                 }
         }
     }
@@ -74,5 +75,16 @@ struct OpenHikerApp: App {
     /// and loaded into memory for display in the Routes tab.
     private func initializePlannedRouteStore() {
         PlannedRouteStore.shared.loadAll()
+    }
+
+    /// Initializes iCloud sync via ``CloudSyncManager``.
+    ///
+    /// Checks iCloud availability, sets up CloudKit subscriptions for push
+    /// notifications, and performs the first bidirectional sync. Runs
+    /// asynchronously so it doesn't block app launch.
+    private func initializeCloudSync() {
+        Task {
+            await CloudSyncManager.shared.syncOnLaunch()
+        }
     }
 }

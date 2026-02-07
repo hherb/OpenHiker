@@ -98,6 +98,21 @@ struct SavedRoute: Identifiable, Codable, Sendable, Equatable {
     /// with zlib compression. Decode with ``TrackCompression/decode(_:)``.
     let trackData: Data
 
+    /// Timestamp of the most recent modification (name or comment edit).
+    ///
+    /// Used by ``CloudSyncManager`` to detect local changes that need to be
+    /// pushed to iCloud. Updated automatically when the route is modified
+    /// via ``RouteStore/update(_:)``. `nil` for routes created before iCloud
+    /// sync was added (treated as "never modified" during conflict resolution).
+    var modifiedAt: Date?
+
+    /// The CloudKit record ID for this route, populated after the first successful sync.
+    ///
+    /// `nil` for routes that have not yet been synced to iCloud.
+    /// Used by ``CloudSyncManager`` to determine whether to create or update
+    /// the CloudKit record.
+    var cloudKitRecordID: String?
+
     /// Creates a new SavedRoute with the given properties.
     ///
     /// - Parameters:
@@ -120,6 +135,8 @@ struct SavedRoute: Identifiable, Codable, Sendable, Equatable {
     ///   - comment: User comment (defaults to empty string).
     ///   - regionId: Associated map region UUID, or `nil`.
     ///   - trackData: Compressed binary track data.
+    ///   - modifiedAt: Last modification timestamp for iCloud sync (defaults to `nil`).
+    ///   - cloudKitRecordID: CloudKit record ID (defaults to `nil`).
     init(
         id: UUID = UUID(),
         name: String,
@@ -139,7 +156,9 @@ struct SavedRoute: Identifiable, Codable, Sendable, Equatable {
         estimatedCalories: Double? = nil,
         comment: String = "",
         regionId: UUID? = nil,
-        trackData: Data
+        trackData: Data,
+        modifiedAt: Date? = nil,
+        cloudKitRecordID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -160,6 +179,8 @@ struct SavedRoute: Identifiable, Codable, Sendable, Equatable {
         self.comment = comment
         self.regionId = regionId
         self.trackData = trackData
+        self.modifiedAt = modifiedAt
+        self.cloudKitRecordID = cloudKitRecordID
     }
 
     /// Total elapsed time from start to finish in seconds.

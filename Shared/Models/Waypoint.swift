@@ -140,6 +140,17 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
     /// Optional link to a saved hike/route (Phase 3 integration).
     var hikeId: UUID?
 
+    /// Timestamp of the most recent modification (label, note, or category edit).
+    ///
+    /// Used by ``CloudSyncManager`` to detect local changes that need to be
+    /// pushed to iCloud. `nil` for waypoints created before iCloud sync was added.
+    var modifiedAt: Date?
+
+    /// The CloudKit record ID for this waypoint, populated after the first successful sync.
+    ///
+    /// `nil` for waypoints that have not yet been synced to iCloud.
+    var cloudKitRecordID: String?
+
     /// Creates a new waypoint with the given properties.
     ///
     /// - Parameters:
@@ -153,6 +164,8 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
     ///   - note: Longer note text (defaults to empty string).
     ///   - hasPhoto: Whether a photo is attached (defaults to `false`).
     ///   - hikeId: Optional link to a saved hike UUID.
+    ///   - modifiedAt: Last modification timestamp for iCloud sync (defaults to `nil`).
+    ///   - cloudKitRecordID: CloudKit record ID (defaults to `nil`).
     init(
         id: UUID = UUID(),
         latitude: Double,
@@ -163,7 +176,9 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
         category: WaypointCategory = .custom,
         note: String = "",
         hasPhoto: Bool = false,
-        hikeId: UUID? = nil
+        hikeId: UUID? = nil,
+        modifiedAt: Date? = nil,
+        cloudKitRecordID: String? = nil
     ) {
         self.id = id
         self.latitude = latitude
@@ -175,6 +190,8 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
         self.note = note
         self.hasPhoto = hasPhoto
         self.hikeId = hikeId
+        self.modifiedAt = modifiedAt
+        self.cloudKitRecordID = cloudKitRecordID
     }
 
     /// The waypoint's position as a Core Location coordinate.

@@ -21,6 +21,8 @@ import SQLite3
 import UIKit
 #elseif canImport(WatchKit)
 import WatchKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 /// Errors that can occur when working with the tile store.
@@ -305,9 +307,9 @@ final class TileStore: @unchecked Sendable {
     }
 }
 
-// MARK: - TileStore Creation (iOS only)
+// MARK: - TileStore Creation (iOS and macOS)
 
-#if os(iOS)
+#if os(iOS) || os(macOS)
 extension TileStore {
     /// Create a new MBTiles database for writing tiles.
     ///

@@ -17,6 +17,8 @@
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 import Foundation
 
@@ -98,6 +100,71 @@ enum PhotoCompressor {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
+    }
+    #elseif canImport(AppKit)
+    /// Compresses an NSImage to a JPEG suitable for community route sharing (macOS).
+    ///
+    /// The image is downsampled to fit within ``maxWidth`` x ``maxHeight`` pixels
+    /// while preserving its aspect ratio, then encoded as JPEG at ``jpegQuality``.
+    ///
+    /// - Parameter image: The source image to compress.
+    /// - Returns: JPEG data of the compressed image, or `nil` if encoding fails.
+    static func compress(_ image: NSImage) -> Data? {
+        let resized = downsample(image, maxWidth: maxWidth, maxHeight: maxHeight)
+        guard let tiffData = resized.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+        return bitmap.representation(using: .jpeg, properties: [.compressionFactor: jpegQuality])
+    }
+
+    /// Compresses raw image data (PNG or JPEG) to a compressed JPEG (macOS).
+    ///
+    /// First creates an NSImage from the raw data, then applies ``compress(_:)``.
+    ///
+    /// - Parameter data: The raw image data (PNG, JPEG, or any format NSImage supports).
+    /// - Returns: JPEG data of the compressed image, or `nil` if the data is not a valid image.
+    static func compressData(_ data: Data) -> Data? {
+        guard let image = NSImage(data: data) else { return nil }
+        return compress(image)
+    }
+
+    /// Downsamples an NSImage to fit within the given maximum dimensions (macOS).
+    ///
+    /// If the image already fits within the target size, it is returned unchanged.
+    /// The aspect ratio is always preserved.
+    ///
+    /// - Parameters:
+    ///   - image: The source image to resize.
+    ///   - maxWidth: Maximum width in pixels.
+    ///   - maxHeight: Maximum height in pixels.
+    /// - Returns: The resized image, or the original if no resizing was needed.
+    static func downsample(_ image: NSImage, maxWidth: CGFloat, maxHeight: CGFloat) -> NSImage {
+        let size = image.size
+
+        if size.width <= maxWidth && size.height <= maxHeight {
+            return image
+        }
+
+        let widthRatio = maxWidth / size.width
+        let heightRatio = maxHeight / size.height
+        let scale = min(widthRatio, heightRatio)
+
+        let newSize = CGSize(
+            width: floor(size.width * scale),
+            height: floor(size.height * scale)
+        )
+
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(
+            in: NSRect(origin: .zero, size: newSize),
+            from: NSRect(origin: .zero, size: size),
+            operation: .copy,
+            fraction: 1.0
+        )
+        newImage.unlockFocus()
+        return newImage
     }
     #endif
 }
