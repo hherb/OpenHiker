@@ -149,12 +149,7 @@ actor CloudKitStore {
         record["regionId"] = route.regionId?.uuidString
         record["trackData"] = route.trackData
 
-        do {
-            let savedRecord = try await database.save(record)
-            return savedRecord.recordID.recordName
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
+        return try await saveWithOverwrite(record)
     }
 
     /// Fetches all ``SavedRoute`` records from CloudKit.
@@ -232,12 +227,7 @@ actor CloudKitStore {
         record["hasPhoto"] = waypoint.hasPhoto ? 1 : 0
         record["hikeId"] = waypoint.hikeId?.uuidString
 
-        do {
-            let savedRecord = try await database.save(record)
-            return savedRecord.recordID.recordName
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
+        return try await saveWithOverwrite(record)
     }
 
     /// Fetches all ``Waypoint`` records from CloudKit.
@@ -318,12 +308,7 @@ actor CloudKitStore {
             throw CloudKitStoreError.serializationError("Failed to encode PlannedRoute: \(error.localizedDescription)")
         }
 
-        do {
-            let savedRecord = try await database.save(record)
-            return savedRecord.recordID.recordName
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
+        return try await saveWithOverwrite(record)
     }
 
     /// Fetches all ``PlannedRoute`` records from CloudKit.
@@ -421,6 +406,36 @@ actor CloudKitStore {
         }
 
         subscriptionsReady = allSucceeded
+    }
+
+    // MARK: - Save Helper
+
+    /// Saves a record to CloudKit, overwriting any existing server version.
+    ///
+    /// Uses `CKModifyRecordsOperation` with `savePolicy = .allKeys` so that
+    /// a locally-constructed `CKRecord` can update a server record without
+    /// first fetching it. This avoids "record to insert already exists"
+    /// errors when re-syncing records after a schema reset.
+    ///
+    /// - Parameter record: The record to save (may be new or existing).
+    /// - Returns: The saved record's `recordName`.
+    /// - Throws: ``CloudKitStoreError`` if the operation fails.
+    private func saveWithOverwrite(_ record: CKRecord) async throws -> String {
+        let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
+        operation.savePolicy = .allKeys
+        operation.qualityOfService = .userInitiated
+
+        return try await withCheckedThrowingContinuation { continuation in
+            operation.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: record.recordID.recordName)
+                case .failure(let error):
+                    continuation.resume(throwing: CloudKitStoreError.operationFailed(error.localizedDescription))
+                }
+            }
+            database.add(operation)
+        }
     }
 
     // MARK: - Error Helpers
