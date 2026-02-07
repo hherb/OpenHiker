@@ -181,6 +181,10 @@ actor CloudKitStore {
                     results.append((record.recordID.recordName, route))
                 }
             }
+        } catch where Self.isRecordTypeNotFoundError(error) {
+            // Schema not initialized yet — no records exist, return empty
+            print("CloudKitStore: Record type \(Self.savedRouteRecordType) not found in schema, returning empty")
+            return []
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
         }
@@ -257,6 +261,10 @@ actor CloudKitStore {
                     results.append((record.recordID.recordName, waypoint))
                 }
             }
+        } catch where Self.isRecordTypeNotFoundError(error) {
+            // Schema not initialized yet — no records exist, return empty
+            print("CloudKitStore: Record type \(Self.waypointRecordType) not found in schema, returning empty")
+            return []
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
         }
@@ -327,6 +335,16 @@ actor CloudKitStore {
         }
 
         subscriptionsReady = allSucceeded
+    }
+
+    // MARK: - Error Helpers
+
+    /// Checks if a CloudKit error indicates the record type doesn't exist in the schema.
+    /// This happens on a fresh CloudKit container before any records have been saved.
+    /// CloudKit auto-creates record types on first save, so this is a transient condition.
+    private static func isRecordTypeNotFoundError(_ error: Error) -> Bool {
+        let description = error.localizedDescription
+        return description.contains("Did not find record type")
     }
 
     // MARK: - Private Decoders
