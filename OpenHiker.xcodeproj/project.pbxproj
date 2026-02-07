@@ -138,6 +138,8 @@
 		1C000001000000000000002B /* MacRoutePlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000E /* MacRoutePlanningView.swift */; };
 		1C000001000000000000002C /* GPXImportHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000F /* GPXImportHandler.swift */; };
 		1C000001000000000000002D /* MacAddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000010 /* MacAddWaypointView.swift */; };
+		1C000001000000000000002E /* MacTrailMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000011 /* MacTrailMapView.swift */; };
+		1C000001000000000000002F /* MacAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000012 /* MacAssets.xcassets */; };
 		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
@@ -252,6 +254,8 @@
 		2C000001000000000000000E /* MacRoutePlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRoutePlanningView.swift; sourceTree = "<group>"; };
 		2C000001000000000000000F /* GPXImportHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPXImportHandler.swift; sourceTree = "<group>"; };
 		2C0000010000000000000010 /* MacAddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAddWaypointView.swift; sourceTree = "<group>"; };
+		2C0000010000000000000011 /* MacTrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrailMapView.swift; sourceTree = "<group>"; };
+		2C0000010000000000000012 /* MacAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MacAssets.xcassets; sourceTree = "<group>"; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
 		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
@@ -517,6 +521,7 @@
 			isa = PBXGroup;
 			children = (
 				2C000001000000000000000C /* MacRegionSelectorView.swift */,
+				2C0000010000000000000011 /* MacTrailMapView.swift */,
 				2C000001000000000000000D /* MacRegionsListView.swift */,
 				2C0000010000000000000004 /* MacHikesView.swift */,
 				2C0000010000000000000005 /* MacHikeDetailView.swift */,
@@ -542,6 +547,7 @@
 		5D0000010000000000000005 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				2C0000010000000000000012 /* MacAssets.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -672,6 +678,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1C000001000000000000002F /* MacAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -825,6 +832,7 @@
 				1C000001000000000000002B /* MacRoutePlanningView.swift in Sources */,
 				1C000001000000000000002C /* GPXImportHandler.swift in Sources */,
 				1C000001000000000000002D /* MacAddWaypointView.swift in Sources */,
+				1C000001000000000000002E /* MacTrailMapView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1093,6 +1101,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (C) 2024-2026 Dr Horst Herb. Licensed under AGPL-3.0.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "OpenHiker needs your location to show your position on the map.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1121,6 +1130,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (C) 2024-2026 Dr Horst Herb. Licensed under AGPL-3.0.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "OpenHiker needs your location to show your position on the map.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

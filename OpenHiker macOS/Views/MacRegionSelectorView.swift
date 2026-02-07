@@ -22,10 +22,12 @@ import CoreLocation
 /// macOS view for selecting and downloading offline map regions.
 ///
 /// Provides a full-width interactive map where users can:
-/// 1. Browse the map and search for locations
-/// 2. Click "Select Area" to capture the visible region
-/// 3. Configure download options (zoom levels, tile server, region name)
-/// 4. Download tiles into an MBTiles database with optional routing data
+/// 1. Browse the map with topographic tile overlays (OpenTopoMap, CyclOSM) or Apple Maps
+/// 2. Search for locations by name
+/// 3. Center the map on the current GPS position
+/// 4. Click "Select Area" to capture the visible region
+/// 5. Configure download options (zoom levels, tile server, region name)
+/// 6. Download tiles into an MBTiles database with optional routing data
 ///
 /// Uses the same ``TileDownloader`` and ``RegionStorage`` as the iOS version.
 /// Downloaded regions sync to iPhone/Watch via iCloud.
@@ -39,12 +41,6 @@ struct MacRegionSelectorView: View {
     /// Width of the download configuration side panel.
     private static let downloadPanelWidth: CGFloat = 300
 
-    /// Width of the search popover.
-    private static let searchPopoverWidth: CGFloat = 320
-
-    /// Height of the search popover.
-    private static let searchPopoverHeight: CGFloat = 400
-
     /// Maximum width of the progress card overlay.
     private static let progressCardMaxWidth: CGFloat = 400
 
@@ -56,6 +52,9 @@ struct MacRegionSelectorView: View {
 
     /// Default span (in degrees) for the map after a search result selection.
     private static let searchResultSpan: Double = 0.2
+
+    /// Default span (in degrees) for centering on current location (~10km).
+    private static let locationCenterSpan: Double = 0.09
 
     /// Average tile size in bytes, used for download size estimation.
     private static let averageTileSizeBytes: Int64 = 15_000
@@ -69,10 +68,16 @@ struct MacRegionSelectorView: View {
     /// Minimum zoom level for region downloads.
     private static let absoluteMinZoom: Int = 8
 
+    /// Width of the map style segmented control in the toolbar.
+    private static let stylePickerWidth: CGFloat = 240
+
     // MARK: - Map State
 
-    /// The current map camera position (region, center, zoom).
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    /// The current map center coordinate (bidirectional with MacTrailMapView).
+    @State private var mapCenter: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 37.8651, longitude: -119.5383)
+
+    /// The current map span in degrees latitude (bidirectional with MacTrailMapView).
+    @State private var mapSpan: Double = 0.09
 
     /// The map coordinate region selected for download.
     @State private var selectedRegion: MKCoordinateRegion?
@@ -108,10 +113,7 @@ struct MacRegionSelectorView: View {
 
     // MARK: - Search State
 
-    /// Whether the search popover is shown.
-    @State private var showSearch = false
-
-    /// The search query text.
+    /// The search query text (inline in toolbar).
     @State private var searchText = ""
 
     /// Search results from MKLocalSearch.
@@ -119,6 +121,20 @@ struct MacRegionSelectorView: View {
 
     /// Whether a search is in progress.
     @State private var isSearching = false
+
+    /// Whether the search results popover is shown.
+    @State private var showSearchResults = false
+
+    // MARK: - Map Style State
+
+    /// The active map display style (Roads / Trails / Cycling).
+    /// Defaults to "Trails" (OpenTopoMap) so hiking trails are visible.
+    @AppStorage("macPreferredMapStyle") private var mapViewStyle: MacMapViewStyle = .hiking
+
+    // MARK: - Location State
+
+    /// macOS location manager for centering the map on the user's position.
+    @StateObject private var locationManager = LocationManagerMac()
 
     // MARK: - Persisted State
 
@@ -129,7 +145,7 @@ struct MacRegionSelectorView: View {
     @AppStorage("lastLongitude") private var lastLongitude: Double = -119.5383
 
     /// Last viewed span (zoom), restored on launch.
-    @AppStorage("lastSpan") private var lastSpan: Double = 0.5
+    @AppStorage("lastSpan") private var lastSpan: Double = 0.09
 
     // MARK: - Services
 
@@ -153,18 +169,43 @@ struct MacRegionSelectorView: View {
         }
         .navigationTitle("Select Region")
         .toolbar {
+            ToolbarItemGroup(placement: .principal) {
+                Picker("Map Style", selection: $mapViewStyle) {
+                    ForEach(MacMapViewStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: Self.stylePickerWidth)
+            }
+
             ToolbarItemGroup {
+                // Search field
+                HStack(spacing: 4) {
+                    TextField("Search location...", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                        .onSubmit {
+                            performSearch()
+                        }
+
+                    if isSearching {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .popover(isPresented: $showSearchResults) {
+                    searchResultsList
+                        .frame(width: 320, height: 300)
+                }
+
+                // Center on location button
                 Button {
-                    showSearch.toggle()
+                    centerOnUserLocation()
                 } label: {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: "location.fill")
                 }
-                .help("Search for a location (⌘F)")
-                .keyboardShortcut("f", modifiers: .command)
-                .popover(isPresented: $showSearch) {
-                    searchPopover
-                        .frame(width: Self.searchPopoverWidth, height: Self.searchPopoverHeight)
-                }
+                .help("Center on current location")
 
                 Button(selectedRegion != nil ? "Clear Selection" : "Select Visible Area") {
                     if selectedRegion != nil {
@@ -185,11 +226,24 @@ struct MacRegionSelectorView: View {
             }
         }
         .onAppear {
-            let center = CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
-            cameraPosition = .region(MKCoordinateRegion(
-                center: center,
-                span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
-            ))
+            mapCenter = CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
+            mapSpan = lastSpan
+            selectedTileServer = mapViewStyle.defaultDownloadServer
+
+            // Request location on appear so we can center if no prior location saved
+            locationManager.requestLocationPermission()
+        }
+        .onChange(of: locationManager.currentLocation) { _, newLocation in
+            if locationManager.shouldCenterOnNextUpdate, let location = newLocation {
+                locationManager.shouldCenterOnNextUpdate = false
+                let coord = location.coordinate
+                mapCenter = coord
+                mapSpan = Self.locationCenterSpan
+                saveLastLocation(coordinate: coord, span: Self.locationCenterSpan)
+            }
+        }
+        .onChange(of: mapViewStyle) { _, newStyle in
+            selectedTileServer = newStyle.defaultDownloadServer
         }
         .alert("Download Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
@@ -203,23 +257,15 @@ struct MacRegionSelectorView: View {
     /// The main map view with selection overlay and progress indicator.
     private var mapSection: some View {
         ZStack {
-            Map(position: $cameraPosition) {
-                if let region = selectedRegion {
-                    MapPolygon(coordinates: regionCorners(region))
-                        .foregroundStyle(.blue.opacity(Self.selectionFillOpacity))
-                        .stroke(.blue, lineWidth: 2)
+            MacTrailMapView(
+                tileURLTemplate: mapViewStyle.tileURLTemplate,
+                center: $mapCenter,
+                span: $mapSpan,
+                selectedRegion: selectedRegion,
+                onRegionChange: { center, span in
+                    saveLastLocation(coordinate: center, span: span)
                 }
-            }
-            .mapStyle(.standard(elevation: .realistic, emphasis: .muted))
-            .mapControls {
-                MapCompass()
-                MapScaleView()
-            }
-            .onMapCameraChange { context in
-                lastLatitude = context.region.center.latitude
-                lastLongitude = context.region.center.longitude
-                lastSpan = context.region.span.latitudeDelta
-            }
+            )
 
             VStack {
                 Spacer()
@@ -376,65 +422,78 @@ struct MacRegionSelectorView: View {
         }
     }
 
-    // MARK: - Search Popover
+    // MARK: - Search Results
 
-    /// Location search popover with auto-complete.
-    private var searchPopover: some View {
+    /// Location search results list shown in a popover.
+    private var searchResultsList: some View {
         VStack(spacing: 0) {
-            TextField("Search for a place...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding()
-                .onSubmit {
-                    performSearch()
+            if searchResults.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text("No results found")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-
-            if isSearching {
-                ProgressView()
-                    .padding()
-            }
-
-            List(searchResults, id: \.self) { item in
-                Button {
-                    if let location = item.placemark.location {
-                        showSearch = false
-                        searchText = ""
-                        searchResults = []
-                        withAnimation {
-                            cameraPosition = .region(MKCoordinateRegion(
-                                center: location.coordinate,
-                                span: MKCoordinateSpan(latitudeDelta: Self.searchResultSpan, longitudeDelta: Self.searchResultSpan)
-                            ))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(searchResults, id: \.self) { item in
+                    Button {
+                        if let location = item.placemark.location {
+                            showSearchResults = false
+                            searchText = ""
+                            searchResults = []
+                            let coord = location.coordinate
+                            mapCenter = coord
+                            mapSpan = Self.searchResultSpan
+                            saveLastLocation(coordinate: coord, span: Self.searchResultSpan)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name ?? "Unknown")
+                                .foregroundStyle(.primary)
+                            if let address = item.placemark.title {
+                                Text(address)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name ?? "Unknown")
-                            .foregroundStyle(.primary)
-                        if let address = item.placemark.title {
-                            Text(address)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
 
     // MARK: - Actions
 
+    /// Centers the map on the user's current GPS location.
+    ///
+    /// If a location is already available, centers immediately with ~10km span.
+    /// Otherwise, sets a flag so the map will center on the next location update.
+    private func centerOnUserLocation() {
+        locationManager.shouldCenterOnNextUpdate = true
+        locationManager.requestLocationPermission()
+
+        // If we already have a location, center immediately
+        if let location = locationManager.currentLocation {
+            locationManager.shouldCenterOnNextUpdate = false
+            let coord = location.coordinate
+            mapCenter = coord
+            mapSpan = Self.locationCenterSpan
+            saveLastLocation(coordinate: coord, span: Self.locationCenterSpan)
+        }
+    }
+
     /// Captures the currently visible map region as the selection.
     private func captureVisibleRegion() {
-        guard let visibleRegion = cameraPosition.region else { return }
-
-        // Use 60% of the visible area as the selection
         let scaleFactor = Self.selectionScaleFactor
         selectedRegion = MKCoordinateRegion(
-            center: visibleRegion.center,
+            center: mapCenter,
             span: MKCoordinateSpan(
-                latitudeDelta: visibleRegion.span.latitudeDelta * scaleFactor,
-                longitudeDelta: visibleRegion.span.longitudeDelta * scaleFactor
+                latitudeDelta: mapSpan * scaleFactor,
+                longitudeDelta: mapSpan * scaleFactor
             )
         )
         showDownloadConfig = true
@@ -571,8 +630,31 @@ struct MacRegionSelectorView: View {
             isSearching = false
             if let response = response {
                 searchResults = response.mapItems
+                if searchResults.count == 1, let location = searchResults.first?.placemark.location {
+                    // Single result: navigate directly
+                    showSearchResults = false
+                    let coord = location.coordinate
+                    mapCenter = coord
+                    mapSpan = Self.searchResultSpan
+                    saveLastLocation(coordinate: coord, span: Self.searchResultSpan)
+                    searchText = ""
+                    searchResults = []
+                } else if !searchResults.isEmpty {
+                    showSearchResults = true
+                }
             }
         }
+    }
+
+    /// Persists the current map position to `@AppStorage` for restoration on next launch.
+    ///
+    /// - Parameters:
+    ///   - coordinate: The map center coordinate to save.
+    ///   - span: The map span (zoom level) to save.
+    private func saveLastLocation(coordinate: CLLocationCoordinate2D, span: Double) {
+        lastLatitude = coordinate.latitude
+        lastLongitude = coordinate.longitude
+        lastSpan = span
     }
 
     // MARK: - Helpers
@@ -585,18 +667,5 @@ struct MacRegionSelectorView: View {
             east: region.center.longitude + region.span.longitudeDelta / 2,
             west: region.center.longitude - region.span.longitudeDelta / 2
         )
-    }
-
-    /// Calculates the four corner coordinates of a region for polygon rendering.
-    private func regionCorners(_ region: MKCoordinateRegion) -> [CLLocationCoordinate2D] {
-        let latDelta = region.span.latitudeDelta / 2
-        let lonDelta = region.span.longitudeDelta / 2
-        let center = region.center
-        return [
-            CLLocationCoordinate2D(latitude: center.latitude + latDelta, longitude: center.longitude - lonDelta),
-            CLLocationCoordinate2D(latitude: center.latitude + latDelta, longitude: center.longitude + lonDelta),
-            CLLocationCoordinate2D(latitude: center.latitude - latDelta, longitude: center.longitude + lonDelta),
-            CLLocationCoordinate2D(latitude: center.latitude - latDelta, longitude: center.longitude - lonDelta),
-        ]
     }
 }
