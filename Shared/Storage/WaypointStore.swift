@@ -221,8 +221,8 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
             let sql = """
                 INSERT OR REPLACE INTO waypoints
                 (id, latitude, longitude, altitude, timestamp, label, category, note,
-                 has_photo, hike_id, photo_data, photo_thumbnail)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 has_photo, hike_id, photo_data, photo_thumbnail, modified_at, cloudkit_record_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
             var statement: OpaquePointer?
@@ -273,6 +273,19 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 sqlite3_bind_null(statement, 12)
             }
 
+            if let modifiedAt = waypoint.modifiedAt {
+                let modifiedAtString = dateFormatter.string(from: modifiedAt)
+                sqlite3_bind_text(statement, 13, modifiedAtString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(statement, 13)
+            }
+
+            if let cloudKitRecordID = waypoint.cloudKitRecordID {
+                sqlite3_bind_text(statement, 14, cloudKitRecordID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(statement, 14)
+            }
+
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw WaypointStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
             }
@@ -282,7 +295,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
 
     // MARK: - Update
 
-    /// Updates an existing waypoint's mutable fields (label, category, note, hasPhoto).
+    /// Updates an existing waypoint's mutable fields (label, category, note, hasPhoto, sync metadata).
     ///
     /// Does not modify photo BLOB data. Use ``insert(_:photo:thumbnail:)`` with
     /// the same ID to replace photo data.
@@ -297,7 +310,8 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
 
             let sql = """
                 UPDATE waypoints SET
-                    label = ?, category = ?, note = ?, has_photo = ?, hike_id = ?
+                    label = ?, category = ?, note = ?, has_photo = ?, hike_id = ?,
+                    modified_at = ?, cloudkit_record_id = ?
                 WHERE id = ?
             """
 
@@ -321,7 +335,20 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 sqlite3_bind_null(statement, 5)
             }
 
-            sqlite3_bind_text(statement, 6, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if let modifiedAt = waypoint.modifiedAt {
+                let modifiedAtString = dateFormatter.string(from: modifiedAt)
+                sqlite3_bind_text(statement, 6, modifiedAtString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(statement, 6)
+            }
+
+            if let cloudKitRecordID = waypoint.cloudKitRecordID {
+                sqlite3_bind_text(statement, 7, cloudKitRecordID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(statement, 7)
+            }
+
+            sqlite3_bind_text(statement, 8, idString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw WaypointStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
@@ -671,6 +698,24 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
             hikeId = nil
         }
 
+        // Columns 10-11 are photo_data and photo_thumbnail (BLOBs, not loaded here).
+        // Columns 12-13 are modified_at and cloudkit_record_id (added in Phase 6 migration).
+        let columnCount = sqlite3_column_count(statement)
+
+        var modifiedAt: Date?
+        if columnCount > 12,
+           sqlite3_column_type(statement, 12) != SQLITE_NULL,
+           let modText = sqlite3_column_text(statement, 12) {
+            modifiedAt = dateFormatter.date(from: String(cString: modText))
+        }
+
+        var cloudKitRecordID: String?
+        if columnCount > 13,
+           sqlite3_column_type(statement, 13) != SQLITE_NULL,
+           let ckText = sqlite3_column_text(statement, 13) {
+            cloudKitRecordID = String(cString: ckText)
+        }
+
         return Waypoint(
             id: id,
             latitude: latitude,
@@ -681,7 +726,9 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
             category: category,
             note: note,
             hasPhoto: hasPhoto,
-            hikeId: hikeId
+            hikeId: hikeId,
+            modifiedAt: modifiedAt,
+            cloudKitRecordID: cloudKitRecordID
         )
     }
 

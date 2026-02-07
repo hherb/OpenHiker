@@ -67,6 +67,21 @@ struct MacHikeDetailView: View {
     /// Minimum coordinate span in degrees for the map region.
     private static let mapMinSpanDegrees = 0.005
 
+    /// Height of the map section in the detail view.
+    private static let mapSectionHeight: CGFloat = 350
+
+    /// Height of the elevation profile chart.
+    private static let elevationChartHeight: CGFloat = 180
+
+    /// Estimated row height for the waypoints table.
+    private static let waypointTableRowHeight: CGFloat = 30
+
+    /// Extra padding for the waypoints table header/borders.
+    private static let waypointTablePadding: CGFloat = 40
+
+    /// Maximum height for the waypoints table before scrolling.
+    private static let waypointTableMaxHeight: CGFloat = 250
+
     /// Callback invoked when the route is updated so the parent list can refresh.
     let onUpdate: () -> Void
 
@@ -85,7 +100,7 @@ struct MacHikeDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Map with track overlay
                 mapSection
-                    .frame(height: 350)
+                    .frame(height: Self.mapSectionHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 // Elevation profile
@@ -97,7 +112,7 @@ struct MacHikeDetailView: View {
                             elevationData: elevationProfile,
                             useMetric: useMetricUnits
                         )
-                        .frame(height: 180)
+                        .frame(height: Self.elevationChartHeight)
                     }
                 }
 
@@ -281,7 +296,10 @@ struct MacHikeDetailView: View {
                         .lineLimit(1)
                 }
             }
-            .frame(height: min(CGFloat(waypoints.count) * 30 + 40, 250))
+            .frame(height: min(
+                CGFloat(waypoints.count) * Self.waypointTableRowHeight + Self.waypointTablePadding,
+                Self.waypointTableMaxHeight
+            ))
         }
     }
 

@@ -162,6 +162,15 @@ enum MacPDFExporter {
     /// Row height in the statistics table.
     private static let tableRowHeight: CGFloat = 22
 
+    /// Spacing between text lines in the PDF.
+    private static let textLineSpacing: CGFloat = 2
+
+    /// Vertical padding inside table rows for text alignment.
+    private static let tableRowVerticalPadding: CGFloat = 4
+
+    /// Left inset for text within table cells.
+    private static let tableCellLeftInset: CGFloat = 8
+
     // MARK: - Public API
 
     /// Generates a PDF report for the given hike.
@@ -298,7 +307,7 @@ enum MacPDFExporter {
         CTLineDraw(line, context)
         context.restoreGState()
 
-        return y + bounds.height + 2
+        return y + bounds.height + textLineSpacing
     }
 
     /// Draws a statistics table row (label: value) and returns the Y after the row.
@@ -315,12 +324,12 @@ enum MacPDFExporter {
         let labelAttrs: [NSAttributedString.Key: Any] = [.font: boldFont, .foregroundColor: NSColor.darkGray]
         let valueAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
 
-        let pdfY = pageSize.height - y - tableRowHeight + 4
+        let pdfY = pageSize.height - y - tableRowHeight + tableRowVerticalPadding
 
         let labelStr = NSAttributedString(string: label, attributes: labelAttrs)
         let labelLine = CTLineCreateWithAttributedString(labelStr)
         context.saveGState()
-        context.textPosition = CGPoint(x: x + 8, y: pdfY)
+        context.textPosition = CGPoint(x: x + tableCellLeftInset, y: pdfY)
         CTLineDraw(labelLine, context)
         context.restoreGState()
 

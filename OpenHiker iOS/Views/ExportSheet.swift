@@ -243,7 +243,7 @@ struct ExportSheet: View {
 
         do {
             let data: Data
-            let filename: String
+            let filename = "\(sanitizeFilename(route.name)).\(selectedFormat.fileExtension)"
 
             switch selectedFormat {
             case .markdown:
@@ -253,7 +253,6 @@ struct ExportSheet: View {
                     useMetric: useMetricUnits
                 )
                 data = Data(markdown.utf8)
-                filename = "\(sanitizeFilename(route.name)).\(selectedFormat.fileExtension)"
 
             case .pdf:
                 data = try await PDFExporter.exportAsPDF(
@@ -261,14 +260,12 @@ struct ExportSheet: View {
                     waypoints: waypoints,
                     useMetric: useMetricUnits
                 )
-                filename = "\(sanitizeFilename(route.name)).\(selectedFormat.fileExtension)"
 
             case .gpx:
                 data = HikeSummaryExporter.toGPX(
                     route: route,
                     waypoints: waypoints
                 )
-                filename = "\(sanitizeFilename(route.name)).\(selectedFormat.fileExtension)"
             }
 
             // Write to temp file for sharing

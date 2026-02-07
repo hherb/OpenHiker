@@ -92,6 +92,30 @@ enum PDFExporter {
     /// Number of coordinate decimal places for display.
     private static let coordinateDecimalPlaces = 4
 
+    /// Padding factor applied to map bounds for visual breathing room.
+    private static let mapBoundsPaddingFactor = 1.3
+
+    /// Minimum coordinate span in degrees for the map region.
+    private static let mapMinSpanDegrees = 0.005
+
+    /// Line width for the route polyline on the map snapshot.
+    private static let routeLineWidth: CGFloat = 3.0
+
+    /// Diameter of the start/end marker circles on the map snapshot.
+    private static let startEndMarkerSize: CGFloat = 12
+
+    /// Diameter of waypoint marker circles on the map snapshot.
+    private static let waypointMarkerSize: CGFloat = 8
+
+    /// Height reserved below each photo for caption text.
+    private static let photoCaptionHeight: CGFloat = 40
+
+    /// Maximum characters shown for a waypoint note in the table.
+    private static let noteMaxDisplayLength = 30
+
+    /// Column widths for the waypoint table: #, Name, Category, Coordinate, Note.
+    private static let waypointTableColumnWidths: [CGFloat] = [30, 120, 80, 150, 132]
+
     // MARK: - Error Types
 
     /// Errors that can occur during PDF export.
@@ -205,14 +229,13 @@ enum PDFExporter {
             maxLon = max(maxLon, coord.longitude)
         }
 
-        let paddingFactor = 1.3
         let center = CLLocationCoordinate2D(
             latitude: (minLat + maxLat) / 2,
             longitude: (minLon + maxLon) / 2
         )
         let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLat - minLat) * paddingFactor, 0.005),
-            longitudeDelta: max((maxLon - minLon) * paddingFactor, 0.005)
+            latitudeDelta: max((maxLat - minLat) * mapBoundsPaddingFactor, mapMinSpanDegrees),
+            longitudeDelta: max((maxLon - minLon) * mapBoundsPaddingFactor, mapMinSpanDegrees)
         )
         let region = MKCoordinateRegion(center: center, span: span)
 
@@ -238,7 +261,7 @@ enum PDFExporter {
             // Draw route polyline
             if coordinates.count >= 2 {
                 cgContext.setStrokeColor(UIColor.orange.cgColor)
-                cgContext.setLineWidth(3.0)
+                cgContext.setLineWidth(routeLineWidth)
                 cgContext.setLineCap(.round)
                 cgContext.setLineJoin(.round)
 
@@ -255,39 +278,36 @@ enum PDFExporter {
             // Draw start marker (green circle)
             if let startCoord = coordinates.first {
                 let point = snapshot.point(for: startCoord)
-                let markerSize: CGFloat = 12
                 cgContext.setFillColor(UIColor.systemGreen.cgColor)
                 cgContext.fillEllipse(in: CGRect(
-                    x: point.x - markerSize / 2,
-                    y: point.y - markerSize / 2,
-                    width: markerSize,
-                    height: markerSize
+                    x: point.x - startEndMarkerSize / 2,
+                    y: point.y - startEndMarkerSize / 2,
+                    width: startEndMarkerSize,
+                    height: startEndMarkerSize
                 ))
             }
 
             // Draw end marker (red circle)
             if let endCoord = coordinates.last, coordinates.count > 1 {
                 let point = snapshot.point(for: endCoord)
-                let markerSize: CGFloat = 12
                 cgContext.setFillColor(UIColor.systemRed.cgColor)
                 cgContext.fillEllipse(in: CGRect(
-                    x: point.x - markerSize / 2,
-                    y: point.y - markerSize / 2,
-                    width: markerSize,
-                    height: markerSize
+                    x: point.x - startEndMarkerSize / 2,
+                    y: point.y - startEndMarkerSize / 2,
+                    width: startEndMarkerSize,
+                    height: startEndMarkerSize
                 ))
             }
 
             // Draw waypoint markers
             for waypoint in waypoints {
                 let point = snapshot.point(for: waypoint.coordinate)
-                let markerSize: CGFloat = 8
                 cgContext.setFillColor(UIColor.systemBlue.cgColor)
                 cgContext.fillEllipse(in: CGRect(
-                    x: point.x - markerSize / 2,
-                    y: point.y - markerSize / 2,
-                    width: markerSize,
-                    height: markerSize
+                    x: point.x - waypointMarkerSize / 2,
+                    y: point.y - waypointMarkerSize / 2,
+                    width: waypointMarkerSize,
+                    height: waypointMarkerSize
                 ))
             }
         }
@@ -566,7 +586,7 @@ enum PDFExporter {
                     photoIndex += 1
 
                     let x = margin + CGFloat(col) * (photoGridCellSize.width + photoGridSpacing)
-                    let cellY = y + CGFloat(row) * (photoGridCellSize.height + 40 + photoGridSpacing)
+                    let cellY = y + CGFloat(row) * (photoGridCellSize.height + photoCaptionHeight + photoGridSpacing)
 
                     // Draw photo
                     let photoRect = CGRect(x: x, y: cellY, width: photoGridCellSize.width, height: photoGridCellSize.height)
@@ -622,8 +642,8 @@ enum PDFExporter {
                     format: "%.\(coordinateDecimalPlaces)f, %.\(coordinateDecimalPlaces)f",
                     wp.latitude, wp.longitude
                 )
-                let noteTruncated = wp.note.count > 30
-                    ? String(wp.note.prefix(30)) + "..."
+                let noteTruncated = wp.note.count > noteMaxDisplayLength
+                    ? String(wp.note.prefix(noteMaxDisplayLength)) + "..."
                     : wp.note
 
                 let row = ["\(index + 1)", label, wp.category.displayName, coord, noteTruncated]
@@ -705,11 +725,11 @@ enum PDFExporter {
             .foregroundColor: UIColor.black
         ]
 
-        for row in rows {
+        for (index, row) in rows.enumerated() {
             guard row.count >= 2 else { continue }
 
             // Alternating row background
-            if rows.firstIndex(where: { $0 == row }) ?? 0 % 2 == 0 {
+            if index % 2 == 0 {
                 UIColor.systemGray6.setFill()
                 UIBezierPath(rect: CGRect(x: x, y: currentY, width: width, height: tableRowHeight)).fill()
             }
@@ -741,11 +761,10 @@ enum PDFExporter {
         UIColor.darkGray.setFill()
         UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: tableRowHeight)).fill()
 
-        let columnWidths: [CGFloat] = [30, 120, 80, 150, 132]
         var colX = x + 4
 
         for (index, col) in columns.enumerated() {
-            let colWidth = index < columnWidths.count ? columnWidths[index] : 80
+            let colWidth = index < waypointTableColumnWidths.count ? waypointTableColumnWidths[index] : 80
             (col as NSString).draw(at: CGPoint(x: colX, y: y + 4), withAttributes: attributes)
             colX += colWidth
         }
@@ -761,7 +780,6 @@ enum PDFExporter {
             .foregroundColor: UIColor.black
         ]
 
-        let columnWidths: [CGFloat] = [30, 120, 80, 150, 132]
         var colX = x + 4
 
         // Row separator line
@@ -773,7 +791,7 @@ enum PDFExporter {
         path.stroke()
 
         for (index, col) in columns.enumerated() {
-            let colWidth = index < columnWidths.count ? columnWidths[index] : 80
+            let colWidth = index < waypointTableColumnWidths.count ? waypointTableColumnWidths[index] : 80
             (col as NSString).draw(at: CGPoint(x: colX, y: y + 4), withAttributes: attributes)
             colX += colWidth
         }

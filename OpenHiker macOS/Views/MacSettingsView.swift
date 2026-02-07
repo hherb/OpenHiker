@@ -23,6 +23,12 @@ import SwiftUI
 /// - **General**: Unit preferences (metric/imperial)
 /// - **Sync**: iCloud sync status and manual sync button
 struct MacSettingsView: View {
+    /// Width of the settings window.
+    private static let windowWidth: CGFloat = 400
+
+    /// Height of the settings window.
+    private static let windowHeight: CGFloat = 200
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -38,7 +44,7 @@ struct MacSettingsView: View {
                     Label("Sync", systemImage: "icloud")
                 }
         }
-        .frame(width: 400, height: 200)
+        .frame(width: Self.windowWidth, height: Self.windowHeight)
     }
 
     // MARK: - General Tab
