@@ -23,16 +23,21 @@ import CoreLocation
 /// The main map view for selecting and downloading offline map regions on iOS.
 ///
 /// Users interact with this view to:
-/// 1. Browse an interactive MapKit map of the world
+/// 1. Browse an interactive map — either Apple Maps (Roads) or a tile overlay
+///    from OpenTopoMap (Trails) or CyclOSM (Cycling)
 /// 2. Search for locations by name
 /// 3. Draw a selection rectangle over the area they want to download
-/// 4. Configure download options (zoom levels, region name)
-/// 5. Initiate tile downloads from OpenTopoMap
+/// 4. Configure download options (zoom levels, region name, tile server)
+/// 5. Initiate tile downloads from OpenTopoMap, CyclOSM, or OpenStreetMap
 ///
 /// The view persists the last-viewed map position via `@AppStorage` so users
 /// return to their previous location on relaunch. Downloaded regions are automatically
 /// transferred to the paired Apple Watch if connected.
 struct RegionSelectorView: View {
+
+    /// Width of the map style segmented control in the toolbar.
+    private static let stylePickerWidth: CGFloat = 220
+
     /// The current map camera position (region, center, and zoom).
     @State private var cameraPosition: MapCameraPosition = .automatic
 
@@ -121,11 +126,40 @@ struct RegionSelectorView: View {
     /// The tile server selected for the next download, synced from ``mapViewStyle``.
     @State private var selectedTileServer: TileDownloader.TileServer = .osmTopo
 
-    /// Centre coordinate for the trail/cycling map overlay (kept in sync with ``cameraPosition``).
-    @State private var trailMapCenter = CLLocationCoordinate2D(latitude: 37.8651, longitude: -119.5383)
+    /// Derives the map center from ``cameraPosition`` as a binding for ``TrailMapView``.
+    ///
+    /// This eliminates duplicate state — ``cameraPosition`` is the single source of truth
+    /// for the visible map region across both Apple Maps and tile overlay modes.
+    private var mapCenterBinding: Binding<CLLocationCoordinate2D> {
+        Binding(
+            get: {
+                cameraPosition.region?.center
+                    ?? CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
+            },
+            set: { newCenter in
+                let currentSpan = cameraPosition.region?.span.latitudeDelta ?? lastSpan
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: newCenter,
+                    span: MKCoordinateSpan(latitudeDelta: currentSpan, longitudeDelta: currentSpan)
+                ))
+            }
+        )
+    }
 
-    /// Span for the trail/cycling map overlay (kept in sync with ``cameraPosition``).
-    @State private var trailMapSpan: Double = 0.5
+    /// Derives the map span from ``cameraPosition`` as a binding for ``TrailMapView``.
+    private var mapSpanBinding: Binding<Double> {
+        Binding(
+            get: { cameraPosition.region?.span.latitudeDelta ?? lastSpan },
+            set: { newSpan in
+                let currentCenter = cameraPosition.region?.center
+                    ?? CLLocationCoordinate2D(latitude: lastLatitude, longitude: lastLongitude)
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: currentCenter,
+                    span: MKCoordinateSpan(latitudeDelta: newSpan, longitudeDelta: newSpan)
+                ))
+            }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -135,17 +169,12 @@ struct RegionSelectorView: View {
                     // Trail / Cycling overlay via MKMapView + MKTileOverlay
                     TrailMapView(
                         tileURLTemplate: tileTemplate,
-                        center: $trailMapCenter,
-                        span: $trailMapSpan,
+                        center: mapCenterBinding,
+                        span: mapSpanBinding,
                         waypoints: waypoints,
                         selectedRegion: selectedRegion,
                         trackCoordinates: locationManager.trackPoints.map(\.coordinate),
                         onRegionChange: { center, span in
-                            // Keep cameraPosition in sync for finalizeSelection()
-                            cameraPosition = .region(MKCoordinateRegion(
-                                center: center,
-                                span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
-                            ))
                             saveLastLocation(coordinate: center, span: span)
                         },
                         onWaypointTapped: { waypoint in
@@ -199,9 +228,6 @@ struct RegionSelectorView: View {
                             coordinate: context.region.center,
                             span: context.region.span.latitudeDelta
                         )
-                        // Keep trail map state in sync for seamless switching
-                        trailMapCenter = context.region.center
-                        trailMapSpan = context.region.span.latitudeDelta
                     }
                 }
 
@@ -291,7 +317,7 @@ struct RegionSelectorView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 220)
+                    .frame(width: Self.stylePickerWidth)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -369,8 +395,6 @@ struct RegionSelectorView: View {
                     onSelectLocation: { coordinate in
                         showSearchSheet = false
                         saveLastLocation(coordinate: coordinate, span: 0.2)
-                        trailMapCenter = coordinate
-                        trailMapSpan = 0.2
                         withAnimation {
                             cameraPosition = .region(MKCoordinateRegion(
                                 center: coordinate,
@@ -389,8 +413,6 @@ struct RegionSelectorView: View {
                 center: center,
                 span: MKCoordinateSpan(latitudeDelta: lastSpan, longitudeDelta: lastSpan)
             ))
-            trailMapCenter = center
-            trailMapSpan = lastSpan
             selectedTileServer = mapViewStyle.defaultDownloadServer
             loadWaypoints()
         }
@@ -402,8 +424,6 @@ struct RegionSelectorView: View {
             if locationManager.shouldCenterOnNextUpdate, let location = newLocation {
                 locationManager.shouldCenterOnNextUpdate = false
                 saveLastLocation(coordinate: location.coordinate, span: 0.1)
-                trailMapCenter = location.coordinate
-                trailMapSpan = 0.1
                 withAnimation {
                     cameraPosition = .region(MKCoordinateRegion(
                         center: location.coordinate,
@@ -413,21 +433,7 @@ struct RegionSelectorView: View {
             }
         }
         .onChange(of: mapViewStyle) { _, newStyle in
-            // Sync camera position when switching map styles
             selectedTileServer = newStyle.defaultDownloadServer
-            if newStyle == .standard {
-                // Switching TO Apple Maps — update cameraPosition from trail map state
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: trailMapCenter,
-                    span: MKCoordinateSpan(latitudeDelta: trailMapSpan, longitudeDelta: trailMapSpan)
-                ))
-            } else {
-                // Switching FROM Apple Maps to trail/cycling overlay
-                if let region = cameraPosition.region {
-                    trailMapCenter = region.center
-                    trailMapSpan = region.span.latitudeDelta
-                }
-            }
         }
     }
 
@@ -1112,6 +1118,7 @@ struct SelectionOverlay: View {
 ///
 /// Allows the user to:
 /// - Name the region
+/// - Choose the tile server (OpenTopoMap, CyclOSM, or OpenStreetMap)
 /// - Toggle contour line inclusion
 /// - Adjust minimum and maximum zoom levels via steppers
 /// - See estimated tile count and download size

@@ -61,6 +61,38 @@ enum MapViewStyle: String, CaseIterable {
 /// - Track recording breadcrumb polyline (orange)
 /// - Bidirectional camera position synchronisation with the parent view
 struct TrailMapView: UIViewRepresentable {
+
+    // MARK: - Tile Overlay Configuration
+
+    /// Maximum zoom level supported by the tile servers (OpenTopoMap / CyclOSM).
+    static let tileMaxZoom = 18
+
+    /// Minimum zoom level supported by the tile servers.
+    static let tileMinZoom = 1
+
+    /// Standard web mercator tile size in points.
+    static let tileSize = CGSize(width: 256, height: 256)
+
+    /// Minimum coordinate change (in degrees) before programmatically repositioning the map.
+    /// Prevents fighting with user gestures and triggering feedback loops.
+    static let coordinateChangeThreshold: Double = 0.0001
+
+    /// Minimum span change (in degrees latitude) before programmatically repositioning the map.
+    static let spanChangeThreshold: Double = 0.01
+
+    // MARK: - Overlay Styling
+
+    /// Fill opacity for the selected region polygon overlay.
+    static let selectionFillAlpha: CGFloat = 0.2
+
+    /// Stroke width for the selected region polygon.
+    static let selectionStrokeWidth: CGFloat = 2
+
+    /// Stroke width for the track recording polyline.
+    static let trackStrokeWidth: CGFloat = 4
+
+    // MARK: - Properties
+
     /// The tile URL template with `{z}`, `{x}`, `{y}` placeholders.
     let tileURLTemplate: String
 
@@ -85,6 +117,12 @@ struct TrailMapView: UIViewRepresentable {
     /// Called when the user taps a waypoint annotation.
     var onWaypointTapped: ((Waypoint) -> Void)?
 
+    // MARK: - UIViewRepresentable
+
+    /// Creates and configures the underlying `MKMapView` with a tile overlay and initial region.
+    ///
+    /// - Parameter context: The UIViewRepresentable context providing the coordinator.
+    /// - Returns: A configured `MKMapView` displaying the tile overlay.
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
@@ -95,9 +133,9 @@ struct TrailMapView: UIViewRepresentable {
         // Add the tile overlay that replaces Apple Maps base tiles
         let overlay = MKTileOverlay(urlTemplate: tileURLTemplate)
         overlay.canReplaceMapContent = true
-        overlay.maximumZ = 18
-        overlay.minimumZ = 1
-        overlay.tileSize = CGSize(width: 256, height: 256)
+        overlay.maximumZ = Self.tileMaxZoom
+        overlay.minimumZ = Self.tileMinZoom
+        overlay.tileSize = Self.tileSize
         mapView.addOverlay(overlay, level: .aboveLabels)
         context.coordinator.currentTileOverlay = overlay
         context.coordinator.lastTileTemplate = tileURLTemplate
@@ -112,6 +150,14 @@ struct TrailMapView: UIViewRepresentable {
         return mapView
     }
 
+    /// Updates the `MKMapView` when SwiftUI state changes (tile template, position, annotations, overlays).
+    ///
+    /// Swaps the tile overlay if the URL template changed, repositions the map if the center/span
+    /// moved significantly, and incrementally syncs annotations and shape overlays.
+    ///
+    /// - Parameters:
+    ///   - mapView: The existing `MKMapView` to update.
+    ///   - context: The UIViewRepresentable context providing the coordinator.
     func updateUIView(_ mapView: MKMapView, context: Context) {
         let coordinator = context.coordinator
 
@@ -122,9 +168,9 @@ struct TrailMapView: UIViewRepresentable {
             }
             let overlay = MKTileOverlay(urlTemplate: tileURLTemplate)
             overlay.canReplaceMapContent = true
-            overlay.maximumZ = 18
-            overlay.minimumZ = 1
-            overlay.tileSize = CGSize(width: 256, height: 256)
+            overlay.maximumZ = Self.tileMaxZoom
+            overlay.minimumZ = Self.tileMinZoom
+            overlay.tileSize = Self.tileSize
             mapView.addOverlay(overlay, level: .aboveLabels)
             coordinator.currentTileOverlay = overlay
             coordinator.lastTileTemplate = tileURLTemplate
@@ -135,7 +181,7 @@ struct TrailMapView: UIViewRepresentable {
         let latDiff = abs(mapView.centerCoordinate.latitude - center.latitude)
         let lonDiff = abs(mapView.centerCoordinate.longitude - center.longitude)
         let spanDiff = abs(mapView.region.span.latitudeDelta - span)
-        if (latDiff > 0.0001 || lonDiff > 0.0001 || spanDiff > 0.01)
+        if (latDiff > Self.coordinateChangeThreshold || lonDiff > Self.coordinateChangeThreshold || spanDiff > Self.spanChangeThreshold)
             && !coordinator.isUpdatingFromMap
         {
             let region = MKCoordinateRegion(
@@ -154,23 +200,47 @@ struct TrailMapView: UIViewRepresentable {
 
     // MARK: - Annotation Management
 
-    /// Incrementally adds and removes waypoint annotations to match the current `waypoints` array.
+    /// Incrementally adds, removes, and updates waypoint annotations to match the current `waypoints` array.
+    ///
+    /// Compares existing annotations against the desired waypoint list by ID, then checks
+    /// for property changes (label, category) on annotations that remain. This ensures the
+    /// map reflects edits to existing waypoints without removing all annotations each frame.
+    ///
+    /// - Parameter mapView: The `MKMapView` whose annotations should be synchronised.
     private func updateAnnotations(_ mapView: MKMapView) {
         let existing = mapView.annotations.compactMap { $0 as? WaypointAnnotation }
-        let existingIDs = Set(existing.map { $0.waypoint.id })
-        let desiredIDs = Set(waypoints.map { $0.id })
+        let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.waypoint.id, $0) })
+        let desiredByID = Dictionary(uniqueKeysWithValues: waypoints.map { ($0.id, $0) })
 
-        for annotation in existing where !desiredIDs.contains(annotation.waypoint.id) {
+        // Remove annotations whose waypoint was deleted
+        for annotation in existing where desiredByID[annotation.waypoint.id] == nil {
             mapView.removeAnnotation(annotation)
         }
-        for waypoint in waypoints where !existingIDs.contains(waypoint.id) {
-            mapView.addAnnotation(WaypointAnnotation(waypoint: waypoint))
+
+        for waypoint in waypoints {
+            if let existingAnnotation = existingByID[waypoint.id] {
+                // Update in-place if the waypoint's properties changed
+                if existingAnnotation.waypoint != waypoint {
+                    mapView.removeAnnotation(existingAnnotation)
+                    mapView.addAnnotation(WaypointAnnotation(waypoint: waypoint))
+                }
+            } else {
+                // Add new annotation
+                mapView.addAnnotation(WaypointAnnotation(waypoint: waypoint))
+            }
         }
     }
 
     // MARK: - Shape Overlay Management
 
     /// Replaces the selected region polygon and track polyline overlays.
+    ///
+    /// Removes any previously added shape overlays (polygon and polyline) from the map,
+    /// then re-adds them if the current state warrants it. The tile overlay is left untouched.
+    ///
+    /// - Parameters:
+    ///   - mapView: The `MKMapView` to update.
+    ///   - coordinator: The coordinator holding references to current shape overlays.
     private func updateShapeOverlays(_ mapView: MKMapView, coordinator: Coordinator) {
         // Remove previous shape overlays
         if let old = coordinator.selectionPolygon {
@@ -208,11 +278,18 @@ struct TrailMapView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
+    /// Creates the coordinator that acts as the `MKMapViewDelegate` for this view.
+    ///
+    /// - Returns: A new ``Coordinator`` linked to this `TrailMapView`.
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
     /// Coordinator handling `MKMapViewDelegate` callbacks for the trail map.
+    ///
+    /// Manages overlay rendering, region change reporting, annotation views,
+    /// and waypoint tap handling. Holds strong references to the current tile overlay
+    /// and shape overlays so they can be swapped or removed on updates.
     class Coordinator: NSObject, MKMapViewDelegate {
         let parent: TrailMapView
         var currentTileOverlay: MKTileOverlay?
@@ -224,31 +301,49 @@ struct TrailMapView: UIViewRepresentable {
         /// that was triggered by the binding update.
         var isUpdatingFromMap = false
 
+        /// Initialises the coordinator with a reference to the parent `TrailMapView`.
+        ///
+        /// - Parameter parent: The owning `TrailMapView` instance.
         init(parent: TrailMapView) {
             self.parent = parent
             self.lastTileTemplate = parent.tileURLTemplate
         }
 
+        /// Returns the appropriate overlay renderer for tile overlays, selection polygons, and track polylines.
+        ///
+        /// - Parameters:
+        ///   - mapView: The map view requesting the renderer.
+        ///   - overlay: The overlay to render.
+        /// - Returns: A configured `MKOverlayRenderer` for the overlay type.
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tileOverlay = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(overlay: tileOverlay)
             }
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
-                renderer.fillColor = UIColor.systemBlue.withAlphaComponent(0.2)
+                renderer.fillColor = UIColor.systemBlue.withAlphaComponent(TrailMapView.selectionFillAlpha)
                 renderer.strokeColor = .systemBlue
-                renderer.lineWidth = 2
+                renderer.lineWidth = TrailMapView.selectionStrokeWidth
                 return renderer
             }
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 renderer.strokeColor = .systemOrange
-                renderer.lineWidth = 4
+                renderer.lineWidth = TrailMapView.trackStrokeWidth
                 return renderer
             }
             return MKOverlayRenderer(overlay: overlay)
         }
 
+        /// Called when the map's visible region changes (pan, zoom, or rotation).
+        ///
+        /// Updates the parent's center/span bindings and invokes the `onRegionChange` callback.
+        /// Sets `isUpdatingFromMap` to prevent the resulting SwiftUI update from repositioning
+        /// the map again (feedback loop prevention).
+        ///
+        /// - Parameters:
+        ///   - mapView: The map view whose region changed.
+        ///   - animated: Whether the change was animated.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             isUpdatingFromMap = true
             let newCenter = mapView.centerCoordinate
@@ -262,6 +357,15 @@ struct TrailMapView: UIViewRepresentable {
             }
         }
 
+        /// Returns a styled annotation view for waypoint annotations.
+        ///
+        /// Uses `MKMarkerAnnotationView` with an orange tint and the waypoint's category
+        /// icon. Non-waypoint annotations (e.g. user location) return `nil` to use the default.
+        ///
+        /// - Parameters:
+        ///   - mapView: The map view requesting the annotation view.
+        ///   - annotation: The annotation to display.
+        /// - Returns: A configured `MKMarkerAnnotationView`, or `nil` for non-waypoint annotations.
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let waypointAnnotation = annotation as? WaypointAnnotation else { return nil }
 
@@ -277,6 +381,13 @@ struct TrailMapView: UIViewRepresentable {
             return view
         }
 
+        /// Handles waypoint annotation selection by invoking the parent's `onWaypointTapped` callback.
+        ///
+        /// Immediately deselects the annotation so the callout does not linger.
+        ///
+        /// - Parameters:
+        ///   - mapView: The map view where the annotation was selected.
+        ///   - annotation: The selected annotation.
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             guard let waypointAnnotation = annotation as? WaypointAnnotation else { return }
             parent.onWaypointTapped?(waypointAnnotation.waypoint)
