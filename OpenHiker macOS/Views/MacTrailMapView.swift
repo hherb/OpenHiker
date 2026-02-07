@@ -56,7 +56,7 @@ enum MacMapViewStyle: String, CaseIterable {
 ///
 /// Supports:
 /// - Custom tile overlays that replace Apple Maps base tiles
-/// - Selected region polygon overlay (blue, semi-transparent)
+/// - Selected region polygon overlay (blue, semi-transparent) with interactive drag handles
 /// - Bidirectional camera position synchronisation with the parent view
 struct MacTrailMapView: NSViewRepresentable {
 
@@ -97,8 +97,8 @@ struct MacTrailMapView: NSViewRepresentable {
     /// The current map span in degrees latitude (bidirectional binding).
     @Binding var span: Double
 
-    /// The selected region to highlight with a polygon overlay, or `nil` if none.
-    let selectedRegion: MKCoordinateRegion?
+    /// The selected region to highlight with a polygon overlay and drag handles, or `nil` if none.
+    @Binding var selectedRegion: MKCoordinateRegion?
 
     /// Called when the user pans or zooms the map.
     var onRegionChange: ((CLLocationCoordinate2D, Double) -> Void)?
@@ -135,6 +135,22 @@ struct MacTrailMapView: NSViewRepresentable {
             span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
         )
         mapView.setRegion(region, animated: false)
+
+        // Add the handle overlay NSView on top of the map
+        let handleOverlay = SelectionHandleOverlayView()
+        handleOverlay.translatesAutoresizingMaskIntoConstraints = false
+        mapView.addSubview(handleOverlay)
+        NSLayoutConstraint.activate([
+            handleOverlay.leadingAnchor.constraint(equalTo: mapView.leadingAnchor),
+            handleOverlay.trailingAnchor.constraint(equalTo: mapView.trailingAnchor),
+            handleOverlay.topAnchor.constraint(equalTo: mapView.topAnchor),
+            handleOverlay.bottomAnchor.constraint(equalTo: mapView.bottomAnchor),
+        ])
+        context.coordinator.handleOverlay = handleOverlay
+        let coordinator = context.coordinator
+        handleOverlay.onRegionChanged = { [weak coordinator] newRegion in
+            coordinator?.parent.selectedRegion = newRegion
+        }
 
         return mapView
     }
@@ -187,8 +203,12 @@ struct MacTrailMapView: NSViewRepresentable {
             mapView.setRegion(region, animated: true)
         }
 
-        // Sync overlays (selected region polygon)
+        // Sync overlays (selected region polygon + handle overlay)
         updateShapeOverlays(mapView, coordinator: coordinator)
+        coordinator.handleOverlay?.update(
+            mapView: mapView,
+            selectedRegion: selectedRegion
+        )
     }
 
     // MARK: - Shape Overlay Management
@@ -239,10 +259,13 @@ struct MacTrailMapView: NSViewRepresentable {
     /// Manages overlay rendering, region change reporting, and holds strong references
     /// to the current tile overlay and shape overlays so they can be swapped on updates.
     class Coordinator: NSObject, MKMapViewDelegate {
-        let parent: MacTrailMapView
+        var parent: MacTrailMapView
         var currentTileOverlay: MKTileOverlay?
         var lastTileTemplate: String?
         var selectionPolygon: MKPolygon?
+
+        /// The AppKit overlay view that draws and handles drag on selection handles.
+        var handleOverlay: SelectionHandleOverlayView?
 
         /// Flag to prevent feedback loops when the map reports a region change
         /// that was triggered by the binding update.
@@ -292,11 +315,354 @@ struct MacTrailMapView: NSViewRepresentable {
             parent.center = newCenter
             parent.span = newSpan
             parent.onRegionChange?(newCenter, newSpan)
+
+            // Refresh handle overlay positions after map movement
+            handleOverlay?.update(mapView: mapView, selectedRegion: parent.selectedRegion)
+
             // Reset flag on next run-loop pass, after SwiftUI has processed the binding update.
             DispatchQueue.main.async { [weak self] in
                 self?.isUpdatingFromMap = false
             }
         }
+    }
+}
+
+// MARK: - Selection Handle Overlay (AppKit)
+
+/// An `NSView` overlay that draws interactive drag handles on top of `MKMapView`.
+///
+/// This view is added as a subview of the `MKMapView`. It overrides `hitTest(_:)` to
+/// return itself only when the mouse is over a drag handle, letting all other events
+/// pass through to the map. This solves the gesture conflict where SwiftUI gestures
+/// on top of `NSViewRepresentable`-hosted `MKMapView` are swallowed by the underlying
+/// `NSScrollView` gesture recognizers.
+///
+/// Draws 8 handles (4 corners + 4 edge midpoints) and supports dragging to resize
+/// the selected region.
+class SelectionHandleOverlayView: NSView {
+
+    // MARK: - Constants
+
+    /// Size of the visible handle squares.
+    private static let handleSize: CGFloat = 10
+
+    /// Hit target radius around each handle center. Mouse events within this distance
+    /// of a handle center are intercepted; everything else passes to the map.
+    private static let handleHitRadius: CGFloat = 15
+
+    /// Minimum selection size in degrees to prevent collapsing the rectangle.
+    private static let minimumSpanDegrees: Double = 0.005
+
+    // MARK: - State
+
+    /// The current handle screen rects, computed from the selected region.
+    private var handleRects: [HandlePosition: CGRect] = [:]
+
+    /// The screen rect of the selection rectangle (for drawing the outline).
+    private var selectionScreenRect: CGRect = .zero
+
+    /// The handle currently being dragged, or `nil` if no drag in progress.
+    private var activeHandle: HandlePosition?
+
+    /// The geographic region at the start of the current drag.
+    private var dragStartRegion: MKCoordinateRegion?
+
+    /// The mouse position at the start of the current drag (in view coordinates).
+    private var dragStartPoint: CGPoint = .zero
+
+    /// Weak reference to the map view for coordinate conversion.
+    private weak var mapView: MKMapView?
+
+    /// The current selected region in geographic coordinates.
+    private var selectedRegion: MKCoordinateRegion?
+
+    /// Callback invoked when a handle drag changes the selected region.
+    var onRegionChanged: ((MKCoordinateRegion) -> Void)?
+
+    /// Which handle of the selection rectangle.
+    private enum HandlePosition: CaseIterable {
+        case topLeft, top, topRight
+        case left, right
+        case bottomLeft, bottom, bottomRight
+    }
+
+    // MARK: - Initialisation
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
+
+    // MARK: - Public API
+
+    /// Updates the overlay with the current map state and selected region.
+    ///
+    /// Recomputes handle screen positions from the geographic region using the
+    /// map view's coordinate conversion.
+    ///
+    /// - Parameters:
+    ///   - mapView: The `MKMapView` used for coordinate conversion.
+    ///   - selectedRegion: The geographic region to show handles for, or `nil` to hide.
+    func update(mapView: MKMapView, selectedRegion: MKCoordinateRegion?) {
+        self.mapView = mapView
+        self.selectedRegion = selectedRegion
+        recomputeHandleRects()
+        needsDisplay = true
+    }
+
+    // MARK: - Hit Testing
+
+    /// Returns `self` if the point is inside a handle hit area, `nil` otherwise.
+    ///
+    /// This is the key mechanism: by returning `nil` for non-handle areas, mouse
+    /// events pass through to the `MKMapView` underneath for normal map panning.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard selectedRegion != nil else { return nil }
+        let localPoint = convert(point, from: superview)
+        for (_, rect) in handleRects {
+            let hitRect = rect.insetBy(
+                dx: -(Self.handleHitRadius - Self.handleSize / 2),
+                dy: -(Self.handleHitRadius - Self.handleSize / 2)
+            )
+            if hitRect.contains(localPoint) {
+                return self
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Mouse Event Handling
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        activeHandle = handleAt(point)
+        if activeHandle != nil {
+            dragStartPoint = point
+            dragStartRegion = selectedRegion
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let handle = activeHandle,
+              let startRegion = dragStartRegion,
+              let mapView = mapView else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let dx = point.x - dragStartPoint.x
+        // NSView Y is flipped vs screen (0 at bottom), but MKMapView.convert
+        // handles this. We compute delta in view coordinates.
+        let dy = point.y - dragStartPoint.y
+
+        let newRegion = applyHandleDrag(
+            handle: handle,
+            startRegion: startRegion,
+            dx: dx,
+            dy: dy,
+            mapView: mapView
+        )
+        selectedRegion = newRegion
+        onRegionChanged?(newRegion)
+        recomputeHandleRects()
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        activeHandle = nil
+        dragStartRegion = nil
+    }
+
+    // MARK: - Cursor
+
+    override func resetCursorRects() {
+        discardCursorRects()
+        for (position, rect) in handleRects {
+            let hitRect = rect.insetBy(
+                dx: -(Self.handleHitRadius - Self.handleSize / 2),
+                dy: -(Self.handleHitRadius - Self.handleSize / 2)
+            )
+            let cursor = cursorForHandle(position)
+            addCursorRect(hitRect, cursor: cursor)
+        }
+    }
+
+    /// Returns the appropriate resize cursor for a given handle position.
+    private func cursorForHandle(_ position: HandlePosition) -> NSCursor {
+        switch position {
+        case .topLeft, .bottomRight:
+            return NSCursor(image: NSCursor.arrow.image, hotSpot: NSCursor.arrow.hotSpot)
+        case .topRight, .bottomLeft:
+            return NSCursor(image: NSCursor.arrow.image, hotSpot: NSCursor.arrow.hotSpot)
+        case .top, .bottom:
+            return .resizeUpDown
+        case .left, .right:
+            return .resizeLeftRight
+        }
+    }
+
+    // MARK: - Drawing
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard selectedRegion != nil else { return }
+
+        // Draw handle squares
+        for (position, rect) in handleRects {
+            let isActive = (position == activeHandle)
+
+            // White fill
+            NSColor.white.setFill()
+            let path = NSBezierPath(rect: rect)
+            path.fill()
+
+            // Blue stroke (thicker when active)
+            NSColor.systemBlue.setStroke()
+            path.lineWidth = isActive ? 2.5 : 1.5
+            path.stroke()
+        }
+    }
+
+    // MARK: - Internal
+
+    /// Finds which handle (if any) is at the given point in view coordinates.
+    private func handleAt(_ point: CGPoint) -> HandlePosition? {
+        for (position, rect) in handleRects {
+            let hitRect = rect.insetBy(
+                dx: -(Self.handleHitRadius - Self.handleSize / 2),
+                dy: -(Self.handleHitRadius - Self.handleSize / 2)
+            )
+            if hitRect.contains(point) {
+                return position
+            }
+        }
+        return nil
+    }
+
+    /// Recomputes the screen rects for all 8 handles from the geographic region.
+    private func recomputeHandleRects() {
+        handleRects.removeAll()
+        guard let region = selectedRegion, let mapView = mapView else { return }
+
+        let halfLat = region.span.latitudeDelta / 2
+        let halfLon = region.span.longitudeDelta / 2
+        let c = region.center
+
+        let nw = CLLocationCoordinate2D(latitude: c.latitude + halfLat, longitude: c.longitude - halfLon)
+        let ne = CLLocationCoordinate2D(latitude: c.latitude + halfLat, longitude: c.longitude + halfLon)
+        let sw = CLLocationCoordinate2D(latitude: c.latitude - halfLat, longitude: c.longitude - halfLon)
+        let se = CLLocationCoordinate2D(latitude: c.latitude - halfLat, longitude: c.longitude + halfLon)
+        let n  = CLLocationCoordinate2D(latitude: c.latitude + halfLat, longitude: c.longitude)
+        let s  = CLLocationCoordinate2D(latitude: c.latitude - halfLat, longitude: c.longitude)
+        let w  = CLLocationCoordinate2D(latitude: c.latitude, longitude: c.longitude - halfLon)
+        let e  = CLLocationCoordinate2D(latitude: c.latitude, longitude: c.longitude + halfLon)
+
+        let pairs: [(HandlePosition, CLLocationCoordinate2D)] = [
+            (.topLeft, nw), (.top, n), (.topRight, ne),
+            (.left, w), (.right, e),
+            (.bottomLeft, sw), (.bottom, s), (.bottomRight, se),
+        ]
+
+        let hs = Self.handleSize
+        for (pos, coord) in pairs {
+            let pt = mapView.convert(coord, toPointTo: self)
+            handleRects[pos] = CGRect(x: pt.x - hs / 2, y: pt.y - hs / 2, width: hs, height: hs)
+        }
+
+        // Compute selection screen rect for cursor rects
+        let nwPt = mapView.convert(nw, toPointTo: self)
+        let sePt = mapView.convert(se, toPointTo: self)
+        selectionScreenRect = CGRect(
+            x: min(nwPt.x, sePt.x),
+            y: min(nwPt.y, sePt.y),
+            width: abs(sePt.x - nwPt.x),
+            height: abs(sePt.y - nwPt.y)
+        )
+
+        // Update cursor rects when handle positions change
+        window?.invalidateCursorRects(for: self)
+    }
+
+    /// Applies a handle drag delta to the start region and returns the new region.
+    ///
+    /// Converts the screen-space mouse delta to geographic coordinates using the
+    /// map view's coordinate conversion, then adjusts the appropriate edge(s).
+    ///
+    /// - Parameters:
+    ///   - handle: Which handle is being dragged.
+    ///   - startRegion: The geographic region when the drag began.
+    ///   - dx: Horizontal mouse delta in view points (positive = right/east).
+    ///   - dy: Vertical mouse delta in view points (positive = up in NSView = north).
+    ///   - mapView: The map view for coordinate conversion.
+    /// - Returns: The adjusted geographic region.
+    private func applyHandleDrag(
+        handle: HandlePosition,
+        startRegion: MKCoordinateRegion,
+        dx: CGFloat,
+        dy: CGFloat,
+        mapView: MKMapView
+    ) -> MKCoordinateRegion {
+        let halfLat = startRegion.span.latitudeDelta / 2
+        let halfLon = startRegion.span.longitudeDelta / 2
+        let c = startRegion.center
+
+        var north = c.latitude + halfLat
+        var south = c.latitude - halfLat
+        var east = c.longitude + halfLon
+        var west = c.longitude - halfLon
+
+        // Convert original edges to screen points, apply delta, convert back
+        // This is more accurate than linear degree-per-pixel estimates because
+        // it accounts for the Mercator projection.
+        let geoDelta = screenDeltaToGeoDelta(dx: dx, dy: dy, mapView: mapView)
+        let dLat = geoDelta.dLat
+        let dLon = geoDelta.dLon
+
+        switch handle {
+        case .topLeft:     north += dLat; west += dLon
+        case .top:         north += dLat
+        case .topRight:    north += dLat; east += dLon
+        case .left:        west += dLon
+        case .right:       east += dLon
+        case .bottomLeft:  south += dLat; west += dLon
+        case .bottom:      south += dLat
+        case .bottomRight: south += dLat; east += dLon
+        }
+
+        return clampedRegion(north: north, south: south, east: east, west: west)
+    }
+
+    /// Converts a screen-space delta to a geographic delta.
+    ///
+    /// Uses the map view's center point as a reference: maps the center to a screen point,
+    /// offsets it by (dx, dy), and converts back to get the geographic difference.
+    private func screenDeltaToGeoDelta(dx: CGFloat, dy: CGFloat, mapView: MKMapView) -> (dLat: Double, dLon: Double) {
+        let centerCoord = mapView.centerCoordinate
+        let centerPt = mapView.convert(centerCoord, toPointTo: self)
+        let offsetPt = CGPoint(x: centerPt.x + dx, y: centerPt.y + dy)
+        let offsetCoord = mapView.convert(offsetPt, toCoordinateFrom: self)
+        return (dLat: offsetCoord.latitude - centerCoord.latitude, dLon: offsetCoord.longitude - centerCoord.longitude)
+    }
+
+    /// Clamps the given bounds to a valid region with minimum span.
+    private func clampedRegion(north: Double, south: Double, east: Double, west: Double) -> MKCoordinateRegion {
+        let minSpan = Self.minimumSpanDegrees
+        let clampedNorth = max(north, south + minSpan)
+        let clampedSouth = min(south, north - minSpan)
+        let clampedEast = max(east, west + minSpan)
+        let clampedWest = min(west, east - minSpan)
+
+        let latSpan = clampedNorth - clampedSouth
+        let lonSpan = clampedEast - clampedWest
+        let centerLat = (clampedNorth + clampedSouth) / 2
+        let centerLon = (clampedEast + clampedWest) / 2
+
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
+            span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
+        )
     }
 }
 
