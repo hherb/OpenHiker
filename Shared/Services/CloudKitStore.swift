@@ -285,6 +285,91 @@ actor CloudKitStore {
         }
     }
 
+    // MARK: - PlannedRoute Operations
+
+    /// Saves or updates a ``PlannedRoute`` record in CloudKit.
+    ///
+    /// Encodes the entire route as a JSON blob in a `routeData` field, with
+    /// `localID`, `name`, and `createdAt` stored as individual fields for
+    /// queryability and conflict resolution.
+    ///
+    /// - Parameter route: The planned route to save.
+    /// - Returns: The CloudKit record ID string for storage in the local store.
+    /// - Throws: ``CloudKitStoreError`` if the operation fails.
+    func save(plannedRoute route: PlannedRoute) async throws -> String {
+        let recordID: CKRecord.ID
+        if let existingID = route.cloudKitRecordID {
+            recordID = CKRecord.ID(recordName: existingID)
+        } else {
+            recordID = CKRecord.ID(recordName: route.id.uuidString)
+        }
+
+        let record = CKRecord(recordType: Self.plannedRouteRecordType, recordID: recordID)
+        record["localID"] = route.id.uuidString
+        record["name"] = route.name
+        record["createdAt"] = route.createdAt
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            let routeData = try encoder.encode(route)
+            record["routeData"] = routeData
+        } catch {
+            throw CloudKitStoreError.serializationError("Failed to encode PlannedRoute: \(error.localizedDescription)")
+        }
+
+        do {
+            let savedRecord = try await database.save(record)
+            return savedRecord.recordID.recordName
+        } catch {
+            throw CloudKitStoreError.operationFailed(error.localizedDescription)
+        }
+    }
+
+    /// Fetches all ``PlannedRoute`` records from CloudKit.
+    ///
+    /// - Returns: An array of tuples containing the record ID and decoded route.
+    /// - Throws: ``CloudKitStoreError`` if the query fails.
+    func fetchAllPlannedRoutes() async throws -> [(recordID: String, route: PlannedRoute)] {
+        let query = CKQuery(
+            recordType: Self.plannedRouteRecordType,
+            predicate: NSPredicate(value: true)
+        )
+        query.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+
+        var results: [(String, PlannedRoute)] = []
+
+        do {
+            let (matchResults, _) = try await database.records(matching: query)
+            for (_, result) in matchResults {
+                guard let record = try? result.get() else { continue }
+                if let route = decodePlannedRoute(from: record) {
+                    results.append((record.recordID.recordName, route))
+                }
+            }
+        } catch where Self.isRecordTypeNotFoundError(error) {
+            print("CloudKitStore: Record type \(Self.plannedRouteRecordType) not found in schema, returning empty")
+            return []
+        } catch {
+            throw CloudKitStoreError.operationFailed(error.localizedDescription)
+        }
+
+        return results
+    }
+
+    /// Deletes a ``PlannedRoute`` record from CloudKit.
+    ///
+    /// - Parameter recordID: The CloudKit record ID string.
+    /// - Throws: ``CloudKitStoreError`` if the deletion fails.
+    func deletePlannedRoute(recordID: String) async throws {
+        let ckRecordID = CKRecord.ID(recordName: recordID)
+        do {
+            try await database.deleteRecord(withID: ckRecordID)
+        } catch {
+            throw CloudKitStoreError.operationFailed(error.localizedDescription)
+        }
+    }
+
     // MARK: - Subscription
 
     /// Whether subscriptions have been successfully created for all record types.
@@ -393,6 +478,32 @@ actor CloudKitStore {
             modifiedAt: record.modificationDate,
             cloudKitRecordID: record.recordID.recordName
         )
+    }
+
+    /// Decodes a ``PlannedRoute`` from a CloudKit record.
+    ///
+    /// The route is stored as a JSON blob in the `routeData` field. After
+    /// decoding, the `cloudKitRecordID` is set from the record's ID and
+    /// `modifiedAt` from the record's server modification date.
+    ///
+    /// - Parameter record: The CKRecord to decode.
+    /// - Returns: A ``PlannedRoute`` if the data can be decoded, or `nil`.
+    private func decodePlannedRoute(from record: CKRecord) -> PlannedRoute? {
+        guard let routeData = record["routeData"] as? Data else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            var route = try decoder.decode(PlannedRoute.self, from: routeData)
+            route.cloudKitRecordID = record.recordID.recordName
+            route.modifiedAt = record.modificationDate
+            return route
+        } catch {
+            print("CloudKitStore: Failed to decode PlannedRoute: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Decodes a ``Waypoint`` from a CloudKit record.

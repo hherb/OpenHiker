@@ -145,10 +145,12 @@ actor CloudSyncManager {
             // Push local changes to CloudKit
             try await pushRoutes()
             try await pushWaypoints()
+            try await pushPlannedRoutes()
 
             // Pull remote changes from CloudKit
             try await pullRoutes()
             try await pullWaypoints()
+            try await pullPlannedRoutes()
 
             lastSyncDate = Date()
 
@@ -187,6 +189,7 @@ actor CloudSyncManager {
         do {
             try await pullRoutes()
             try await pullWaypoints()
+            try await pullPlannedRoutes()
             lastSyncDate = Date()
         } catch {
             print("CloudSyncManager: Remote notification sync error: \(error.localizedDescription)")
@@ -242,6 +245,31 @@ actor CloudSyncManager {
             waypoint.cloudKitRecordID = recordID
             waypoint.modifiedAt = nil
             try WaypointStore.shared.update(waypoint)
+        }
+    }
+
+    /// Pushes locally modified planned routes to CloudKit.
+    ///
+    /// Same logic as ``pushRoutes()`` but for planned routes. Uses
+    /// ``PlannedRouteStore`` (JSON file-based) instead of ``RouteStore`` (SQLite).
+    private func pushPlannedRoutes() async throws {
+        let localRoutes = PlannedRouteStore.shared.routes
+
+        for var route in localRoutes {
+            // Skip routes that are already synced and haven't been modified locally
+            if route.cloudKitRecordID != nil && route.modifiedAt == nil {
+                continue
+            }
+
+            let routeToSave = route
+            let recordID = try await retryWithBackoff {
+                try await self.cloudStore.save(plannedRoute: routeToSave)
+            }
+
+            // Update local record with CloudKit ID
+            route.cloudKitRecordID = recordID
+            route.modifiedAt = nil
+            try PlannedRouteStore.shared.save(route)
         }
     }
 
@@ -314,6 +342,58 @@ actor CloudSyncManager {
                 newWaypoint.cloudKitRecordID = recordID
                 newWaypoint.modifiedAt = nil
                 try WaypointStore.shared.insert(newWaypoint)
+            }
+        }
+    }
+
+    /// Pulls planned routes from CloudKit and merges with local data.
+    ///
+    /// Same merge logic as ``pullRoutes()`` but for planned routes. Uses
+    /// `createdAt` as the fallback timestamp for conflict resolution since
+    /// planned routes don't have a `startTime`.
+    ///
+    /// Posts ``Notification.Name/plannedRouteSyncReceived`` when new routes
+    /// are pulled so views can refresh.
+    private func pullPlannedRoutes() async throws {
+        let remotePlannedRoutes = try await retryWithBackoff {
+            try await self.cloudStore.fetchAllPlannedRoutes()
+        }
+
+        let localRoutes = PlannedRouteStore.shared.routes
+        let localRouteIDs = Set(localRoutes.map { $0.id })
+        var didChange = false
+
+        for (recordID, remoteRoute) in remotePlannedRoutes {
+            if localRouteIDs.contains(remoteRoute.id) {
+                // Route exists locally — check if remote is newer
+                if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {
+                    let localModified = localRoute.modifiedAt ?? localRoute.createdAt
+                    let remoteModified = remoteRoute.modifiedAt ?? remoteRoute.createdAt
+
+                    if remoteModified > localModified {
+                        var updatedRoute = remoteRoute
+                        updatedRoute.cloudKitRecordID = recordID
+                        updatedRoute.modifiedAt = nil
+                        try PlannedRouteStore.shared.save(updatedRoute)
+                        didChange = true
+                    }
+                }
+            } else {
+                // New route from cloud — insert locally
+                var newRoute = remoteRoute
+                newRoute.cloudKitRecordID = recordID
+                newRoute.modifiedAt = nil
+                try PlannedRouteStore.shared.save(newRoute)
+                didChange = true
+            }
+        }
+
+        if didChange {
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .plannedRouteSyncReceived,
+                    object: nil
+                )
             }
         }
     }
