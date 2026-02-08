@@ -18,6 +18,7 @@
 import SwiftUI
 import WatchConnectivity
 import HealthKit
+import os
 
 /// The main entry point for the OpenHiker watchOS app.
 ///
@@ -25,12 +26,13 @@ import HealthKit
 /// map tiles rendered via SpriteKit. It receives map data from the iOS companion app
 /// through WatchConnectivity.
 ///
-/// Five environment objects are injected into the view hierarchy:
+/// Six environment objects are injected into the view hierarchy:
 /// - ``LocationManager``: Provides GPS location, heading, and track recording
 /// - ``WatchConnectivityReceiver``: Handles file reception from the iOS app
 /// - ``HealthKitManager``: Manages HealthKit workouts, heart rate, and SpO2
 /// - ``RouteGuidance``: Turn-by-turn navigation engine for planned routes
 /// - ``UVIndexManager``: Real-time UV index via WeatherKit
+/// - ``BatteryMonitor``: Low-battery detection and tracking mode transition
 @main
 struct OpenHikerWatchApp: App {
     /// GPS location and heading manager for the watch.
@@ -48,6 +50,27 @@ struct OpenHikerWatchApp: App {
     /// UV index manager for real-time UV exposure data via WeatherKit.
     @StateObject private var uvIndexManager = UVIndexManager()
 
+    /// Battery monitor for low-battery tracking mode.
+    @StateObject private var batteryMonitor = BatteryMonitor()
+
+    /// Whether the track recovery alert is displayed on launch.
+    @State private var showTrackRecoveryAlert = false
+
+    /// Whether the recovery error alert is displayed.
+    @State private var showRecoveryError = false
+
+    /// The error message for the recovery error alert.
+    @State private var recoveryErrorMessage = ""
+
+    /// Description of the recoverable track for the recovery alert.
+    @State private var recoveryDescription = ""
+
+    /// Logger for app-level events.
+    private static let logger = Logger(
+        subsystem: "com.openhiker.watchos",
+        category: "WatchApp"
+    )
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()
@@ -56,10 +79,27 @@ struct OpenHikerWatchApp: App {
                 .environmentObject(healthKitManager)
                 .environmentObject(routeGuidance)
                 .environmentObject(uvIndexManager)
+                .environmentObject(batteryMonitor)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
                     initializePlannedRouteStore()
+                    checkForTrackRecovery()
+                }
+                .alert("Recover Track?", isPresented: $showTrackRecoveryAlert) {
+                    Button("Recover & Save") {
+                        recoverAndSaveTrack()
+                    }
+                    Button("Discard", role: .destructive) {
+                        TrackRecoveryManager.clearRecoveryState()
+                    }
+                } message: {
+                    Text(recoveryDescription)
+                }
+                .alert("Recovery Failed", isPresented: $showRecoveryError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(recoveryErrorMessage)
                 }
         }
     }
@@ -94,6 +134,84 @@ struct OpenHikerWatchApp: App {
     /// and loaded into memory for display in the Routes tab.
     private func initializePlannedRouteStore() {
         PlannedRouteStore.shared.loadAll()
+    }
+
+    /// Checks for a recoverable track from a previous session that was interrupted.
+    ///
+    /// If a recovery file exists (from a crash, battery death, or system termination),
+    /// loads metadata to build a descriptive alert, then presents it to the user
+    /// offering to recover and save the track.
+    private func checkForTrackRecovery() {
+        guard TrackRecoveryManager.hasRecoverableTrack() else { return }
+
+        // Load metadata for a descriptive alert message
+        if let recovery = TrackRecoveryManager.loadRecoveryState() {
+            let distance = String(format: "%.1f", recovery.metadata.totalDistance / 1000)
+            let pointCount = recovery.trackPoints.count
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            let dateStr = formatter.string(from: recovery.metadata.trackingStartDate)
+
+            if recovery.metadata.routeAlreadySaved {
+                // Route was already emergency-saved to RouteStore — just clean up
+                Self.logger.info("Recovery state found but route was already saved — clearing")
+                TrackRecoveryManager.clearRecoveryState()
+                return
+            }
+
+            recoveryDescription = "A track from \(dateStr) (\(distance) km, \(pointCount) points) was found. Would you like to recover and save it?"
+        } else {
+            recoveryDescription = "A previously recorded track was found but could not be fully loaded. Would you like to try recovering it?"
+        }
+
+        showTrackRecoveryAlert = true
+        Self.logger.info("Found recoverable track from previous session")
+    }
+
+    /// Recovers a saved track and stores it as a completed ``SavedRoute``.
+    ///
+    /// Loads the track points and metadata from the recovery files, creates a
+    /// ``SavedRoute``, inserts it into ``RouteStore``, and queues it for transfer
+    /// to the iPhone. Recovery files are only cleared after a confirmed successful save.
+    /// On failure, files are preserved and the user is shown an error alert.
+    private func recoverAndSaveTrack() {
+        guard let recovery = TrackRecoveryManager.loadRecoveryState() else {
+            // Do NOT clear recovery state on load failure — the data might be
+            // recoverable after an app update or device restart
+            Self.logger.error("Failed to load recovery state — files preserved for future attempt")
+            recoveryErrorMessage = "Could not read the recovery data. The files have been preserved — please try again after restarting the app."
+            showRecoveryError = true
+            return
+        }
+
+        // If route was already emergency-saved (e.g., from low-battery handler),
+        // just clear recovery state without creating a duplicate
+        if recovery.metadata.routeAlreadySaved {
+            TrackRecoveryManager.clearRecoveryState()
+            Self.logger.info("Recovery state already had route saved — cleared without duplicate")
+            return
+        }
+
+        let saved = TrackRecoveryManager.emergencySaveAsRoute(
+            trackPoints: recovery.trackPoints,
+            totalDistance: recovery.metadata.totalDistance,
+            elevationGain: recovery.metadata.elevationGain,
+            elevationLoss: recovery.metadata.elevationLoss,
+            regionId: recovery.metadata.regionId,
+            averageHeartRate: nil,
+            connectivityManager: connectivityManager
+        )
+
+        if saved {
+            TrackRecoveryManager.clearRecoveryState()
+            Self.logger.info("Recovered and saved track from previous session")
+        } else {
+            // Route save failed — preserve recovery files as fallback
+            Self.logger.error("Emergency save failed during recovery — files preserved")
+            recoveryErrorMessage = "Could not save the recovered track. The recovery files have been preserved — please try again."
+            showRecoveryError = true
+        }
     }
 }
 

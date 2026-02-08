@@ -19,6 +19,7 @@ import SwiftUI
 import SpriteKit
 import CoreLocation
 import WatchKit
+import os
 
 /// The main map view for the watchOS app, wrapping a SpriteKit-based tile map.
 ///
@@ -38,6 +39,7 @@ struct MapView: View {
     @EnvironmentObject var healthKitManager: HealthKitManager
     @EnvironmentObject var routeGuidance: RouteGuidance
     @EnvironmentObject var uvIndexManager: UVIndexManager
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
 
     /// Whether to record hikes as workouts in Apple Health.
     @AppStorage("recordWorkouts") private var recordWorkouts = true
@@ -78,6 +80,18 @@ struct MapView: View {
     /// Whether the save hike sheet is currently displayed after stopping tracking.
     @State private var showingSaveHike = false
 
+    /// Timer for periodic auto-save of track state during active recording.
+    ///
+    /// Stored as a reference rather than `@State` to avoid SwiftUI lifecycle issues.
+    /// The timer is invalidated in `stopAutoSaveTimer()`, `onDisappear`, and when
+    /// the view transitions to ``LowBatteryTrackingView``.
+    @State private var autoSaveTimer: Timer?
+
+    /// Logger for map view events related to battery and recovery.
+    private static let logger = Logger(
+        subsystem: "com.openhiker.watchos",
+        category: "MapView"
+    )
 
     var body: some View {
         GeometryReader { geometry in
@@ -130,6 +144,10 @@ struct MapView: View {
             loadSavedRegion()
             loadWaypoints()
             locationManager.startLocationUpdates()
+            configureLowBatteryCallback()
+        }
+        .onDisappear {
+            stopAutoSaveTimer()
         }
         .onChange(of: mapRenderer.currentZoom) { _, _ in
             mapScene?.updateVisibleTiles()
@@ -188,15 +206,14 @@ struct MapView: View {
         }
         .sheet(isPresented: $showingSaveHike) {
             SaveHikeSheet(regionId: selectedRegion?.id) { saved in
-                if saved {
-                    print("Hike saved successfully")
-                } else {
-                    print("Hike discarded")
-                }
                 // Clear track data after save or discard
                 locationManager.trackPoints.removeAll()
+                TrackRecoveryManager.clearRecoveryState()
             }
         }
+        // Low-battery handling is done via batteryMonitor.onLowBatteryTriggered callback
+        // (set in configureLowBatteryCallback) instead of .onReceive, to avoid the race
+        // condition where the view may be removed before the notification handler fires.
     }
 
     // MARK: - Subviews
@@ -457,12 +474,15 @@ struct MapView: View {
     /// Toggles hike track recording on or off.
     ///
     /// When starting, also begins a HealthKit workout session (if enabled in
-    /// settings) for background runtime and vitals recording. When stopping,
-    /// ends the workout and saves it to Apple Health with distance and elevation data.
+    /// settings) for background runtime and vitals recording, starts battery
+    /// monitoring, and schedules periodic auto-save of track state. When
+    /// stopping, ends the workout, stops monitoring, and cleans up timers.
     /// Any HealthKit errors are surfaced via the error alert on this view.
     private func toggleTracking() {
         if locationManager.isTracking {
             locationManager.stopTracking()
+            stopAutoSaveTimer()
+            batteryMonitor.stopMonitoring()
             if healthKitManager.workoutActive {
                 Task {
                     let workout = await healthKitManager.stopWorkout(
@@ -483,6 +503,9 @@ struct MapView: View {
             }
         } else {
             locationManager.startTracking()
+            batteryMonitor.reset()
+            batteryMonitor.startMonitoring()
+            startAutoSaveTimer()
             if recordWorkouts {
                 healthKitManager.startWorkout()
                 // Check if startWorkout set an error (synchronous method)
@@ -491,6 +514,104 @@ struct MapView: View {
                     showError = true
                 }
             }
+        }
+    }
+
+    /// Starts the periodic auto-save timer for track state recovery.
+    ///
+    /// Fires every ``TrackRecoveryManager/autoSaveIntervalSec`` (5 minutes) to
+    /// save the current track points and statistics to disk.
+    private func startAutoSaveTimer() {
+        // Defensive: invalidate any existing timer before creating a new one
+        stopAutoSaveTimer()
+
+        let locManager = locationManager
+        let regionId = selectedRegion?.id
+        autoSaveTimer = Timer.scheduledTimer(
+            withTimeInterval: TrackRecoveryManager.autoSaveIntervalSec,
+            repeats: true
+        ) { _ in
+            guard locManager.isTracking, !locManager.trackPoints.isEmpty else { return }
+            TrackRecoveryManager.saveState(
+                trackPoints: locManager.trackPoints,
+                totalDistance: locManager.totalDistance,
+                elevationGain: locManager.elevationGain,
+                elevationLoss: locManager.elevationLoss,
+                regionId: regionId
+            )
+        }
+    }
+
+    /// Stops and invalidates the auto-save timer.
+    private func stopAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+    }
+
+    /// Configures the ``BatteryMonitor/onLowBatteryTriggered`` callback for emergency saves.
+    ///
+    /// Uses a direct callback instead of NotificationCenter to avoid the race condition
+    /// where SwiftUI may remove this view (swapping to ``LowBatteryTrackingView``) before
+    /// a `.onReceive` handler fires. The callback is invoked synchronously by
+    /// ``BatteryMonitor/checkBatteryLevel()`` before the `@Published` property change
+    /// triggers a view swap.
+    private func configureLowBatteryCallback() {
+        batteryMonitor.onLowBatteryTriggered = { [locationManager, healthKitManager, connectivityManager] in
+            handleLowBattery(
+                locationManager: locationManager,
+                healthKitManager: healthKitManager,
+                connectivityManager: connectivityManager
+            )
+        }
+    }
+
+    /// Handles the low-battery event by saving track state and switching GPS to low power.
+    ///
+    /// Called via ``BatteryMonitor/onLowBatteryTriggered`` when battery drops to 5%.
+    /// Saves the track as an emergency ``SavedRoute`` in the database and also writes
+    /// recovery files (marked with `routeAlreadySaved = true` to prevent duplicate
+    /// creation on next launch). Then switches GPS to low-power mode.
+    private func handleLowBattery(
+        locationManager: LocationManager,
+        healthKitManager: HealthKitManager,
+        connectivityManager: WatchConnectivityReceiver
+    ) {
+        guard locationManager.isTracking, !locationManager.trackPoints.isEmpty else { return }
+
+        let regionId = selectedRegion?.id
+
+        // Save as a route in case battery dies completely.
+        // Note: currentHeartRate is the latest reading, not a true average. Passed as nil
+        // since we cannot compute a reliable average from HealthKit at this point.
+        let routeSaved = TrackRecoveryManager.emergencySaveAsRoute(
+            trackPoints: locationManager.trackPoints,
+            totalDistance: locationManager.totalDistance,
+            elevationGain: locationManager.elevationGain,
+            elevationLoss: locationManager.elevationLoss,
+            regionId: regionId,
+            averageHeartRate: nil,
+            connectivityManager: connectivityManager
+        )
+
+        // Save recovery file with routeAlreadySaved flag so recovery on next launch
+        // does not create a duplicate route
+        TrackRecoveryManager.saveState(
+            trackPoints: locationManager.trackPoints,
+            totalDistance: locationManager.totalDistance,
+            elevationGain: locationManager.elevationGain,
+            elevationLoss: locationManager.elevationLoss,
+            regionId: regionId,
+            routeAlreadySaved: routeSaved
+        )
+
+        // Switch to low-power GPS to conserve remaining battery
+        locationManager.switchToLowPowerMode()
+        stopAutoSaveTimer()
+
+        if routeSaved {
+            Self.logger.info("Low battery handled: emergency route saved, GPS switched to low power")
+        } else {
+            Self.logger.error("Low battery: emergency route save FAILED, recovery file written as fallback")
         }
     }
 }
@@ -539,4 +660,5 @@ struct RegionPickerSheet: View {
         .environmentObject(HealthKitManager())
         .environmentObject(RouteGuidance())
         .environmentObject(UVIndexManager())
+        .environmentObject(BatteryMonitor())
 }

@@ -16,6 +16,7 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
+import os
 
 /// The root content view of the watchOS app.
 ///
@@ -29,7 +30,9 @@ import SwiftUI
 struct WatchContentView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
+    @EnvironmentObject var healthKitManager: HealthKitManager
     @EnvironmentObject var routeGuidance: RouteGuidance
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
 
     /// The currently selected tab index (0 = Stats, 1 = Map, 2 = Routes, 3 = Regions, 4 = Settings, 5 = Minimalist Nav).
     @State private var selectedTab = 1
@@ -37,7 +40,51 @@ struct WatchContentView: View {
     /// Whether to use the minimalist navigation view instead of the full map when starting navigation.
     @AppStorage("useMinimalistNavigation") private var useMinimalistNavigation = false
 
+    /// Whether to record hikes as workouts in Apple Health.
+    @AppStorage("recordWorkouts") private var recordWorkouts = true
+
+    /// Whether the save hike sheet is currently displayed after stopping from low-battery view.
+    @State private var showingSaveHike = false
+
+    /// Whether an error alert is displayed.
+    @State private var showError = false
+
+    /// The error message for the alert.
+    @State private var errorMessage = ""
+
+    /// Logger for content view events.
+    private static let logger = Logger(
+        subsystem: "com.openhiker.watchos",
+        category: "WatchContentView"
+    )
+
     var body: some View {
+        Group {
+            if batteryMonitor.isLowBatteryMode && locationManager.isTracking {
+                // Low-battery mode: replace entire UI with minimal tracking view
+                LowBatteryTrackingView(onStopTracking: {
+                    stopTrackingFromLowBattery()
+                })
+            } else {
+                normalTabView
+            }
+        }
+        .sheet(isPresented: $showingSaveHike) {
+            SaveHikeSheet(regionId: nil) { saved in
+                locationManager.trackPoints.removeAll()
+                TrackRecoveryManager.clearRecoveryState()
+                batteryMonitor.reset()
+            }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
+
+    /// The normal multi-tab interface shown when battery is sufficient.
+    private var normalTabView: some View {
         TabView(selection: $selectedTab) {
             // Hike Stats Dashboard (swipe down from map)
             HikeStatsDashboardView()
@@ -67,6 +114,35 @@ struct WatchContentView: View {
                 .tag(5)
         }
         .tabViewStyle(.verticalPage)
+    }
+
+    /// Stops tracking from the low-battery view, ending the workout and presenting the save sheet.
+    ///
+    /// Handles HealthKit workout stop errors by surfacing them to the user via an alert,
+    /// consistent with the error handling in ``MapView/toggleTracking()``.
+    private func stopTrackingFromLowBattery() {
+        locationManager.stopTracking()
+        batteryMonitor.stopMonitoring()
+
+        if healthKitManager.workoutActive {
+            Task {
+                let workout = await healthKitManager.stopWorkout(
+                    totalDistance: locationManager.totalDistance,
+                    elevationGain: locationManager.elevationGain
+                )
+                if workout == nil, let error = healthKitManager.healthKitError {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
+                    Self.logger.error("HealthKit workout stop failed: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        if !locationManager.trackPoints.isEmpty {
+            showingSaveHike = true
+        }
     }
 }
 
@@ -421,4 +497,5 @@ struct SettingsView: View {
         .environmentObject(HealthKitManager())
         .environmentObject(RouteGuidance())
         .environmentObject(UVIndexManager())
+        .environmentObject(BatteryMonitor())
 }
