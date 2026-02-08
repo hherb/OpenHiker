@@ -167,10 +167,12 @@ enum TrackCompression {
             for i in 0..<pointCount {
                 let offset = i * bytesPerPoint
 
-                let lat = base.load(fromByteOffset: offset, as: Float32.self)
-                let lon = base.load(fromByteOffset: offset + 4, as: Float32.self)
-                let alt = base.load(fromByteOffset: offset + 8, as: Float32.self)
-                let timestamp = base.load(fromByteOffset: offset + 12, as: Float64.self)
+                // Use loadUnaligned because the Float64 timestamp sits at byte
+                // offset 12 within each 20-byte record, which is not 8-byte aligned.
+                let lat = base.loadUnaligned(fromByteOffset: offset, as: Float32.self)
+                let lon = base.loadUnaligned(fromByteOffset: offset + 4, as: Float32.self)
+                let alt = base.loadUnaligned(fromByteOffset: offset + 8, as: Float32.self)
+                let timestamp = base.loadUnaligned(fromByteOffset: offset + 12, as: Float64.self)
 
                 let coordinate = CLLocationCoordinate2D(
                     latitude: Double(lat),
