@@ -22,6 +22,8 @@ import SwiftUI
 /// Each case maps directly to a tab in the iPhone ``ContentView`` ``TabView``.
 /// The order matches the iPhone tab order for user familiarity.
 enum SidebarSection: String, CaseIterable, Identifiable {
+    /// Active navigation with turn-by-turn and route recording.
+    case navigate = "Navigate"
     /// Map region downloading and management.
     case regions = "Regions"
     /// Downloaded map regions list.
@@ -42,6 +44,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     /// SF Symbol icon for this section.
     var iconName: String {
         switch self {
+        case .navigate: return "location.north.fill"
         case .regions: return "map"
         case .downloaded: return "arrow.down.circle"
         case .hikes: return "figure.hiking"

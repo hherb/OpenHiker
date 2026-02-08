@@ -57,6 +57,10 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     /// Transfer status for each region, keyed by region UUID.
     @Published var transferStatuses: [UUID: TransferStatus] = [:]
 
+    /// The health relay that receives live health data from the watch.
+    /// Set by the app entry point so watch health messages are forwarded.
+    var healthRelay: WatchHealthRelay?
+
     /// The active WatchConnectivity session, or `nil` if not supported.
     private var session: WCSession?
 
@@ -436,20 +440,41 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     /// Handles incoming messages from the watch (no reply expected).
     ///
-    /// Currently supports:
+    /// Supports:
     /// - `"requestRegions"`: Responds by sending the available regions via application context.
+    /// - `"healthUpdate"`: Forwards live health data to ``WatchHealthRelay``.
+    /// - `"healthStopped"`: Clears health data when the watch workout ends.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        print("Received message from watch: \(message)")
-
-        // Handle messages from watch (e.g., sync requests)
+        // Handle messages from watch (e.g., sync requests, health updates)
         if let action = message["action"] as? String {
             switch action {
             case "requestRegions":
-                // Send list of available regions
                 sendAvailableRegions()
+            case "healthUpdate":
+                handleHealthUpdate(message)
+            case "healthStopped":
+                Task { @MainActor in
+                    healthRelay?.clearAll()
+                }
             default:
                 break
             }
+        }
+    }
+
+    /// Processes a health data update message from the watch.
+    ///
+    /// Extracts heart rate, SpO2, and UV index values from the message
+    /// dictionary and forwards them to the ``WatchHealthRelay``.
+    ///
+    /// - Parameter message: The message dictionary from the watch.
+    private func handleHealthUpdate(_ message: [String: Any]) {
+        let heartRate = message["heartRate"] as? Double
+        let spO2 = message["spO2"] as? Double
+        let uvIndex = message["uvIndex"] as? Int
+
+        Task { @MainActor in
+            healthRelay?.update(heartRate: heartRate, spO2: spO2, uvIndex: uvIndex)
         }
     }
 

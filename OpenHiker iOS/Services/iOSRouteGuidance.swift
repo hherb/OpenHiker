@@ -17,33 +17,28 @@
 
 import Foundation
 import CoreLocation
-import WatchKit
+import UIKit
 
-// MARK: - Route Guidance
+// MARK: - iOS Route Guidance
 
-/// Tracks the user's position along a planned route and provides turn-by-turn navigation.
+/// Tracks the user's position along a planned route on iPhone, providing
+/// turn-by-turn navigation with UIKit haptic feedback.
 ///
-/// Monitors GPS location updates from ``LocationManager``, determines which turn instruction
-/// is upcoming, calculates distance to the next turn, detects off-route conditions, and
-/// triggers haptic feedback at key moments.
-///
-/// ## Key responsibilities
-/// - Find the nearest point on the route polyline to the user's current GPS position
-/// - Calculate distance along the route to determine progress percentage
-/// - Advance through turn instructions as the user reaches each junction
-/// - Detect off-route conditions (> 50m from polyline) and trigger warning haptics
-/// - Play haptic feedback: approaching turn (100m), at turn (30m), off-route, arrived
+/// Functionally identical to the watchOS ``RouteGuidance`` but uses
+/// `UIImpactFeedbackGenerator` and `UINotificationFeedbackGenerator`
+/// instead of `WKHapticType` for haptic output.
 ///
 /// ## Usage
 /// ```swift
-/// let guidance = RouteGuidance()
+/// let guidance = iOSRouteGuidance()
 /// guidance.start(route: plannedRoute)
 /// // Feed GPS updates:
 /// guidance.updateLocation(newLocation)
 /// // When done:
 /// guidance.stop()
 /// ```
-final class RouteGuidance: ObservableObject {
+@MainActor
+final class iOSRouteGuidance: ObservableObject {
 
     // MARK: - Published State
 
@@ -59,8 +54,7 @@ final class RouteGuidance: ObservableObject {
     /// Remaining distance to the destination in metres.
     @Published var remainingDistance: Double = 0
 
-    /// Whether the user is currently more than ``RouteGuidanceConfig/offRouteThresholdMetres``
-    /// from the nearest point on the route polyline.
+    /// Whether the user is currently more than the off-route threshold from the route.
     @Published var isOffRoute: Bool = false
 
     /// Whether active navigation is in progress.
@@ -81,12 +75,15 @@ final class RouteGuidance: ObservableObject {
     private var atTurnHapticFired: Bool = false
 
     /// Precomputed cumulative distances along the route polyline at each coordinate index.
-    ///
-    /// `cumulativeDistances[i]` is the distance from the start to coordinate `i`.
     private var cumulativeDistances: [Double] = []
 
     /// Total length of the route polyline in metres.
     private var totalRouteDistance: Double = 0
+
+    /// Haptic feedback generators for iPhone.
+    private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
+    private let heavyImpactGenerator = UIImpactFeedbackGenerator(style: .heavy)
+    private let notificationGenerator = UINotificationFeedbackGenerator()
 
     // MARK: - Public API
 
@@ -106,12 +103,15 @@ final class RouteGuidance: ObservableObject {
         approachingHapticFired = false
         atTurnHapticFired = false
 
-        // Precompute cumulative distances for the polyline
         precomputeCumulativeDistances(route.coordinates)
 
-        // Set initial instruction
+        // Prepare haptic generators for low-latency feedback
+        impactGenerator.prepare()
+        heavyImpactGenerator.prepare()
+        notificationGenerator.prepare()
+
+        // Set initial instruction (skip the "Start" instruction)
         if !route.turnInstructions.isEmpty {
-            // Start with the second instruction (skip the "Start" instruction)
             if route.turnInstructions.count > 1 {
                 currentInstructionIndex = 1
                 currentInstruction = route.turnInstructions[1]
@@ -120,7 +120,7 @@ final class RouteGuidance: ObservableObject {
             }
         }
 
-        print("Route guidance started: \(route.name) (\(route.turnInstructions.count) instructions)")
+        print("iOS route guidance started: \(route.name) (\(route.turnInstructions.count) instructions)")
     }
 
     /// Stops active navigation and clears all guidance state.
@@ -136,7 +136,7 @@ final class RouteGuidance: ObservableObject {
         cumulativeDistances = []
         totalRouteDistance = 0
 
-        print("Route guidance stopped")
+        print("iOS route guidance stopped")
     }
 
     /// Processes a new GPS location update during active navigation.
@@ -188,15 +188,11 @@ final class RouteGuidance: ObservableObject {
 
     /// Finds the closest point on a polyline to a given coordinate.
     ///
-    /// For each segment of the polyline, projects the coordinate onto the segment
-    /// and finds the minimum distance. Returns the closest point, the segment index,
-    /// and the distance along the polyline from the start to that point.
-    ///
     /// - Parameters:
     ///   - coordinate: The user's current position.
     ///   - route: The polyline coordinates.
     /// - Returns: A tuple of (closest point, segment index, distance along route).
-    func closestPointOnRoute(
+    private func closestPointOnRoute(
         from coordinate: CLLocationCoordinate2D,
         route: [CLLocationCoordinate2D]
     ) -> (point: CLLocationCoordinate2D, segment: Int, distanceAlong: Double) {
@@ -230,7 +226,6 @@ final class RouteGuidance: ObservableObject {
                 bestPoint = projected.point
                 bestSegment = i
 
-                // Distance along = distance to segment start + fraction of segment
                 let segLength = cumulativeDistanceForSegment(i)
                 bestDistanceAlong = (cumulativeDistances.count > i ? cumulativeDistances[i] : 0)
                     + projected.fraction * segLength
@@ -243,8 +238,6 @@ final class RouteGuidance: ObservableObject {
     // MARK: - Private Helpers
 
     /// Precomputes cumulative distances along the route polyline.
-    ///
-    /// - Parameter coordinates: The route polyline coordinates.
     private func precomputeCumulativeDistances(_ coordinates: [CLLocationCoordinate2D]) {
         cumulativeDistances = [0]
         var cumulative: Double = 0
@@ -262,29 +255,22 @@ final class RouteGuidance: ObservableObject {
     }
 
     /// Returns the length of a single polyline segment.
-    ///
-    /// - Parameter index: The segment index (0-based, from coordinate[index] to coordinate[index+1]).
-    /// - Returns: The segment length in metres.
     private func cumulativeDistanceForSegment(_ index: Int) -> Double {
         guard index + 1 < cumulativeDistances.count else { return 0 }
         return cumulativeDistances[index + 1] - cumulativeDistances[index]
     }
 
-    /// Projects a point onto a line segment, returning the closest point and its fraction along the segment.
+    /// Projects a point onto a line segment, returning the closest point and its fraction.
     ///
-    /// Uses a simplified planar projection (adequate for short hiking distances).
-    ///
-    /// - Parameters:
-    ///   - point: The coordinate to project.
-    ///   - segStart: The segment start coordinate.
-    ///   - segEnd: The segment end coordinate.
-    /// - Returns: The projected point and the fraction (0-1) along the segment.
+    /// Uses a planar (Euclidean) approximation treating latitude/longitude as Cartesian
+    /// coordinates. This is accurate enough for hiking-scale segments (tens of metres)
+    /// at non-polar latitudes, but would need a proper geodesic projection for segments
+    /// spanning many kilometres or near the poles.
     private func projectPointOntoSegment(
         point: CLLocationCoordinate2D,
         segStart: CLLocationCoordinate2D,
         segEnd: CLLocationCoordinate2D
     ) -> (point: CLLocationCoordinate2D, fraction: Double) {
-        // Convert to a local planar coordinate system for projection
         let dx = segEnd.longitude - segStart.longitude
         let dy = segEnd.latitude - segStart.latitude
         let px = point.longitude - segStart.longitude
@@ -296,7 +282,6 @@ final class RouteGuidance: ObservableObject {
             return (point: segStart, fraction: 0)
         }
 
-        // Fraction along the segment (clamped to 0-1)
         let t = max(0, min(1, (px * dx + py * dy) / segLengthSquared))
 
         let projectedLat = segStart.latitude + t * dy
@@ -309,47 +294,35 @@ final class RouteGuidance: ObservableObject {
     }
 
     /// Updates the off-route flag and triggers/clears haptic feedback.
-    ///
-    /// - Parameter distanceFromRoute: Distance from the user to the nearest point on the route.
     private func updateOffRouteStatus(distanceFromRoute: Double) {
         if distanceFromRoute > RouteGuidanceConfig.offRouteThresholdMetres {
             if !isOffRoute {
                 isOffRoute = true
-                playHaptic(.failure)
-                print("Off route! Distance from route: \(Int(distanceFromRoute))m")
+                notificationGenerator.notificationOccurred(.error)
+                print("iOS: Off route! Distance: \(Int(distanceFromRoute))m")
             }
         } else if distanceFromRoute < RouteGuidanceConfig.offRouteClearThresholdMetres {
             if isOffRoute {
                 isOffRoute = false
-                print("Back on route")
+                print("iOS: Back on route")
             }
         }
     }
 
     /// Advances the current turn instruction based on the user's distance along the route.
-    ///
-    /// When the user passes a turn point (within ``RouteGuidanceConfig/atTurnDistanceMetres``),
-    /// the guidance advances to the next instruction.
-    ///
-    /// - Parameters:
-    ///   - distanceAlongRoute: The user's current distance along the route polyline.
-    ///   - route: The active planned route.
     private func updateCurrentInstruction(distanceAlongRoute: Double, route: PlannedRoute) {
         let instructions = route.turnInstructions
         guard currentInstructionIndex < instructions.count else { return }
 
         let current = instructions[currentInstructionIndex]
 
-        // Check if user has passed the current instruction point
         if distanceAlongRoute >= current.cumulativeDistance - RouteGuidanceConfig.atTurnDistanceMetres {
-            // Advance to next instruction
             if currentInstructionIndex + 1 < instructions.count {
                 currentInstructionIndex += 1
                 currentInstruction = instructions[currentInstructionIndex]
                 approachingHapticFired = false
                 atTurnHapticFired = false
             } else {
-                // Reached the last instruction (arrive)
                 if distanceAlongRoute >= totalRouteDistance - RouteGuidanceConfig.arrivedDistanceMetres {
                     handleArrival()
                 }
@@ -358,8 +331,6 @@ final class RouteGuidance: ObservableObject {
     }
 
     /// Checks whether haptic feedback should be triggered based on distance to next turn.
-    ///
-    /// - Parameter distanceAlongRoute: The user's current distance along the route polyline.
     private func checkHapticTriggers(distanceAlongRoute: Double) {
         guard let instruction = currentInstruction else { return }
 
@@ -370,7 +341,7 @@ final class RouteGuidance: ObservableObject {
             && distToTurn > RouteGuidanceConfig.atTurnDistanceMetres
             && !approachingHapticFired {
             approachingHapticFired = true
-            playHaptic(.click)
+            impactGenerator.impactOccurred()
         }
 
         // At turn (30m)
@@ -382,36 +353,26 @@ final class RouteGuidance: ObservableObject {
 
     /// Handles arrival at the destination.
     private func handleArrival() {
-        playHaptic(.success)
-        print("Arrived at destination!")
-        // Don't auto-stop — let the user dismiss manually
-    }
-
-    /// Plays a haptic feedback pattern on the Apple Watch.
-    ///
-    /// - Parameter type: The ``WKHapticType`` to play.
-    private func playHaptic(_ type: WKHapticType) {
-        WKInterfaceDevice.current().play(type)
+        notificationGenerator.notificationOccurred(.success)
+        print("iOS: Arrived at destination!")
     }
 
     /// Plays a direction-appropriate haptic for a turn.
     ///
-    /// Uses `.directionUp` for right turns and `.directionDown` for left turns,
-    /// providing intuitive physical feedback.
+    /// Uses notification feedback for important turns and impact feedback
+    /// for minor direction changes.
     ///
     /// - Parameter direction: The ``TurnDirection`` of the upcoming turn.
     private func playDirectionHaptic(_ direction: TurnDirection) {
         switch direction {
-        case .left, .slightLeft, .sharpLeft:
-            playHaptic(.directionDown)
-        case .right, .slightRight, .sharpRight:
-            playHaptic(.directionUp)
+        case .left, .right, .sharpLeft, .sharpRight:
+            heavyImpactGenerator.impactOccurred()
         case .uTurn:
-            playHaptic(.failure)
+            notificationGenerator.notificationOccurred(.warning)
         case .arrive:
-            playHaptic(.success)
+            notificationGenerator.notificationOccurred(.success)
         default:
-            playHaptic(.click)
+            impactGenerator.impactOccurred()
         }
     }
 }

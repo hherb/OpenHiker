@@ -63,6 +63,14 @@
 		1A0000010000000000000051 /* PeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000051 /* PeerSendView.swift */; };
 		1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000052 /* DirectionsRequestHandler.swift */; };
 		1A0000010000000000000053 /* directions_coverage.geojson in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000053 /* directions_coverage.geojson */; };
+		1A0000010000000000000054 /* iOSLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000054 /* iOSLocationManager.swift */; };
+		1A0000010000000000000055 /* iOSRouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000055 /* iOSRouteGuidance.swift */; };
+		1A0000010000000000000056 /* WatchHealthRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000056 /* WatchHealthRelay.swift */; };
+		1A0000010000000000000057 /* iOSNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000057 /* iOSNavigationView.swift */; };
+		1A0000010000000000000058 /* iOSNavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000058 /* iOSNavigationOverlay.swift */; };
+		1A0000010000000000000059 /* iOSHikeStatsBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000059 /* iOSHikeStatsBar.swift */; };
+		1A0000010000000000000060 /* UVCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000060 /* UVCategory.swift */; };
+		1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
 		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
 		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
 		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
@@ -106,6 +114,8 @@
 		1B0000010000000000000053 /* BatteryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000019 /* BatteryMonitor.swift */; };
 		1B0000010000000000000054 /* TrackRecoveryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001A /* TrackRecoveryManager.swift */; };
 		1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001B /* LowBatteryTrackingView.swift */; };
+		1B0000010000000000000060 /* UVCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000060 /* UVCategory.swift */; };
+		1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -155,6 +165,9 @@
 		1C000001000000000000002F /* MacAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000012 /* MacAssets.xcassets */; };
 		1C0000010000000000000030 /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
 		1C0000010000000000000031 /* MacPeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000013 /* MacPeerSendView.swift */; };
+		1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000001 /* WatchHealthRelayTests.swift */; };
+		1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */; };
+		1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000003 /* iOSLocationManagerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -164,6 +177,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 6B0000010000000000000001;
 			remoteInfo = "OpenHiker Watch App";
+		};
+		CA0000010000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A0000010000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6A0000010000000000000001;
+			remoteInfo = OpenHiker;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -238,6 +258,14 @@
 		2A0000010000000000000051 /* PeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSendView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000052 /* DirectionsRequestHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsRequestHandler.swift; sourceTree = "<group>"; };
 		2A0000010000000000000053 /* directions_coverage.geojson */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = directions_coverage.geojson; sourceTree = "<group>"; };
+		2A0000010000000000000054 /* iOSLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSLocationManager.swift; sourceTree = "<group>"; };
+		2A0000010000000000000055 /* iOSRouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSRouteGuidance.swift; sourceTree = "<group>"; };
+		2A0000010000000000000056 /* WatchHealthRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHealthRelay.swift; sourceTree = "<group>"; };
+		2A0000010000000000000057 /* iOSNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSNavigationView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000058 /* iOSNavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSNavigationOverlay.swift; sourceTree = "<group>"; };
+		2A0000010000000000000059 /* iOSHikeStatsBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSHikeStatsBar.swift; sourceTree = "<group>"; };
+		2A0000010000000000000060 /* UVCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVCategory.swift; sourceTree = "<group>"; };
+		2A0000010000000000000061 /* RouteGuidanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidanceConfig.swift; sourceTree = "<group>"; };
 		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
 		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
@@ -278,9 +306,13 @@
 		2C0000010000000000000011 /* MacTrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrailMapView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000012 /* MacAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MacAssets.xcassets; sourceTree = "<group>"; };
 		2C0000010000000000000013 /* MacPeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPeerSendView.swift; sourceTree = "<group>"; };
+		2D0000010000000000000001 /* WatchHealthRelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHealthRelayTests.swift; sourceTree = "<group>"; };
+		2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSRouteGuidanceTests.swift; sourceTree = "<group>"; };
+		2D0000010000000000000003 /* iOSLocationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSLocationManagerTests.swift; sourceTree = "<group>"; };
 		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3D0000010000000000000001 /* OpenHikerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenHikerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000010000000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		F10000010000000000000002 /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -309,6 +341,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4D0000010000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -319,6 +358,7 @@
 				5B0000010000000000000002 /* OpenHiker watchOS */,
 				5D0000010000000000000001 /* OpenHiker macOS */,
 				5C0000010000000000000001 /* Shared */,
+				5E0000010000000000000001 /* OpenHikerTests */,
 				5A0000010000000000000003 /* Products */,
 				6F80C1F02F38392800665F1F /* Recovered References */,
 			);
@@ -342,6 +382,7 @@
 				3A0000010000000000000001 /* OpenHiker.app */,
 				3B0000010000000000000001 /* OpenHiker Watch App.app */,
 				3C0000010000000000000001 /* OpenHiker macOS.app */,
+				3D0000010000000000000001 /* OpenHikerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -376,6 +417,9 @@
 				2A000001000000000000004E /* RoutePlanningMapView.swift */,
 				2A0000010000000000000050 /* PeerReceiveView.swift */,
 				2A0000010000000000000051 /* PeerSendView.swift */,
+				2A0000010000000000000057 /* iOSNavigationView.swift */,
+				2A0000010000000000000058 /* iOSNavigationOverlay.swift */,
+				2A0000010000000000000059 /* iOSHikeStatsBar.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -393,6 +437,9 @@
 				2A0000010000000000000037 /* OSMDataDownloader.swift */,
 				2A0000010000000000000048 /* PDFExporter.swift */,
 				2A0000010000000000000052 /* DirectionsRequestHandler.swift */,
+				2A0000010000000000000054 /* iOSLocationManager.swift */,
+				2A0000010000000000000055 /* iOSRouteGuidance.swift */,
+				2A0000010000000000000056 /* WatchHealthRelay.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -490,6 +537,8 @@
 				2A0000010000000000000039 /* PlannedRoute.swift */,
 				2A0000010000000000000040 /* ActivityType.swift */,
 				2A0000010000000000000041 /* SharedRoute.swift */,
+				2A0000010000000000000060 /* UVCategory.swift */,
+				2A0000010000000000000061 /* RouteGuidanceConfig.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -586,6 +635,16 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		5E0000010000000000000001 /* OpenHikerTests */ = {
+			isa = PBXGroup;
+			children = (
+				2D0000010000000000000001 /* WatchHealthRelayTests.swift */,
+				2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */,
+				2D0000010000000000000003 /* iOSLocationManagerTests.swift */,
+			);
+			path = OpenHikerTests;
+			sourceTree = "<group>";
+		};
 		6F80C1F02F38392800665F1F /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
@@ -651,6 +710,23 @@
 			productReference = 3C0000010000000000000001 /* OpenHiker macOS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		6D0000010000000000000001 /* OpenHikerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7D0000010000000000000001 /* Build configuration list for PBXNativeTarget "OpenHikerTests" */;
+			buildPhases = (
+				6D0000010000000000000002 /* Sources */,
+				4D0000010000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EA0000010000000000000002 /* PBXTargetDependency */,
+			);
+			name = OpenHikerTests;
+			productName = OpenHikerTests;
+			productReference = 3D0000010000000000000001 /* OpenHikerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -670,6 +746,10 @@
 					6C0000010000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					6D0000010000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = 6A0000010000000000000001;
+					};
 				};
 			};
 			buildConfigurationList = 8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */;
@@ -688,6 +768,7 @@
 				6A0000010000000000000001 /* OpenHiker */,
 				6B0000010000000000000001 /* OpenHiker Watch App */,
 				6C0000010000000000000001 /* OpenHiker macOS */,
+				6D0000010000000000000001 /* OpenHikerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -778,6 +859,14 @@
 				1A0000010000000000000050 /* PeerReceiveView.swift in Sources */,
 				1A0000010000000000000051 /* PeerSendView.swift in Sources */,
 				1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */,
+				1A0000010000000000000054 /* iOSLocationManager.swift in Sources */,
+				1A0000010000000000000055 /* iOSRouteGuidance.swift in Sources */,
+				1A0000010000000000000056 /* WatchHealthRelay.swift in Sources */,
+				1A0000010000000000000057 /* iOSNavigationView.swift in Sources */,
+				1A0000010000000000000058 /* iOSNavigationOverlay.swift in Sources */,
+				1A0000010000000000000059 /* iOSHikeStatsBar.swift in Sources */,
+				1A0000010000000000000060 /* UVCategory.swift in Sources */,
+				1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -825,6 +914,8 @@
 				1B0000010000000000000053 /* BatteryMonitor.swift in Sources */,
 				1B0000010000000000000054 /* TrackRecoveryManager.swift in Sources */,
 				1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */,
+				1B0000010000000000000060 /* UVCategory.swift in Sources */,
+				1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -883,6 +974,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6D0000010000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */,
+				1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */,
+				1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -890,6 +991,11 @@
 			isa = PBXTargetDependency;
 			target = 6B0000010000000000000001 /* OpenHiker Watch App */;
 			targetProxy = CA0000010000000000000001 /* PBXContainerItemProxy */;
+		};
+		EA0000010000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6A0000010000000000000001 /* OpenHiker */;
+			targetProxy = CA0000010000000000000002 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1209,6 +1315,57 @@
 			};
 			name = Release;
 		};
+		9D0000010000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X5DWXB4283;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenHiker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenHiker";
+			};
+			name = Debug;
+		};
+		9D0000010000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X5DWXB4283;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenHiker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenHiker";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1244,6 +1401,15 @@
 			buildConfigurations = (
 				9A0000010000000000000001 /* Debug */,
 				9A0000010000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7D0000010000000000000001 /* Build configuration list for PBXNativeTarget "OpenHikerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9D0000010000000000000001 /* Debug */,
+				9D0000010000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
