@@ -35,6 +35,12 @@ struct MacRegionsListView: View {
     /// Region to send via MultipeerConnectivity (triggers the send sheet).
     @State private var regionToSend: Region?
 
+    /// Region selected for route planning (triggers the planning sheet).
+    @State private var regionForPlanning: Region?
+
+    /// Whether the "no routing data" alert is shown.
+    @State private var showNoRoutingAlert = false
+
     var body: some View {
         Group {
             if storage.regions.isEmpty {
@@ -48,7 +54,21 @@ struct MacRegionsListView: View {
                     ForEach(storage.regions) { region in
                         regionRow(region)
                             .tag(region)
+                            .onTapGesture(count: 2) {
+                                if region.hasRoutingData {
+                                    regionForPlanning = region
+                                } else {
+                                    showNoRoutingAlert = true
+                                }
+                            }
                             .contextMenu {
+                                if region.hasRoutingData {
+                                    Button {
+                                        regionForPlanning = region
+                                    } label: {
+                                        Label("Plan Route", systemImage: "arrow.triangle.turn.up.right.diamond")
+                                    }
+                                }
                                 Button("Send to iPhone") {
                                     regionToSend = region
                                 }
@@ -75,6 +95,17 @@ struct MacRegionsListView: View {
         }
         .onAppear {
             storage.loadRegions()
+        }
+        .alert("No Routing Data", isPresented: $showNoRoutingAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Re-download this region with routing enabled to plan routes on it.")
+        }
+        .sheet(item: $regionForPlanning) { region in
+            MacRoutePlanningView(region: region, onDismiss: {
+                regionForPlanning = nil
+            })
+            .frame(minWidth: 800, minHeight: 600)
         }
         .sheet(item: $regionToSend) { region in
             MacPeerSendView(region: region)

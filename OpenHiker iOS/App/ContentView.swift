@@ -413,6 +413,12 @@ struct RegionsListView: View {
     /// Region to send via peer-to-peer transfer (triggers the send sheet).
     @State private var regionToSend: Region?
 
+    /// Region selected for route planning (triggers full-screen cover).
+    @State private var regionForPlanning: Region?
+
+    /// Whether the "no routing data" alert is shown.
+    @State private var showNoRoutingAlert = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -425,10 +431,26 @@ struct RegionsListView: View {
                 } else {
                     List {
                         ForEach(storage.regions) { region in
-                            RegionRowView(region: region, onTransfer: {
-                                transferToWatch(region)
-                            })
+                            Button {
+                                if region.hasRoutingData {
+                                    regionForPlanning = region
+                                } else {
+                                    showNoRoutingAlert = true
+                                }
+                            } label: {
+                                RegionRowView(region: region, onTransfer: {
+                                    transferToWatch(region)
+                                })
+                            }
+                            .buttonStyle(.plain)
                             .contextMenu {
+                                if region.hasRoutingData {
+                                    Button {
+                                        regionForPlanning = region
+                                    } label: {
+                                        Label("Plan Route", systemImage: "arrow.triangle.turn.up.right.diamond")
+                                    }
+                                }
                                 Button {
                                     regionToSend = region
                                 } label: {
@@ -454,9 +476,17 @@ struct RegionsListView: View {
                     EditButton()
                 }
             }
+            .alert("No Routing Data", isPresented: $showNoRoutingAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Re-download this region with routing enabled to plan routes on it.")
+            }
         }
         .onAppear {
             storage.loadRegions()
+        }
+        .fullScreenCover(item: $regionForPlanning) { region in
+            RoutePlanningView(region: region)
         }
         .sheet(isPresented: $showingPeerReceive) {
             PeerReceiveView()
@@ -507,8 +537,16 @@ struct RegionRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(region.name)
-                    .font(.headline)
+                HStack {
+                    Text(region.name)
+                        .font(.headline)
+                    Spacer()
+                    if region.hasRoutingData {
+                        Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                }
 
                 HStack {
                     Label(region.fileSizeFormatted, systemImage: "externaldrive")
