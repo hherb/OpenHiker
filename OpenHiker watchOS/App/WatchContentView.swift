@@ -76,6 +76,15 @@ struct WatchPlannedRoutesView: View {
     /// Callback invoked when the user taps a route to start navigation.
     let onStartNavigation: (PlannedRoute) -> Void
 
+    /// Route currently being renamed (triggers the rename sheet).
+    @State private var routeToRename: PlannedRoute?
+
+    /// Text field binding for the rename sheet.
+    @State private var renameText = ""
+
+    /// Whether the rename sheet is displayed.
+    @State private var showRenameSheet = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -99,6 +108,17 @@ struct WatchPlannedRoutesView: View {
             .navigationTitle("Routes")
             .onAppear {
                 routeStore.loadAll()
+            }
+            .sheet(isPresented: $showRenameSheet) {
+                RenameSheet(title: "Rename Route", name: $renameText) { newName in
+                    if var route = routeToRename {
+                        route.name = newName
+                        route.modifiedAt = Date()
+                        try? PlannedRouteStore.shared.save(route)
+                        routeStore.loadAll()
+                    }
+                    routeToRename = nil
+                }
             }
         }
     }
@@ -132,6 +152,16 @@ struct WatchPlannedRoutesView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     }
+                }
+                .swipeActions(edge: .trailing) {
+                    Button {
+                        routeToRename = route
+                        renameText = route.name
+                        showRenameSheet = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(.blue)
                 }
             }
             .onDelete(perform: deleteRoutes)
@@ -170,6 +200,15 @@ struct WatchPlannedRoutesView: View {
 struct RegionsListView: View {
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
 
+    /// Region currently being renamed (triggers the rename sheet).
+    @State private var regionToRename: RegionMetadata?
+
+    /// Text field binding for the rename sheet.
+    @State private var renameText = ""
+
+    /// Whether the rename sheet is displayed.
+    @State private var showRenameSheet = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -187,6 +226,16 @@ struct RegionsListView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                regionToRename = region
+                                renameText = region.name
+                                showRenameSheet = true
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                     }
                 }
             }
@@ -197,6 +246,14 @@ struct RegionsListView: View {
             let savedRegions = connectivityManager.loadAllRegionMetadata()
             if connectivityManager.availableRegions.isEmpty && !savedRegions.isEmpty {
                 connectivityManager.availableRegions = savedRegions
+            }
+        }
+        .sheet(isPresented: $showRenameSheet) {
+            RenameSheet(title: "Rename Region", name: $renameText) { newName in
+                if let region = regionToRename {
+                    connectivityManager.renameRegion(region.id, to: newName)
+                }
+                regionToRename = nil
             }
         }
     }

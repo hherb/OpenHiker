@@ -169,6 +169,15 @@ struct PlannedRoutesListView: View {
     /// Whether the region picker is displayed.
     @State private var showingRegionPicker = false
 
+    /// Route currently being renamed (triggers the rename alert).
+    @State private var routeToRename: PlannedRoute?
+
+    /// Text field binding for the rename alert.
+    @State private var routeRenameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRouteRenameAlert = false
+
     /// Regions that have routing data available.
     private var routableRegions: [Region] {
         regionStorage.regions.filter { $0.hasRoutingData }
@@ -211,6 +220,24 @@ struct PlannedRoutesListView: View {
             .sheet(isPresented: $showingRegionPicker) {
                 regionPickerSheet
             }
+            .alert("Rename Route", isPresented: $showRouteRenameAlert) {
+                TextField("Route name", text: $routeRenameText)
+                Button("Cancel", role: .cancel) {
+                    routeToRename = nil
+                }
+                Button("Rename") {
+                    if var route = routeToRename,
+                       !routeRenameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        route.name = routeRenameText.trimmingCharacters(in: .whitespaces)
+                        route.modifiedAt = Date()
+                        try? PlannedRouteStore.shared.save(route)
+                        routeStore.loadAll()
+                    }
+                    routeToRename = nil
+                }
+            } message: {
+                Text("Enter a new name for this route.")
+            }
         }
     }
 
@@ -218,8 +245,19 @@ struct PlannedRoutesListView: View {
     private var routesList: some View {
         List {
             ForEach(routeStore.routes) { route in
-                NavigationLink(destination: RouteDetailView(route: route)) {
+                NavigationLink(destination: RouteDetailView(route: route, onUpdate: {
+                    routeStore.loadAll()
+                })) {
                     plannedRouteRow(route)
+                }
+                .contextMenu {
+                    Button {
+                        routeToRename = route
+                        routeRenameText = route.name
+                        showRouteRenameAlert = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
                 }
             }
             .onDelete(perform: deleteRoutes)
@@ -419,6 +457,15 @@ struct RegionsListView: View {
     /// Whether the "no routing data" alert is shown.
     @State private var showNoRoutingAlert = false
 
+    /// Region currently being renamed (triggers the rename alert).
+    @State private var regionToRename: Region?
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -444,6 +491,13 @@ struct RegionsListView: View {
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
+                                Button {
+                                    regionToRename = region
+                                    renameText = region.name
+                                    showRenameAlert = true
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
                                 if region.hasRoutingData {
                                     Button {
                                         regionForPlanning = region
@@ -493,6 +547,22 @@ struct RegionsListView: View {
         }
         .sheet(item: $regionToSend) { region in
             PeerSendView(region: region)
+        }
+        .alert("Rename Region", isPresented: $showRenameAlert) {
+            TextField("Region name", text: $renameText)
+            Button("Cancel", role: .cancel) {
+                regionToRename = nil
+            }
+            Button("Rename") {
+                if let region = regionToRename,
+                   !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    storage.renameRegion(region, to: renameText.trimmingCharacters(in: .whitespaces))
+                    watchConnectivity.sendAvailableRegions()
+                }
+                regionToRename = nil
+            }
+        } message: {
+            Text("Enter a new name for this region.")
         }
     }
 

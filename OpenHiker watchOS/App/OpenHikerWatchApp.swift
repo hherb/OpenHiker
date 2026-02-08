@@ -479,6 +479,27 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
         }
     }
 
+    /// Renames a region in the local metadata store and updates the in-memory list.
+    ///
+    /// Loads all metadata from disk, replaces the matching entry with the new name,
+    /// writes the updated array back, and refreshes ``availableRegions``.
+    ///
+    /// - Parameters:
+    ///   - regionId: The UUID of the region to rename.
+    ///   - newName: The new name for the region.
+    func renameRegion(_ regionId: UUID, to newName: String) {
+        var allMetadata = loadAllRegionMetadata()
+        guard let index = allMetadata.firstIndex(where: { $0.id == regionId }) else { return }
+        var updated = allMetadata[index]
+        updated.name = newName
+        saveRegionMetadata(updated)
+        DispatchQueue.main.async {
+            if let idx = self.availableRegions.firstIndex(where: { $0.id == regionId }) {
+                self.availableRegions[idx] = updated
+            }
+        }
+    }
+
     /// Loads all saved region metadata from the JSON file on disk.
     ///
     /// - Returns: An array of ``RegionMetadata`` objects, or an empty array if

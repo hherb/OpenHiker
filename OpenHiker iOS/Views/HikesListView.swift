@@ -43,6 +43,15 @@ struct HikesListView: View {
     /// The route pending deletion (set before showing confirmation dialog).
     @State private var routeToDelete: SavedRoute?
 
+    /// Route currently being renamed (triggers the rename alert).
+    @State private var routeToRename: SavedRoute?
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -74,6 +83,21 @@ struct HikesListView: View {
                                 loadRoutes()
                             })) {
                                 HikeRowView(route: route, useMetric: useMetricUnits)
+                            }
+                            .contextMenu {
+                                Button {
+                                    routeToRename = route
+                                    renameText = route.name
+                                    showRenameAlert = true
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    routeToDelete = route
+                                    showDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                         .onDelete(perform: confirmDelete)
@@ -112,6 +136,29 @@ struct HikesListView: View {
                 if let route = routeToDelete {
                     Text("Are you sure you want to delete \"\(route.name)\"? This cannot be undone.")
                 }
+            }
+            .alert("Rename Hike", isPresented: $showRenameAlert) {
+                TextField("Hike name", text: $renameText)
+                Button("Cancel", role: .cancel) {
+                    routeToRename = nil
+                }
+                Button("Rename") {
+                    if var route = routeToRename,
+                       !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        route.name = renameText.trimmingCharacters(in: .whitespaces)
+                        route.modifiedAt = Date()
+                        do {
+                            try RouteStore.shared.update(route)
+                            loadRoutes()
+                        } catch {
+                            errorMessage = "Could not rename hike: \(error.localizedDescription)"
+                            showError = true
+                        }
+                    }
+                    routeToRename = nil
+                }
+            } message: {
+                Text("Enter a new name for this hike.")
             }
         }
     }

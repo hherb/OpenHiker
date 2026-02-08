@@ -41,6 +41,15 @@ struct MacHikesView: View {
     /// The error message for the alert.
     @State private var errorMessage = ""
 
+    /// Hike currently being renamed (triggers the rename alert).
+    @State private var hikeToRename: SavedRoute?
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     var body: some View {
         NavigationSplitView {
             hikeList
@@ -49,6 +58,29 @@ struct MacHikesView: View {
         }
         .onAppear {
             loadHikes()
+        }
+        .alert("Rename Hike", isPresented: $showRenameAlert) {
+            TextField("Hike name", text: $renameText)
+            Button("Cancel", role: .cancel) {
+                hikeToRename = nil
+            }
+            Button("Rename") {
+                if var hike = hikeToRename,
+                   !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    hike.name = renameText.trimmingCharacters(in: .whitespaces)
+                    hike.modifiedAt = Date()
+                    do {
+                        try RouteStore.shared.update(hike)
+                        loadHikes()
+                    } catch {
+                        errorMessage = "Could not rename hike: \(error.localizedDescription)"
+                        showError = true
+                    }
+                }
+                hikeToRename = nil
+            }
+        } message: {
+            Text("Enter a new name for this hike.")
         }
     }
 
@@ -67,6 +99,24 @@ struct MacHikesView: View {
                 List(hikes, selection: $selectedHikeID) { hike in
                     hikeRow(hike)
                         .tag(hike.id)
+                        .contextMenu {
+                            Button {
+                                hikeToRename = hike
+                                renameText = hike.name
+                                showRenameAlert = true
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            Button("Delete", role: .destructive) {
+                                do {
+                                    try RouteStore.shared.delete(id: hike.id)
+                                    loadHikes()
+                                } catch {
+                                    errorMessage = "Could not delete hike: \(error.localizedDescription)"
+                                    showError = true
+                                }
+                            }
+                        }
                 }
             }
         }

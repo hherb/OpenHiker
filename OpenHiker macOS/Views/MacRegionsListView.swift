@@ -41,6 +41,15 @@ struct MacRegionsListView: View {
     /// Whether the "no routing data" alert is shown.
     @State private var showNoRoutingAlert = false
 
+    /// Region currently being renamed (triggers the rename alert).
+    @State private var regionToRename: Region?
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     var body: some View {
         Group {
             if storage.regions.isEmpty {
@@ -62,6 +71,13 @@ struct MacRegionsListView: View {
                                 }
                             }
                             .contextMenu {
+                                Button {
+                                    regionToRename = region
+                                    renameText = region.name
+                                    showRenameAlert = true
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
                                 if region.hasRoutingData {
                                     Button {
                                         regionForPlanning = region
@@ -109,6 +125,21 @@ struct MacRegionsListView: View {
         }
         .sheet(item: $regionToSend) { region in
             MacPeerSendView(region: region)
+        }
+        .alert("Rename Region", isPresented: $showRenameAlert) {
+            TextField("Region name", text: $renameText)
+            Button("Cancel", role: .cancel) {
+                regionToRename = nil
+            }
+            Button("Rename") {
+                if let region = regionToRename,
+                   !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    storage.renameRegion(region, to: renameText.trimmingCharacters(in: .whitespaces))
+                }
+                regionToRename = nil
+            }
+        } message: {
+            Text("Enter a new name for this region.")
         }
     }
 

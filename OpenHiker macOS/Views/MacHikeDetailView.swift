@@ -58,6 +58,12 @@ struct MacHikeDetailView: View {
     /// The error message for the alert.
     @State private var errorMessage = ""
 
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -133,6 +139,15 @@ struct MacHikeDetailView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Menu {
+                    Button {
+                        renameText = route.name
+                        showRenameAlert = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+
+                    Divider()
+
                     ForEach(MacExportFormat.allCases) { format in
                         Button {
                             exportFormat = format
@@ -170,6 +185,25 @@ struct MacHikeDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage)
+        }
+        .alert("Rename Hike", isPresented: $showRenameAlert) {
+            TextField("Hike name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return }
+                route.name = trimmed
+                route.modifiedAt = Date()
+                do {
+                    try RouteStore.shared.update(route)
+                    onUpdate()
+                } catch {
+                    errorMessage = "Could not rename hike: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        } message: {
+            Text("Enter a new name for this hike.")
         }
     }
 

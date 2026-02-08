@@ -28,8 +28,10 @@ import CoreLocation
 struct Region: Identifiable, Codable, Sendable, Hashable {
     /// Unique identifier for this region
     let id: UUID
-    /// User-provided name for the region (e.g., "Yosemite Valley")
-    let name: String
+    /// User-provided name for the region (e.g., "Yosemite Valley").
+    ///
+    /// Mutable so the user can rename a region after download.
+    var name: String
     /// Geographic bounding box of the downloaded area
     let boundingBox: BoundingBox
     /// Range of zoom levels included in this download
@@ -248,8 +250,10 @@ struct RegionSelectionRequest: Codable, Sendable {
 struct RegionMetadata: Identifiable, Codable, Sendable {
     /// Unique identifier matching the corresponding `Region` on iOS
     let id: UUID
-    /// User-provided name for the region
-    let name: String
+    /// User-provided name for the region.
+    ///
+    /// Mutable so the user can rename a region after transfer.
+    var name: String
     /// Geographic bounding box of the region
     let boundingBox: BoundingBox
     /// Minimum zoom level available in this region's tiles

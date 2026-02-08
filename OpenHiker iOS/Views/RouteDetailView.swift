@@ -29,8 +29,11 @@ import Charts
 struct RouteDetailView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
 
-    /// The planned route to display.
-    let route: PlannedRoute
+    /// The planned route to display. Mutable so the user can rename.
+    @State private var route: PlannedRoute
+
+    /// Callback invoked when the route is updated (e.g. renamed), so the parent list can refresh.
+    var onUpdate: () -> Void = {}
 
     /// Whether the "sent to watch" confirmation is shown.
     @State private var showSentConfirmation = false
@@ -40,6 +43,22 @@ struct RouteDetailView: View {
 
     /// Whether the error alert is displayed.
     @State private var showError = false
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
+    /// Creates a RouteDetailView for the given route.
+    ///
+    /// - Parameters:
+    ///   - route: The ``PlannedRoute`` to display.
+    ///   - onUpdate: Closure called when the route is modified (defaults to no-op).
+    init(route: PlannedRoute, onUpdate: @escaping () -> Void = {}) {
+        _route = State(initialValue: route)
+        self.onUpdate = onUpdate
+    }
 
     var body: some View {
         ScrollView {
@@ -65,6 +84,16 @@ struct RouteDetailView: View {
         }
         .navigationTitle(route.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    renameText = route.name
+                    showRenameAlert = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+            }
+        }
         .alert("Sent to Watch", isPresented: $showSentConfirmation) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -74,6 +103,20 @@ struct RouteDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "An error occurred.")
+        }
+        .alert("Rename Route", isPresented: $showRenameAlert) {
+            TextField("Route name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return }
+                route.name = trimmed
+                route.modifiedAt = Date()
+                try? PlannedRouteStore.shared.save(route)
+                onUpdate()
+            }
+        } message: {
+            Text("Enter a new name for this route.")
         }
     }
 

@@ -43,6 +43,15 @@ struct MacPlannedRoutesView: View {
     /// Whether the import success alert is shown.
     @State private var showImportSuccess = false
 
+    /// Route currently being renamed (triggers the rename alert).
+    @State private var routeToRename: PlannedRoute?
+
+    /// Text field binding for the rename alert.
+    @State private var renameText = ""
+
+    /// Whether the rename alert is displayed.
+    @State private var showRenameAlert = false
+
     var body: some View {
         Group {
             if let region = selectedPlanningRegion {
@@ -57,6 +66,24 @@ struct MacPlannedRoutesView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("\(importCount) route(s) imported successfully.")
+        }
+        .alert("Rename Route", isPresented: $showRenameAlert) {
+            TextField("Route name", text: $renameText)
+            Button("Cancel", role: .cancel) {
+                routeToRename = nil
+            }
+            Button("Rename") {
+                if var route = routeToRename,
+                   !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    route.name = renameText.trimmingCharacters(in: .whitespaces)
+                    route.modifiedAt = Date()
+                    try? PlannedRouteStore.shared.save(route)
+                    routeStore.loadAll()
+                }
+                routeToRename = nil
+            }
+        } message: {
+            Text("Enter a new name for this route.")
         }
     }
 
@@ -73,6 +100,13 @@ struct MacPlannedRoutesView: View {
                 List(routeStore.routes) { route in
                     routeRow(route)
                         .contextMenu {
+                            Button {
+                                routeToRename = route
+                                renameText = route.name
+                                showRenameAlert = true
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
                             Button("Send to iPhone via iCloud") {
                                 Task {
                                     await CloudSyncManager.shared.performSync()

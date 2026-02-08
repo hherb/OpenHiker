@@ -107,6 +107,22 @@ class RegionStorage: ObservableObject {
         }
     }
 
+    /// Renames a region and persists the change to disk.
+    ///
+    /// Creates a copy of the region with the new name and saves it,
+    /// replacing the existing entry. The caller should also trigger
+    /// ``WatchConnectivityManager/sendAvailableRegions()`` to push
+    /// the updated name to the watch.
+    ///
+    /// - Parameters:
+    ///   - region: The region to rename.
+    ///   - newName: The new name for the region.
+    func renameRegion(_ region: Region, to newName: String) {
+        var updatedRegion = region
+        updatedRegion.name = newName
+        saveRegion(updatedRegion)
+    }
+
     /// Deletes a region and its associated MBTiles file from disk.
     ///
     /// Removes the `.mbtiles` database file from the `regions/` directory, then

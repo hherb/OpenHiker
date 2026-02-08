@@ -539,7 +539,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
     /// Loads all regions from ``RegionStorage``, converts each to a dictionary
     /// representation, and updates the application context so the watch can display
     /// available regions even when the iOS app is not running.
-    private func sendAvailableRegions() {
+    /// Sends the current region list to the watch.
+    ///
+    /// Called internally after transfers and externally after region renames
+    /// so the watch reflects the updated names.
+    func sendAvailableRegions() {
         let storage = RegionStorage.shared
         storage.loadRegions()
 
