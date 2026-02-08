@@ -39,11 +39,11 @@ struct ContentView: View {
     /// The horizontal size class used to switch between iPhone (compact) and iPad (regular) layouts.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    /// The currently selected tab index (0 = Regions, 1 = Downloaded, 2 = Hikes, 3 = Routes, 4 = Community, 5 = Watch).
+    /// The currently selected tab index (0 = Navigate, 1 = Regions, 2 = Downloaded, 3 = Hikes, 4 = Routes, 5 = Community, 6 = Watch).
     @State private var selectedTab = 0
 
     /// The currently selected sidebar section on iPad.
-    @State private var sidebarSelection: SidebarSection? = .regions
+    @State private var sidebarSelection: SidebarSection? = .navigate
 
     var body: some View {
         Group {
@@ -66,7 +66,7 @@ struct ContentView: View {
         if horizontalSizeClass == .regular {
             sidebarSelection = .routes
         } else {
-            selectedTab = 3
+            selectedTab = 4
         }
     }
 
@@ -75,41 +75,47 @@ struct ContentView: View {
     /// The standard iPhone tab-based layout (unchanged from before iPad support was added).
     private var iPhoneLayout: some View {
         TabView(selection: $selectedTab) {
+            iOSNavigationView()
+                .tabItem {
+                    Label("Navigate", systemImage: "location.north.fill")
+                }
+                .tag(0)
+
             RegionSelectorView()
                 .tabItem {
                     Label("Regions", systemImage: "map")
                 }
-                .tag(0)
+                .tag(1)
 
             RegionsListView()
                 .tabItem {
                     Label("Downloaded", systemImage: "arrow.down.circle")
                 }
-                .tag(1)
+                .tag(2)
 
             HikesListView()
                 .tabItem {
                     Label("Hikes", systemImage: "figure.hiking")
                 }
-                .tag(2)
+                .tag(3)
 
-            PlannedRoutesListView(onNavigateToRegions: { selectedTab = 0 })
+            PlannedRoutesListView(onNavigateToRegions: { selectedTab = 1 })
                 .tabItem {
                     Label("Routes", systemImage: "arrow.triangle.turn.up.right.diamond")
                 }
-                .tag(3)
+                .tag(4)
 
             CommunityBrowseView()
                 .tabItem {
                     Label("Community", systemImage: "globe")
                 }
-                .tag(4)
+                .tag(5)
 
             WatchSyncView()
                 .tabItem {
                     Label("Watch", systemImage: "applewatch")
                 }
-                .tag(5)
+                .tag(6)
         }
     }
 
@@ -125,6 +131,10 @@ struct ContentView: View {
             SidebarView(selection: $sidebarSelection)
         } detail: {
             switch sidebarSelection {
+            case .navigate:
+                NavigationStack {
+                    iOSNavigationView()
+                }
             case .regions:
                 NavigationStack {
                     RegionSelectorView()

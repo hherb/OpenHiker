@@ -36,16 +36,29 @@ struct OpenHikerApp: App {
     /// Handles incoming Apple Maps directions requests.
     @StateObject private var directionsHandler = DirectionsRequestHandler.shared
 
+    /// GPS location and heading manager for iPhone navigation.
+    @StateObject private var iOSLocationMgr = iOSLocationManager()
+
+    /// Route guidance engine for iPhone turn-by-turn navigation.
+    @StateObject private var iOSGuidance = iOSRouteGuidance()
+
+    /// Receives live health data relayed from the paired Apple Watch.
+    @StateObject private var healthRelay = WatchHealthRelay()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(watchConnectivity)
                 .environmentObject(directionsHandler)
+                .environmentObject(iOSLocationMgr)
+                .environmentObject(iOSGuidance)
+                .environmentObject(healthRelay)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
                     initializePlannedRouteStore()
                     initializeCloudSync()
+                    watchConnectivity.healthRelay = healthRelay
                 }
                 .onOpenURL { url in
                     handleIncomingURL(url)

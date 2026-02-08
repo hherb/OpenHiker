@@ -63,6 +63,12 @@
 		1A0000010000000000000051 /* PeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000051 /* PeerSendView.swift */; };
 		1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000052 /* DirectionsRequestHandler.swift */; };
 		1A0000010000000000000053 /* directions_coverage.geojson in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000053 /* directions_coverage.geojson */; };
+		1A0000010000000000000054 /* iOSLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000054 /* iOSLocationManager.swift */; };
+		1A0000010000000000000055 /* iOSRouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000055 /* iOSRouteGuidance.swift */; };
+		1A0000010000000000000056 /* WatchHealthRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000056 /* WatchHealthRelay.swift */; };
+		1A0000010000000000000057 /* iOSNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000057 /* iOSNavigationView.swift */; };
+		1A0000010000000000000058 /* iOSNavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000058 /* iOSNavigationOverlay.swift */; };
+		1A0000010000000000000059 /* iOSHikeStatsBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000059 /* iOSHikeStatsBar.swift */; };
 		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
 		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
 		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
@@ -238,6 +244,12 @@
 		2A0000010000000000000051 /* PeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSendView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000052 /* DirectionsRequestHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsRequestHandler.swift; sourceTree = "<group>"; };
 		2A0000010000000000000053 /* directions_coverage.geojson */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = directions_coverage.geojson; sourceTree = "<group>"; };
+		2A0000010000000000000054 /* iOSLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSLocationManager.swift; sourceTree = "<group>"; };
+		2A0000010000000000000055 /* iOSRouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSRouteGuidance.swift; sourceTree = "<group>"; };
+		2A0000010000000000000056 /* WatchHealthRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHealthRelay.swift; sourceTree = "<group>"; };
+		2A0000010000000000000057 /* iOSNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSNavigationView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000058 /* iOSNavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSNavigationOverlay.swift; sourceTree = "<group>"; };
+		2A0000010000000000000059 /* iOSHikeStatsBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSHikeStatsBar.swift; sourceTree = "<group>"; };
 		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
 		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
@@ -376,6 +388,9 @@
 				2A000001000000000000004E /* RoutePlanningMapView.swift */,
 				2A0000010000000000000050 /* PeerReceiveView.swift */,
 				2A0000010000000000000051 /* PeerSendView.swift */,
+				2A0000010000000000000057 /* iOSNavigationView.swift */,
+				2A0000010000000000000058 /* iOSNavigationOverlay.swift */,
+				2A0000010000000000000059 /* iOSHikeStatsBar.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -393,6 +408,9 @@
 				2A0000010000000000000037 /* OSMDataDownloader.swift */,
 				2A0000010000000000000048 /* PDFExporter.swift */,
 				2A0000010000000000000052 /* DirectionsRequestHandler.swift */,
+				2A0000010000000000000054 /* iOSLocationManager.swift */,
+				2A0000010000000000000055 /* iOSRouteGuidance.swift */,
+				2A0000010000000000000056 /* WatchHealthRelay.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -778,6 +796,12 @@
 				1A0000010000000000000050 /* PeerReceiveView.swift in Sources */,
 				1A0000010000000000000051 /* PeerSendView.swift in Sources */,
 				1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */,
+				1A0000010000000000000054 /* iOSLocationManager.swift in Sources */,
+				1A0000010000000000000055 /* iOSRouteGuidance.swift in Sources */,
+				1A0000010000000000000056 /* WatchHealthRelay.swift in Sources */,
+				1A0000010000000000000057 /* iOSNavigationView.swift in Sources */,
+				1A0000010000000000000058 /* iOSNavigationOverlay.swift in Sources */,
+				1A0000010000000000000059 /* iOSHikeStatsBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

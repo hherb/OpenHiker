@@ -86,6 +86,20 @@ struct OpenHikerWatchApp: App {
                     initializePlannedRouteStore()
                     checkForTrackRecovery()
                 }
+                .onReceive(healthKitManager.$currentHeartRate) { _ in
+                    relayHealthDataToPhone()
+                }
+                .onReceive(healthKitManager.$currentSpO2) { _ in
+                    relayHealthDataToPhone()
+                }
+                .onReceive(uvIndexManager.$currentUVIndex) { _ in
+                    relayHealthDataToPhone()
+                }
+                .onReceive(healthKitManager.$workoutActive) { active in
+                    if !active {
+                        connectivityManager.sendHealthStopped()
+                    }
+                }
                 .alert("Recover Track?", isPresented: $showTrackRecoveryAlert) {
                     Button("Recover & Save") {
                         recoverAndSaveTrack()
@@ -102,6 +116,21 @@ struct OpenHikerWatchApp: App {
                     Text(recoveryErrorMessage)
                 }
         }
+    }
+
+    /// Relays the current health data (heart rate, SpO2, UV) to the paired iPhone.
+    ///
+    /// Only sends when the watch has an active workout, ensuring the iPhone only
+    /// receives health data during an active hike. Uses live messaging so stale
+    /// data is not queued.
+    private func relayHealthDataToPhone() {
+        guard healthKitManager.workoutActive else { return }
+
+        connectivityManager.sendHealthUpdate(
+            heartRate: healthKitManager.currentHeartRate,
+            spO2: healthKitManager.currentSpO2,
+            uvIndex: uvIndexManager.currentUVIndex
+        )
     }
 
     /// Opens the shared ``WaypointStore`` database so it's ready for CRUD operations.
@@ -296,6 +325,52 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         userInfo["type"] = "waypoint"
         session.transferUserInfo(userInfo)
         print("Queued waypoint sync to iPhone: \(waypoint.id.uuidString)")
+    }
+
+    // MARK: - Health Data Relay
+
+    /// Sends a live health data update to the paired iPhone via `WCSession.sendMessage()`.
+    ///
+    /// Called periodically when the watch is recording a workout and the iPhone app
+    /// is reachable. The iPhone's ``WatchConnectivityManager`` receives the message
+    /// and forwards it to ``WatchHealthRelay`` for display in the navigation UI.
+    ///
+    /// Uses live messaging (not `transferUserInfo`) because health data is transient
+    /// and should not be queued — stale readings are not useful.
+    ///
+    /// - Parameters:
+    ///   - heartRate: Current heart rate in BPM, or `nil` if unavailable.
+    ///   - spO2: Current blood oxygen saturation as a fraction (0.0-1.0), or `nil`.
+    ///   - uvIndex: Current UV index value (0-11+), or `nil`.
+    func sendHealthUpdate(heartRate: Double?, spO2: Double?, uvIndex: Int?) {
+        guard let session = session, session.isReachable else { return }
+
+        var message: [String: Any] = ["action": "healthUpdate"]
+        if let hr = heartRate {
+            message["heartRate"] = hr
+        }
+        if let spo2 = spO2 {
+            message["spO2"] = spo2
+        }
+        if let uv = uvIndex {
+            message["uvIndex"] = uv
+        }
+
+        session.sendMessage(message, replyHandler: nil) { error in
+            // Non-fatal: iPhone may not be reachable
+            print("Health relay send error: \(error.localizedDescription)")
+        }
+    }
+
+    /// Notifies the iPhone that the watch workout has ended.
+    ///
+    /// The iPhone clears any displayed health data when it receives this message.
+    func sendHealthStopped() {
+        guard let session = session, session.isReachable else { return }
+
+        session.sendMessage(["action": "healthStopped"], replyHandler: nil) { error in
+            print("Health stopped send error: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Route Transfer
