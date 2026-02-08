@@ -16,6 +16,7 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
+import os
 
 /// The root content view of the watchOS app.
 ///
@@ -45,8 +46,17 @@ struct WatchContentView: View {
     /// Whether the save hike sheet is currently displayed after stopping from low-battery view.
     @State private var showingSaveHike = false
 
-    /// The region ID for the save hike sheet (captured when entering low-battery mode).
-    @State private var lowBatteryRegionId: UUID?
+    /// Whether an error alert is displayed.
+    @State private var showError = false
+
+    /// The error message for the alert.
+    @State private var errorMessage = ""
+
+    /// Logger for content view events.
+    private static let logger = Logger(
+        subsystem: "com.openhiker.watchos",
+        category: "WatchContentView"
+    )
 
     var body: some View {
         Group {
@@ -60,14 +70,16 @@ struct WatchContentView: View {
             }
         }
         .sheet(isPresented: $showingSaveHike) {
-            SaveHikeSheet(regionId: lowBatteryRegionId) { saved in
-                if saved {
-                    print("Hike saved from low-battery mode")
-                }
+            SaveHikeSheet(regionId: nil) { saved in
                 locationManager.trackPoints.removeAll()
                 TrackRecoveryManager.clearRecoveryState()
                 batteryMonitor.reset()
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
         }
     }
 
@@ -105,16 +117,26 @@ struct WatchContentView: View {
     }
 
     /// Stops tracking from the low-battery view, ending the workout and presenting the save sheet.
+    ///
+    /// Handles HealthKit workout stop errors by surfacing them to the user via an alert,
+    /// consistent with the error handling in ``MapView/toggleTracking()``.
     private func stopTrackingFromLowBattery() {
         locationManager.stopTracking()
         batteryMonitor.stopMonitoring()
 
         if healthKitManager.workoutActive {
             Task {
-                await healthKitManager.stopWorkout(
+                let workout = await healthKitManager.stopWorkout(
                     totalDistance: locationManager.totalDistance,
                     elevationGain: locationManager.elevationGain
                 )
+                if workout == nil, let error = healthKitManager.healthKitError {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
+                    Self.logger.error("HealthKit workout stop failed: \(error.localizedDescription)")
+                }
             }
         }
 

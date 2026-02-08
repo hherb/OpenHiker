@@ -18,6 +18,7 @@
 import Foundation
 import WatchKit
 import Combine
+import os
 
 /// Monitors the Apple Watch battery level and publishes low-battery state.
 ///
@@ -37,6 +38,7 @@ import Combine
 /// Uses `WKInterfaceDevice.current().batteryLevel` (0.0–1.0) and
 /// `isBatteryMonitoringEnabled`. watchOS does not provide battery-level
 /// change notifications, so polling is required.
+@MainActor
 final class BatteryMonitor: ObservableObject {
 
     // MARK: - Configuration
@@ -53,6 +55,12 @@ final class BatteryMonitor: ObservableObject {
     /// Battery level changes slowly, so more frequent polling is unnecessary.
     static let pollingIntervalSec: TimeInterval = 60.0
 
+    /// Number of consecutive unavailable (-1.0) readings before logging a warning.
+    ///
+    /// If the battery API consistently returns -1.0, the monitor logs a warning
+    /// after this many consecutive failures so developers can diagnose the issue.
+    private static let unavailableReadingWarningThreshold = 3
+
     // MARK: - Published Properties
 
     /// Whether the watch has entered low-battery mode (battery <= 5%).
@@ -66,6 +74,15 @@ final class BatteryMonitor: ObservableObject {
     /// Updated every ``pollingIntervalSec`` seconds while monitoring is active.
     @Published private(set) var batteryPercentage: Int?
 
+    // MARK: - Callback
+
+    /// Closure invoked on the main actor when low-battery mode is first triggered.
+    ///
+    /// Set by the view layer to perform emergency saves before the UI swaps.
+    /// This avoids the race condition where NotificationCenter-based handlers
+    /// on views may not fire if the view is removed from the hierarchy first.
+    var onLowBatteryTriggered: (() -> Void)?
+
     // MARK: - Internal State
 
     /// Timer that fires periodically to check the battery level.
@@ -74,6 +91,15 @@ final class BatteryMonitor: ObservableObject {
     /// Whether battery monitoring is currently active.
     private var isMonitoring = false
 
+    /// Number of consecutive times `batteryLevel` returned -1.0.
+    private var consecutiveUnavailableReadings = 0
+
+    /// Logger for battery monitoring events.
+    private static let logger = Logger(
+        subsystem: "com.openhiker.watchos",
+        category: "BatteryMonitor"
+    )
+
     // MARK: - Initialization
 
     /// Creates a new BatteryMonitor.
@@ -81,6 +107,11 @@ final class BatteryMonitor: ObservableObject {
     /// Does not start monitoring automatically — call ``startMonitoring()``
     /// when tracking begins.
     init() {}
+
+    deinit {
+        pollingTimer?.invalidate()
+        pollingTimer = nil
+    }
 
     // MARK: - Public Methods
 
@@ -92,9 +123,16 @@ final class BatteryMonitor: ObservableObject {
     func startMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
+        consecutiveUnavailableReadings = 0
 
         let device = WKInterfaceDevice.current()
         device.isBatteryMonitoringEnabled = true
+
+        // Verify battery monitoring is working
+        let initialLevel = device.batteryLevel
+        if initialLevel < 0 {
+            Self.logger.warning("Battery monitoring enabled but batteryLevel returned -1.0 — API may be unavailable on this device")
+        }
 
         // Check immediately on start
         checkBatteryLevel()
@@ -104,10 +142,12 @@ final class BatteryMonitor: ObservableObject {
             withTimeInterval: Self.pollingIntervalSec,
             repeats: true
         ) { [weak self] _ in
-            self?.checkBatteryLevel()
+            Task { @MainActor [weak self] in
+                self?.checkBatteryLevel()
+            }
         }
 
-        print("BatteryMonitor: started monitoring (interval: \(Self.pollingIntervalSec)s)")
+        Self.logger.info("Started monitoring (interval: \(Self.pollingIntervalSec)s)")
     }
 
     /// Stops periodic battery level polling.
@@ -119,9 +159,10 @@ final class BatteryMonitor: ObservableObject {
         pollingTimer?.invalidate()
         pollingTimer = nil
         isMonitoring = false
+        consecutiveUnavailableReadings = 0
 
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = false
-        print("BatteryMonitor: stopped monitoring")
+        Self.logger.info("Stopped monitoring")
     }
 
     /// Resets the low-battery mode flag for a new tracking session.
@@ -139,26 +180,38 @@ final class BatteryMonitor: ObservableObject {
     ///
     /// Called by the polling timer and once on ``startMonitoring()``.
     /// Updates ``batteryPercentage`` and, if the level is at or below
-    /// ``criticalBatteryThreshold``, sets ``isLowBatteryMode`` to `true`
-    /// and posts a notification.
+    /// ``criticalBatteryThreshold``, sets ``isLowBatteryMode`` to `true`,
+    /// invokes the ``onLowBatteryTriggered`` callback, and posts a notification.
     private func checkBatteryLevel() {
         let device = WKInterfaceDevice.current()
         let level = device.batteryLevel
 
         // batteryLevel returns -1.0 if monitoring is disabled or unavailable
-        guard level >= 0 else { return }
+        guard level >= 0 else {
+            consecutiveUnavailableReadings += 1
+            if consecutiveUnavailableReadings == Self.unavailableReadingWarningThreshold {
+                Self.logger.warning("Battery level unavailable for \(self.consecutiveUnavailableReadings) consecutive readings — low-battery protection may not work")
+            }
+            return
+        }
 
+        consecutiveUnavailableReadings = 0
         let percentage = Int(level * 100)
         batteryPercentage = percentage
 
         if level <= Self.criticalBatteryThreshold && !isLowBatteryMode {
             isLowBatteryMode = true
+
+            // Invoke callback first (before notification) so emergency save
+            // happens while views are still mounted
+            onLowBatteryTriggered?()
+
             NotificationCenter.default.post(
                 name: .lowBatteryTriggered,
                 object: nil,
                 userInfo: ["batteryLevel": percentage]
             )
-            print("BatteryMonitor: LOW BATTERY (\(percentage)%) — entering low-battery mode")
+            Self.logger.warning("LOW BATTERY (\(percentage)%) — entering low-battery mode")
         }
     }
 }
