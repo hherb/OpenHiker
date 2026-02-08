@@ -144,6 +144,7 @@
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
 		1B0000010000000000000051 /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000017 /* RenameSheet.swift */; };
+		1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000018 /* MinimalistNavigationView.swift */; };
 		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 		1A000001000000000000004F /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
 		1A0000010000000000000050 /* PeerReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000050 /* PeerReceiveView.swift */; };
@@ -271,6 +272,7 @@
 		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
 		2B0000010000000000000016 /* HikeStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsDashboardView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000017 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
+		2B0000010000000000000018 /* MinimalistNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimalistNavigationView.swift; sourceTree = "<group>"; };
 		F10000010000000000000002 /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -424,6 +426,7 @@
 				2B0000010000000000000015 /* UVIndexOverlay.swift */,
 				2B0000010000000000000016 /* HikeStatsDashboardView.swift */,
 				2B0000010000000000000017 /* RenameSheet.swift */,
+				2B0000010000000000000018 /* MinimalistNavigationView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -800,6 +803,7 @@
 				1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */,
 				1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */,
 				1B0000010000000000000051 /* RenameSheet.swift in Sources */,
+				1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

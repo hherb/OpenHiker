@@ -19,19 +19,23 @@ import SwiftUI
 
 /// The root content view of the watchOS app.
 ///
-/// Presents a vertically-paged tab interface with five tabs:
+/// Presents a vertically-paged tab interface with six tabs:
 /// - **Stats**: Live hike health and distance dashboard (``HikeStatsDashboardView``)
 /// - **Map**: The SpriteKit-based offline map with GPS overlay (``MapView``)
 /// - **Routes**: List of planned routes for turn-by-turn navigation (``WatchPlannedRoutesView``)
 /// - **Regions**: List of available offline map regions (``RegionsListView``)
 /// - **Settings**: GPS mode and display preferences (``SettingsView``)
+/// - **Minimalist Nav**: Battery-saving turn-by-turn guidance without map rendering (``MinimalistNavigationView``)
 struct WatchContentView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var connectivityManager: WatchConnectivityReceiver
     @EnvironmentObject var routeGuidance: RouteGuidance
 
-    /// The currently selected tab index (0 = Stats, 1 = Map, 2 = Routes, 3 = Regions, 4 = Settings).
+    /// The currently selected tab index (0 = Stats, 1 = Map, 2 = Routes, 3 = Regions, 4 = Settings, 5 = Minimalist Nav).
     @State private var selectedTab = 1
+
+    /// Whether to use the minimalist navigation view instead of the full map when starting navigation.
+    @AppStorage("useMinimalistNavigation") private var useMinimalistNavigation = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -46,7 +50,7 @@ struct WatchContentView: View {
             // Planned Routes
             WatchPlannedRoutesView(onStartNavigation: { route in
                 routeGuidance.start(route: route)
-                selectedTab = 1 // Switch to map view for guidance
+                selectedTab = useMinimalistNavigation ? 5 : 1
             })
             .tag(2)
 
@@ -57,6 +61,10 @@ struct WatchContentView: View {
             // Settings
             SettingsView()
                 .tag(4)
+
+            // Minimalist Navigation (battery-saving turn-by-turn view)
+            MinimalistNavigationView(selectedTab: $selectedTab)
+                .tag(5)
         }
         .tabViewStyle(.verticalPage)
     }
@@ -287,6 +295,9 @@ struct SettingsView: View {
     /// Whether to record hikes as workouts in Apple Health.
     @AppStorage("recordWorkouts") private var recordWorkouts = true
 
+    /// Whether to use the minimalist navigation view when starting navigation.
+    @AppStorage("useMinimalistNavigation") private var useMinimalistNavigation = false
+
     /// Whether a HealthKit authorization request is in flight.
     @State private var isRequestingAuth = false
 
@@ -311,6 +322,14 @@ struct SettingsView: View {
                 Section("Display") {
                     Toggle("Show Scale", isOn: $showScale)
                     Toggle("Show UV Index", isOn: $showUVIndex)
+                }
+
+                Section {
+                    Toggle("Minimalist Nav", isOn: $useMinimalistNavigation)
+                } header: {
+                    Text("Navigation")
+                } footer: {
+                    Text("Shows only turn directions to save battery")
                 }
 
                 healthKitSection
