@@ -57,14 +57,18 @@ struct HikeDetailView: View {
     /// Waypoints linked to this hike.
     @State private var waypoints: [Waypoint] = []
 
-    /// The map camera position (computed from track bounds).
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    /// The map camera position, initialized from the route's start point and refined
+    /// once track data is decoded.
+    @State private var cameraPosition: MapCameraPosition
 
     /// Whether an error alert is displayed.
     @State private var showError = false
 
     /// The error message for the alert.
     @State private var errorMessage = ""
+
+    /// Whether track data has been decoded and the map is ready to display.
+    @State private var isDataLoaded = false
 
     /// Whether the comment is currently being edited.
     @State private var isEditingComment = false
@@ -90,15 +94,39 @@ struct HikeDetailView: View {
     init(route: SavedRoute, onUpdate: @escaping () -> Void) {
         _route = State(initialValue: route)
         self.onUpdate = onUpdate
+
+        // Initialize camera from the route's known start/end coordinates so the Map
+        // never starts with .automatic (which can crash during the transition to
+        // .region on some devices).
+        let centerLat = (route.startLatitude + route.endLatitude) / 2
+        let centerLon = (route.startLongitude + route.endLongitude) / 2
+        let center = CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon)
+        let initialRegion = MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(
+                latitudeDelta: Self.mapMinSpanDegrees * 10,
+                longitudeDelta: Self.mapMinSpanDegrees * 10
+            )
+        )
+        _cameraPosition = State(initialValue: .region(initialRegion))
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Map with track overlay
-                mapSection
-                    .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                // Map with track overlay (deferred until track data is decoded)
+                if isDataLoaded {
+                    mapSection
+                        .frame(height: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.quaternary)
+                        .frame(height: 280)
+                        .overlay {
+                            ProgressView("Loading track...")
+                        }
+                }
 
                 // Elevation profile
                 if !elevationProfile.isEmpty {
@@ -378,6 +406,11 @@ struct HikeDetailView: View {
     // MARK: - Data Loading
 
     /// Decodes the compressed track data and computes the map region and elevation profile.
+    ///
+    /// Sets ``isDataLoaded`` to `true` when decoding completes so the map section
+    /// transitions from a loading placeholder to the full ``Map`` view. This avoids
+    /// presenting the ``Map`` with empty data which can cause rendering crashes on
+    /// some devices.
     private func decodeTrackData() {
         let locations = TrackCompression.decode(route.trackData)
         trackCoordinates = locations.map { $0.coordinate }
@@ -409,7 +442,12 @@ struct HikeDetailView: View {
             )
             let region = MKCoordinateRegion(center: center, span: span)
             cameraPosition = .region(region)
+        } else if route.trackData.isEmpty {
+            errorMessage = "This hike has no track data recorded."
+            showError = true
         }
+
+        isDataLoaded = true
     }
 
     /// Loads waypoints linked to this hike from the ``WaypointStore``.
