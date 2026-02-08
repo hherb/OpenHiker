@@ -17,6 +17,7 @@
 
 import SwiftUI
 import WatchConnectivity
+import MapKit
 
 /// The main entry point for the OpenHiker iOS companion app.
 ///
@@ -32,17 +33,55 @@ struct OpenHikerApp: App {
     /// Shared watch connectivity manager, injected into the view hierarchy as an environment object.
     @StateObject private var watchConnectivity = WatchConnectivityManager.shared
 
+    /// Handles incoming Apple Maps directions requests.
+    @StateObject private var directionsHandler = DirectionsRequestHandler.shared
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(watchConnectivity)
+                .environmentObject(directionsHandler)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
                     initializePlannedRouteStore()
                     initializeCloudSync()
                 }
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
+                .alert(
+                    "Directions Request Failed",
+                    isPresented: .init(
+                        get: { directionsHandler.errorMessage != nil },
+                        set: { if !$0 { directionsHandler.errorMessage = nil } }
+                    )
+                ) {
+                    Button("OK", role: .cancel) {
+                        directionsHandler.errorMessage = nil
+                    }
+                } message: {
+                    if let error = directionsHandler.errorMessage {
+                        Text(error)
+                    }
+                }
         }
+    }
+
+    /// Handles an incoming URL, routing it to the appropriate handler.
+    ///
+    /// Currently supports Apple Maps directions requests via ``DirectionsRequestHandler``.
+    /// Additional URL schemes can be added here in the future.
+    ///
+    /// - Parameter url: The URL received by the app from an external source.
+    private func handleIncomingURL(_ url: URL) {
+        // Try Apple Maps directions request first
+        if directionsHandler.handle(url: url) {
+            return
+        }
+
+        // Future: handle other URL schemes (GPX import, deep links, etc.)
+        print("[OpenHikerApp] Unhandled URL: \(url)")
     }
 
     /// Opens the shared ``WaypointStore`` database so it's ready for CRUD operations.

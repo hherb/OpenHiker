@@ -14,61 +14,34 @@
 		1A0000010000000000000005 /* TileDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000005 /* TileDownloader.swift */; };
 		1A0000010000000000000006 /* WatchTransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000006 /* WatchTransferManager.swift */; };
 		1A0000010000000000000007 /* RegionStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000007 /* RegionStorage.swift */; };
+		1A0000010000000000000008 /* AddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000008 /* AddWaypointView.swift */; };
+		1A0000010000000000000009 /* WaypointDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000009 /* WaypointDetailView.swift */; };
 		1A0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1A0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
 		1A0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
-		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
-		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
-		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
-		1B0000010000000000000004 /* MapRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000004 /* MapRenderer.swift */; };
-		1B0000010000000000000005 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000005 /* LocationManager.swift */; };
-		1B0000010000000000000006 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000006 /* MapView.swift */; };
-		1B0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
-		1B0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
-		1B0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
 		1A0000010000000000000013 /* HikeStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000013 /* HikeStatistics.swift */; };
-		1A0000010000000000000020 /* OpenHiker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 3B0000010000000000000001 /* OpenHiker Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		1B0000010000000000000007 /* HikeStatsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000007 /* HikeStatsOverlay.swift */; };
-		1B0000010000000000000008 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000008 /* HealthKitManager.swift */; };
-		1B0000010000000000000009 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
-		1B0000010000000000000013 /* HikeStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000013 /* HikeStatistics.swift */; };
 		1A0000010000000000000014 /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000014 /* Waypoint.swift */; };
-		1B0000010000000000000014 /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000014 /* Waypoint.swift */; };
 		1A0000010000000000000015 /* WaypointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000015 /* WaypointStore.swift */; };
-		1B0000010000000000000015 /* WaypointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000015 /* WaypointStore.swift */; };
-		1A0000010000000000000008 /* AddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000008 /* AddWaypointView.swift */; };
-		1A0000010000000000000009 /* WaypointDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000009 /* WaypointDetailView.swift */; };
-		1B0000010000000000000016 /* AddWaypointSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000010 /* AddWaypointSheet.swift */; };
 		1A0000010000000000000018 /* SavedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000018 /* SavedRoute.swift */; };
-		1B0000010000000000000018 /* SavedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000018 /* SavedRoute.swift */; };
 		1A0000010000000000000019 /* RouteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000019 /* RouteStore.swift */; };
-		1B0000010000000000000019 /* RouteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000019 /* RouteStore.swift */; };
+		1A0000010000000000000020 /* OpenHiker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 3B0000010000000000000001 /* OpenHiker Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1A0000010000000000000021 /* TrackCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000020 /* TrackCompression.swift */; };
-		1B0000010000000000000021 /* TrackCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000020 /* TrackCompression.swift */; };
-		1B0000010000000000000017 /* SaveHikeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000011 /* SaveHikeSheet.swift */; };
 		1A0000010000000000000022 /* HikesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000021 /* HikesListView.swift */; };
 		1A0000010000000000000023 /* HikeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000022 /* HikeDetailView.swift */; };
 		1A0000010000000000000024 /* ElevationProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000023 /* ElevationProfileView.swift */; };
 		1A0000010000000000000030 /* RoutingGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000030 /* RoutingGraph.swift */; };
-		1B0000010000000000000030 /* RoutingGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000030 /* RoutingGraph.swift */; };
 		1A0000010000000000000031 /* RoutingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000031 /* RoutingStore.swift */; };
-		1B0000010000000000000031 /* RoutingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000031 /* RoutingStore.swift */; };
 		1A0000010000000000000032 /* RoutingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000032 /* RoutingEngine.swift */; };
-		1B0000010000000000000032 /* RoutingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000032 /* RoutingEngine.swift */; };
 		1A0000010000000000000033 /* ProtobufReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000033 /* ProtobufReader.swift */; };
 		1A0000010000000000000034 /* PBFParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000034 /* PBFParser.swift */; };
 		1A0000010000000000000035 /* ElevationDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000035 /* ElevationDataManager.swift */; };
 		1A0000010000000000000036 /* RoutingGraphBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000036 /* RoutingGraphBuilder.swift */; };
 		1A0000010000000000000037 /* OSMDataDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000037 /* OSMDataDownloader.swift */; };
 		1A0000010000000000000038 /* TurnInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000038 /* TurnInstruction.swift */; };
-		1B0000010000000000000038 /* TurnInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000038 /* TurnInstruction.swift */; };
 		1A0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
-		1B0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
 		1A000001000000000000003A /* RoutePlanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003A /* RoutePlanningView.swift */; };
 		1A000001000000000000003B /* RouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003B /* RouteDetailView.swift */; };
 		1A000001000000000000003C /* RouteUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003C /* RouteUploadView.swift */; };
-		1B0000010000000000000033 /* RouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000012 /* RouteGuidance.swift */; };
-		1B0000010000000000000034 /* NavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000013 /* NavigationOverlay.swift */; };
 		1A000001000000000000003D /* CommunityBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003D /* CommunityBrowseView.swift */; };
 		1A000001000000000000003E /* CommunityRouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000003E /* CommunityRouteDetailView.swift */; };
 		1A0000010000000000000040 /* ActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000040 /* ActivityType.swift */; };
@@ -76,11 +49,6 @@
 		1A0000010000000000000042 /* GitHubRouteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000042 /* GitHubRouteService.swift */; };
 		1A0000010000000000000043 /* PhotoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000043 /* PhotoCompressor.swift */; };
 		1A0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
-		1B0000010000000000000040 /* ActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000040 /* ActivityType.swift */; };
-		1B0000010000000000000041 /* SharedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000041 /* SharedRoute.swift */; };
-		1B0000010000000000000042 /* GitHubRouteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000042 /* GitHubRouteService.swift */; };
-		1B0000010000000000000043 /* PhotoCompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000043 /* PhotoCompressor.swift */; };
-		1B0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 		1A0000010000000000000045 /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1A0000010000000000000046 /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
 		1A0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
@@ -90,9 +58,51 @@
 		1A000001000000000000004B /* WaypointsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004B /* WaypointsListView.swift */; };
 		1A000001000000000000004C /* TrailMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004D /* TrailMapView.swift */; };
 		1A000001000000000000004E /* RoutePlanningMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004E /* RoutePlanningMapView.swift */; };
+		1A000001000000000000004F /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
+		1A0000010000000000000050 /* PeerReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000050 /* PeerReceiveView.swift */; };
+		1A0000010000000000000051 /* PeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000051 /* PeerSendView.swift */; };
+		1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000052 /* DirectionsRequestHandler.swift */; };
+		1A0000010000000000000053 /* directions_coverage.geojson in Resources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000053 /* directions_coverage.geojson */; };
+		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
+		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
+		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
+		1B0000010000000000000004 /* MapRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000004 /* MapRenderer.swift */; };
+		1B0000010000000000000005 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000005 /* LocationManager.swift */; };
+		1B0000010000000000000006 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000006 /* MapView.swift */; };
+		1B0000010000000000000007 /* HikeStatsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000007 /* HikeStatsOverlay.swift */; };
+		1B0000010000000000000008 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000008 /* HealthKitManager.swift */; };
+		1B0000010000000000000009 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
+		1B0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
+		1B0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
+		1B0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
+		1B0000010000000000000013 /* HikeStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000013 /* HikeStatistics.swift */; };
+		1B0000010000000000000014 /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000014 /* Waypoint.swift */; };
+		1B0000010000000000000015 /* WaypointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000015 /* WaypointStore.swift */; };
+		1B0000010000000000000016 /* AddWaypointSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000010 /* AddWaypointSheet.swift */; };
+		1B0000010000000000000017 /* SaveHikeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000011 /* SaveHikeSheet.swift */; };
+		1B0000010000000000000018 /* SavedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000018 /* SavedRoute.swift */; };
+		1B0000010000000000000019 /* RouteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000019 /* RouteStore.swift */; };
+		1B0000010000000000000021 /* TrackCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000020 /* TrackCompression.swift */; };
+		1B0000010000000000000030 /* RoutingGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000030 /* RoutingGraph.swift */; };
+		1B0000010000000000000031 /* RoutingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000031 /* RoutingStore.swift */; };
+		1B0000010000000000000032 /* RoutingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000032 /* RoutingEngine.swift */; };
+		1B0000010000000000000033 /* RouteGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000012 /* RouteGuidance.swift */; };
+		1B0000010000000000000034 /* NavigationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000013 /* NavigationOverlay.swift */; };
+		1B0000010000000000000038 /* TurnInstruction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000038 /* TurnInstruction.swift */; };
+		1B0000010000000000000039 /* PlannedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000039 /* PlannedRoute.swift */; };
+		1B0000010000000000000040 /* ActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000040 /* ActivityType.swift */; };
+		1B0000010000000000000041 /* SharedRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000041 /* SharedRoute.swift */; };
+		1B0000010000000000000042 /* GitHubRouteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000042 /* GitHubRouteService.swift */; };
+		1B0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 		1B0000010000000000000045 /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1B0000010000000000000046 /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
 		1B0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
+		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
+		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
+		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
+		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
+		1B0000010000000000000051 /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000017 /* RenameSheet.swift */; };
+		1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000018 /* MinimalistNavigationView.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -140,15 +150,6 @@
 		1C000001000000000000002D /* MacAddWaypointView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000010 /* MacAddWaypointView.swift */; };
 		1C000001000000000000002E /* MacTrailMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000011 /* MacTrailMapView.swift */; };
 		1C000001000000000000002F /* MacAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000012 /* MacAssets.xcassets */; };
-		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
-		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
-		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
-		1B0000010000000000000051 /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000017 /* RenameSheet.swift */; };
-		1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000018 /* MinimalistNavigationView.swift */; };
-		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
-		1A000001000000000000004F /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
-		1A0000010000000000000050 /* PeerReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000050 /* PeerReceiveView.swift */; };
-		1A0000010000000000000051 /* PeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000051 /* PeerSendView.swift */; };
 		1C0000010000000000000030 /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
 		1C0000010000000000000031 /* MacPeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000013 /* MacPeerSendView.swift */; };
 /* End PBXBuildFile section */
@@ -185,31 +186,17 @@
 		2A0000010000000000000005 /* TileDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileDownloader.swift; sourceTree = "<group>"; };
 		2A0000010000000000000006 /* WatchTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTransferManager.swift; sourceTree = "<group>"; };
 		2A0000010000000000000007 /* RegionStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionStorage.swift; sourceTree = "<group>"; };
+		2A0000010000000000000008 /* AddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000009 /* WaypointDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointDetailView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000010 /* TileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileStore.swift; sourceTree = "<group>"; };
 		2A0000010000000000000011 /* TileCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileCoordinate.swift; sourceTree = "<group>"; };
 		2A0000010000000000000012 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
 		2A0000010000000000000013 /* HikeStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatistics.swift; sourceTree = "<group>"; };
-		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
-		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
-		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
-		2B0000010000000000000004 /* MapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRenderer.swift; sourceTree = "<group>"; };
-		2B0000010000000000000005 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
-		2B0000010000000000000006 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
-		2B0000010000000000000007 /* HikeStatsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsOverlay.swift; sourceTree = "<group>"; };
-		2B0000010000000000000008 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
-		2B0000010000000000000009 /* OpenHiker watchOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker watchOS.entitlements"; sourceTree = "<group>"; };
-		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		F10000010000000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		2A0000010000000000000014 /* Waypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waypoint.swift; sourceTree = "<group>"; };
 		2A0000010000000000000015 /* WaypointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointStore.swift; sourceTree = "<group>"; };
-		2A0000010000000000000008 /* AddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointView.swift; sourceTree = "<group>"; };
-		2A0000010000000000000009 /* WaypointDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointDetailView.swift; sourceTree = "<group>"; };
-		2B0000010000000000000010 /* AddWaypointSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointSheet.swift; sourceTree = "<group>"; };
 		2A0000010000000000000018 /* SavedRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedRoute.swift; sourceTree = "<group>"; };
 		2A0000010000000000000019 /* RouteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteStore.swift; sourceTree = "<group>"; };
 		2A0000010000000000000020 /* TrackCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackCompression.swift; sourceTree = "<group>"; };
-		2B0000010000000000000011 /* SaveHikeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveHikeSheet.swift; sourceTree = "<group>"; };
 		2A0000010000000000000021 /* HikesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikesListView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000022 /* HikeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeDetailView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000023 /* ElevationProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevationProfileView.swift; sourceTree = "<group>"; };
@@ -226,8 +213,6 @@
 		2A000001000000000000003A /* RoutePlanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanningView.swift; sourceTree = "<group>"; };
 		2A000001000000000000003B /* RouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDetailView.swift; sourceTree = "<group>"; };
 		2A000001000000000000003C /* RouteUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteUploadView.swift; sourceTree = "<group>"; };
-		2B0000010000000000000012 /* RouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidance.swift; sourceTree = "<group>"; };
-		2B0000010000000000000013 /* NavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationOverlay.swift; sourceTree = "<group>"; };
 		2A000001000000000000003D /* CommunityBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityBrowseView.swift; sourceTree = "<group>"; };
 		2A000001000000000000003E /* CommunityRouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityRouteDetailView.swift; sourceTree = "<group>"; };
 		2A0000010000000000000040 /* ActivityType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityType.swift; sourceTree = "<group>"; };
@@ -245,6 +230,29 @@
 		2A000001000000000000004C /* OpenHiker iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker iOS.entitlements"; sourceTree = "<group>"; };
 		2A000001000000000000004D /* TrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailMapView.swift; sourceTree = "<group>"; };
 		2A000001000000000000004E /* RoutePlanningMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanningMapView.swift; sourceTree = "<group>"; };
+		2A000001000000000000004F /* PeerTransferService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerTransferService.swift; sourceTree = "<group>"; };
+		2A0000010000000000000050 /* PeerReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerReceiveView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000051 /* PeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSendView.swift; sourceTree = "<group>"; };
+		2A0000010000000000000052 /* DirectionsRequestHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsRequestHandler.swift; sourceTree = "<group>"; };
+		2A0000010000000000000053 /* directions_coverage.geojson */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = directions_coverage.geojson; sourceTree = "<group>"; };
+		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
+		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
+		2B0000010000000000000004 /* MapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRenderer.swift; sourceTree = "<group>"; };
+		2B0000010000000000000005 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
+		2B0000010000000000000006 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000007 /* HikeStatsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsOverlay.swift; sourceTree = "<group>"; };
+		2B0000010000000000000008 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
+		2B0000010000000000000009 /* OpenHiker watchOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "OpenHiker watchOS.entitlements"; sourceTree = "<group>"; };
+		2B0000010000000000000010 /* AddWaypointSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWaypointSheet.swift; sourceTree = "<group>"; };
+		2B0000010000000000000011 /* SaveHikeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveHikeSheet.swift; sourceTree = "<group>"; };
+		2B0000010000000000000012 /* RouteGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidance.swift; sourceTree = "<group>"; };
+		2B0000010000000000000013 /* NavigationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationOverlay.swift; sourceTree = "<group>"; };
+		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
+		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
+		2B0000010000000000000016 /* HikeStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsDashboardView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000017 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
+		2B0000010000000000000018 /* MinimalistNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimalistNavigationView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000001 /* OpenHikerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerMacApp.swift; sourceTree = "<group>"; };
 		2C0000010000000000000002 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000003 /* OpenHikerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerCommands.swift; sourceTree = "<group>"; };
@@ -263,16 +271,11 @@
 		2C0000010000000000000010 /* MacAddWaypointView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAddWaypointView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000011 /* MacTrailMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTrailMapView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000012 /* MacAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MacAssets.xcassets; sourceTree = "<group>"; };
-		2A000001000000000000004F /* PeerTransferService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerTransferService.swift; sourceTree = "<group>"; };
-		2A0000010000000000000050 /* PeerReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerReceiveView.swift; sourceTree = "<group>"; };
-		2A0000010000000000000051 /* PeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSendView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000013 /* MacPeerSendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPeerSendView.swift; sourceTree = "<group>"; };
+		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		2B0000010000000000000014 /* UVIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexManager.swift; sourceTree = "<group>"; };
-		2B0000010000000000000015 /* UVIndexOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVIndexOverlay.swift; sourceTree = "<group>"; };
-		2B0000010000000000000016 /* HikeStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsDashboardView.swift; sourceTree = "<group>"; };
-		2B0000010000000000000017 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
-		2B0000010000000000000018 /* MinimalistNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimalistNavigationView.swift; sourceTree = "<group>"; };
+		F10000010000000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		F10000010000000000000002 /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -311,6 +314,7 @@
 				5D0000010000000000000001 /* OpenHiker macOS */,
 				5C0000010000000000000001 /* Shared */,
 				5A0000010000000000000003 /* Products */,
+				6F80C1F02F38392800665F1F /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -382,6 +386,7 @@
 				2A0000010000000000000036 /* RoutingGraphBuilder.swift */,
 				2A0000010000000000000037 /* OSMDataDownloader.swift */,
 				2A0000010000000000000048 /* PDFExporter.swift */,
+				2A0000010000000000000052 /* DirectionsRequestHandler.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -390,6 +395,7 @@
 			isa = PBXGroup;
 			children = (
 				2A0000010000000000000003 /* Assets.xcassets */,
+				2A0000010000000000000053 /* directions_coverage.geojson */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -462,19 +468,6 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
-		5C0000010000000000000005 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				2A0000010000000000000032 /* RoutingEngine.swift */,
-				2A0000010000000000000042 /* GitHubRouteService.swift */,
-				2A0000010000000000000045 /* HikeSummaryExporter.swift */,
-				2A0000010000000000000046 /* CloudKitStore.swift */,
-				2A0000010000000000000047 /* CloudSyncManager.swift */,
-				2A000001000000000000004F /* PeerTransferService.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
 		5C0000010000000000000002 /* Models */ = {
 			isa = PBXGroup;
 			children = (
@@ -511,6 +504,19 @@
 				2A0000010000000000000044 /* RouteExporter.swift */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		5C0000010000000000000005 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000010000000000000032 /* RoutingEngine.swift */,
+				2A0000010000000000000042 /* GitHubRouteService.swift */,
+				2A0000010000000000000045 /* HikeSummaryExporter.swift */,
+				2A0000010000000000000046 /* CloudKitStore.swift */,
+				2A0000010000000000000047 /* CloudSyncManager.swift */,
+				2A000001000000000000004F /* PeerTransferService.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		5D0000010000000000000001 /* OpenHiker macOS */ = {
@@ -571,6 +577,15 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		6F80C1F02F38392800665F1F /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				F10000010000000000000001 /* HealthKit.framework */,
+				F10000010000000000000002 /* WeatherKit.framework */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -629,14 +644,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXTargetDependency section */
-		EA0000010000000000000001 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 6B0000010000000000000001 /* OpenHiker Watch App */;
-			targetProxy = CA0000010000000000000001 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		8A0000010000000000000001 /* Project object */ = {
 			isa = PBXProject;
@@ -682,6 +689,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A0000010000000000000003 /* Assets.xcassets in Resources */,
+				1A0000010000000000000053 /* directions_coverage.geojson in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -760,6 +768,7 @@
 				1A000001000000000000004F /* PeerTransferService.swift in Sources */,
 				1A0000010000000000000050 /* PeerReceiveView.swift in Sources */,
 				1A0000010000000000000051 /* PeerSendView.swift in Sources */,
+				1A0000010000000000000052 /* DirectionsRequestHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -863,6 +872,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EA0000010000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6B0000010000000000000001 /* OpenHiker Watch App */;
+			targetProxy = CA0000010000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		9A0000010000000000000001 /* Debug */ = {
@@ -994,10 +1011,14 @@
 				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "OpenHiker uses the local network to receive map regions from a nearby Mac.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and download relevant map tiles.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1026,10 +1047,14 @@
 				DEVELOPMENT_TEAM = X5DWXB4283;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "OpenHiker uses the local network to receive map regions from a nearby Mac.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and download relevant map tiles.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1072,7 +1097,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -1104,7 +1128,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.openhiker.ios.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -1195,20 +1218,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				9A0000010000000000000001 /* Debug */,
-				9A0000010000000000000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		7C0000010000000000000001 /* Build configuration list for PBXNativeTarget "OpenHiker macOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9C0000010000000000000001 /* Debug */,
 				9C0000010000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000010000000000000001 /* Debug */,
+				9A0000010000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

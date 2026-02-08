@@ -34,6 +34,7 @@ import SwiftUI
 /// - **Watch**: Monitor Apple Watch connectivity and manage file transfers
 struct ContentView: View {
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+    @EnvironmentObject var directionsHandler: DirectionsRequestHandler
 
     /// The horizontal size class used to switch between iPhone (compact) and iPad (regular) layouts.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -45,10 +46,27 @@ struct ContentView: View {
     @State private var sidebarSelection: SidebarSection? = .regions
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                iPadLayout
+            } else {
+                iPhoneLayout
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: DirectionsRequestHandler.routeComputedNotification
+        )) { _ in
+            navigateToRoutesTab()
+        }
+    }
+
+    /// Switches the UI to the Routes tab/section so the user sees the newly
+    /// computed route from an Apple Maps directions request.
+    private func navigateToRoutesTab() {
         if horizontalSizeClass == .regular {
-            iPadLayout
+            sidebarSelection = .routes
         } else {
-            iPhoneLayout
+            selectedTab = 3
         }
     }
 
@@ -158,6 +176,7 @@ struct PlannedRoutesListView: View {
     @ObservedObject private var routeStore = PlannedRouteStore.shared
     @ObservedObject private var regionStorage = RegionStorage.shared
     @EnvironmentObject var watchConnectivity: WatchConnectivityManager
+    @EnvironmentObject var directionsHandler: DirectionsRequestHandler
 
     /// Closure to navigate the user to the Regions tab for downloading a new region.
     var onNavigateToRegions: () -> Void = {}
@@ -178,6 +197,9 @@ struct PlannedRoutesListView: View {
     /// Whether the rename alert is displayed.
     @State private var showRouteRenameAlert = false
 
+    /// Navigation path for programmatic navigation to route detail.
+    @State private var navigationPath = NavigationPath()
+
     /// Regions that have routing data available.
     private var routableRegions: [Region] {
         regionStorage.regions.filter { $0.hasRoutingData }
@@ -189,19 +211,33 @@ struct PlannedRoutesListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if routeStore.routes.isEmpty {
-                    ContentUnavailableView(
-                        "No Planned Routes",
-                        systemImage: "arrow.triangle.turn.up.right.diamond",
-                        description: Text("Plan a route to get turn-by-turn navigation on your Apple Watch.")
-                    )
-                } else {
-                    routesList
+        NavigationStack(path: $navigationPath) {
+            ZStack {
+                Group {
+                    if routeStore.routes.isEmpty && !directionsHandler.isProcessing {
+                        ContentUnavailableView(
+                            "No Planned Routes",
+                            systemImage: "arrow.triangle.turn.up.right.diamond",
+                            description: Text("Plan a route to get turn-by-turn navigation on your Apple Watch.")
+                        )
+                    } else {
+                        routesList
+                    }
+                }
+
+                // Processing overlay shown while an Apple Maps directions request is being computed.
+                if directionsHandler.isProcessing {
+                    directionsProcessingOverlay
                 }
             }
             .navigationTitle("Planned Routes")
+            .navigationDestination(for: PlannedRoute.ID.self) { routeId in
+                if let route = routeStore.routes.first(where: { $0.id == routeId }) {
+                    RouteDetailView(route: route, onUpdate: {
+                        routeStore.loadAll()
+                    })
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -213,6 +249,17 @@ struct PlannedRoutesListView: View {
             }
             .onAppear {
                 routeStore.loadAll()
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: DirectionsRequestHandler.routeComputedNotification
+            )) { notification in
+                // Auto-navigate to the newly computed route from Apple Maps.
+                if let route = notification.object as? PlannedRoute {
+                    // Small delay to ensure the route store has updated.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        navigationPath.append(route.id)
+                    }
+                }
             }
             .fullScreenCover(item: $selectedRegion) { region in
                 RoutePlanningView(region: region)
@@ -241,13 +288,30 @@ struct PlannedRoutesListView: View {
         }
     }
 
+    /// An overlay shown while an Apple Maps directions request is being processed.
+    ///
+    /// Displays a spinner and message so the user knows the app is computing a route.
+    private var directionsProcessingOverlay: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Computing route from Apple Maps…")
+                .font(.headline)
+            Text("Finding the best hiking trail between your start and destination.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding()
+    }
+
     /// The list of saved planned routes.
     private var routesList: some View {
         List {
             ForEach(routeStore.routes) { route in
-                NavigationLink(destination: RouteDetailView(route: route, onUpdate: {
-                    routeStore.loadAll()
-                })) {
+                NavigationLink(value: route.id) {
                     plannedRouteRow(route)
                 }
                 .contextMenu {
