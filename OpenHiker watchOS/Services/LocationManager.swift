@@ -192,6 +192,51 @@ final class LocationManager: NSObject, ObservableObject {
         print("Stopped GPS tracking. Recorded \(trackPoints.count) points")
     }
 
+    /// Restores a previously saved track recording state for crash recovery.
+    ///
+    /// Used on app launch when ``TrackRecoveryManager`` detects a saved track
+    /// from a prior session that was interrupted (e.g., app termination, battery
+    /// death). Restores the track points and accumulated statistics, then
+    /// optionally resumes tracking.
+    ///
+    /// - Parameters:
+    ///   - points: The recovered GPS track points.
+    ///   - distance: The recovered total distance in meters.
+    ///   - gain: The recovered cumulative elevation gain in meters.
+    ///   - loss: The recovered cumulative elevation loss in meters.
+    ///   - resumeTracking: If `true`, resumes active GPS tracking after restoration.
+    func restoreTrackState(
+        points: [CLLocation],
+        distance: Double,
+        gain: Double,
+        loss: Double,
+        resumeTracking: Bool = false
+    ) {
+        trackPoints = points
+        totalDistance = distance
+        elevationGain = gain
+        elevationLoss = loss
+
+        if resumeTracking {
+            isTracking = true
+            trackingError = nil
+            locationManager.startUpdatingLocation()
+            locationManager.startUpdatingHeading()
+            print("Restored and resumed tracking with \(points.count) points")
+        } else {
+            print("Restored track state with \(points.count) points (not tracking)")
+        }
+    }
+
+    /// Switches GPS to low-power mode to conserve battery during low-battery tracking.
+    ///
+    /// Reduces accuracy and increases distance filter to minimize power consumption.
+    /// The track is still recorded, but with coarser resolution.
+    func switchToLowPowerMode() {
+        gpsMode = .lowPower
+        print("Switched GPS to low-power mode for battery conservation")
+    }
+
     /// Starts continuous location and heading updates without recording a track.
     ///
     /// Used for displaying the user's position on the map when not actively

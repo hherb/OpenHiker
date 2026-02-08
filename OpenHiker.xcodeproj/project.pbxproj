@@ -103,6 +103,9 @@
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
 		1B0000010000000000000051 /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000017 /* RenameSheet.swift */; };
 		1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000018 /* MinimalistNavigationView.swift */; };
+		1B0000010000000000000053 /* BatteryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000019 /* BatteryMonitor.swift */; };
+		1B0000010000000000000054 /* TrackRecoveryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001A /* TrackRecoveryManager.swift */; };
+		1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001B /* LowBatteryTrackingView.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -253,6 +256,9 @@
 		2B0000010000000000000016 /* HikeStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeStatsDashboardView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000017 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
 		2B0000010000000000000018 /* MinimalistNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimalistNavigationView.swift; sourceTree = "<group>"; };
+		2B0000010000000000000019 /* BatteryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryMonitor.swift; sourceTree = "<group>"; };
+		2B000001000000000000001A /* TrackRecoveryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRecoveryManager.swift; sourceTree = "<group>"; };
+		2B000001000000000000001B /* LowBatteryTrackingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowBatteryTrackingView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000001 /* OpenHikerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerMacApp.swift; sourceTree = "<group>"; };
 		2C0000010000000000000002 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000003 /* OpenHikerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerCommands.swift; sourceTree = "<group>"; };
@@ -433,6 +439,7 @@
 				2B0000010000000000000016 /* HikeStatsDashboardView.swift */,
 				2B0000010000000000000017 /* RenameSheet.swift */,
 				2B0000010000000000000018 /* MinimalistNavigationView.swift */,
+				2B000001000000000000001B /* LowBatteryTrackingView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -445,6 +452,8 @@
 				2B0000010000000000000008 /* HealthKitManager.swift */,
 				2B0000010000000000000012 /* RouteGuidance.swift */,
 				2B0000010000000000000014 /* UVIndexManager.swift */,
+				2B0000010000000000000019 /* BatteryMonitor.swift */,
+				2B000001000000000000001A /* TrackRecoveryManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -813,6 +822,9 @@
 				1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */,
 				1B0000010000000000000051 /* RenameSheet.swift in Sources */,
 				1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */,
+				1B0000010000000000000053 /* BatteryMonitor.swift in Sources */,
+				1B0000010000000000000054 /* TrackRecoveryManager.swift in Sources */,
+				1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

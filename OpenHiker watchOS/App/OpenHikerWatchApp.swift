@@ -48,6 +48,12 @@ struct OpenHikerWatchApp: App {
     /// UV index manager for real-time UV exposure data via WeatherKit.
     @StateObject private var uvIndexManager = UVIndexManager()
 
+    /// Battery monitor for low-battery tracking mode.
+    @StateObject private var batteryMonitor = BatteryMonitor()
+
+    /// Whether the track recovery alert is displayed on launch.
+    @State private var showTrackRecoveryAlert = false
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()
@@ -56,10 +62,22 @@ struct OpenHikerWatchApp: App {
                 .environmentObject(healthKitManager)
                 .environmentObject(routeGuidance)
                 .environmentObject(uvIndexManager)
+                .environmentObject(batteryMonitor)
                 .onAppear {
                     initializeWaypointStore()
                     initializeRouteStore()
                     initializePlannedRouteStore()
+                    checkForTrackRecovery()
+                }
+                .alert("Recover Track?", isPresented: $showTrackRecoveryAlert) {
+                    Button("Recover & Save") {
+                        recoverAndSaveTrack()
+                    }
+                    Button("Discard", role: .destructive) {
+                        TrackRecoveryManager.clearRecoveryState()
+                    }
+                } message: {
+                    Text("A previously recorded track was found. Would you like to recover and save it?")
                 }
         }
     }
@@ -94,6 +112,43 @@ struct OpenHikerWatchApp: App {
     /// and loaded into memory for display in the Routes tab.
     private func initializePlannedRouteStore() {
         PlannedRouteStore.shared.loadAll()
+    }
+
+    /// Checks for a recoverable track from a previous session that was interrupted.
+    ///
+    /// If a recovery file exists (from a crash, battery death, or system termination),
+    /// presents an alert to the user offering to recover and save the track.
+    private func checkForTrackRecovery() {
+        if TrackRecoveryManager.hasRecoverableTrack() {
+            showTrackRecoveryAlert = true
+            print("Found recoverable track from previous session")
+        }
+    }
+
+    /// Recovers a saved track and stores it as a completed ``SavedRoute``.
+    ///
+    /// Loads the track points and metadata from the recovery files, creates a
+    /// ``SavedRoute``, inserts it into ``RouteStore``, and queues it for transfer
+    /// to the iPhone.
+    private func recoverAndSaveTrack() {
+        guard let recovery = TrackRecoveryManager.loadRecoveryState() else {
+            print("Failed to load recovery state")
+            TrackRecoveryManager.clearRecoveryState()
+            return
+        }
+
+        TrackRecoveryManager.emergencySaveAsRoute(
+            trackPoints: recovery.trackPoints,
+            totalDistance: recovery.metadata.totalDistance,
+            elevationGain: recovery.metadata.elevationGain,
+            elevationLoss: recovery.metadata.elevationLoss,
+            regionId: recovery.metadata.regionId,
+            averageHeartRate: nil,
+            connectivityManager: connectivityManager
+        )
+
+        TrackRecoveryManager.clearRecoveryState()
+        print("Recovered and saved track from previous session")
     }
 }
 
