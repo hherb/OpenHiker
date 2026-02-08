@@ -19,30 +19,6 @@ import Foundation
 import CoreLocation
 import UIKit
 
-// MARK: - iOS Route Guidance Configuration
-
-/// Configuration constants for the iPhone route guidance engine.
-///
-/// Matches the watch ``RouteGuidanceConfig`` thresholds for consistent behaviour
-/// across both platforms.
-enum iOSRouteGuidanceConfig {
-    /// Distance in metres from the route polyline beyond which the user is considered off-route.
-    static let offRouteThresholdMetres: Double = 50.0
-
-    /// Distance in metres from the route at which the off-route warning is cleared.
-    static let offRouteClearThresholdMetres: Double = 30.0
-
-    /// Distance in metres from a turn point at which the "approaching" haptic fires.
-    static let approachingTurnDistanceMetres: Double = 100.0
-
-    /// Distance in metres from a turn point at which the "at turn" haptic fires and
-    /// the instruction advances to the next one.
-    static let atTurnDistanceMetres: Double = 30.0
-
-    /// Distance in metres from the final destination to trigger "arrived" notification.
-    static let arrivedDistanceMetres: Double = 30.0
-}
-
 // MARK: - iOS Route Guidance
 
 /// Tracks the user's position along a planned route on iPhone, providing
@@ -61,6 +37,7 @@ enum iOSRouteGuidanceConfig {
 /// // When done:
 /// guidance.stop()
 /// ```
+@MainActor
 final class iOSRouteGuidance: ObservableObject {
 
     // MARK: - Published State
@@ -284,6 +261,11 @@ final class iOSRouteGuidance: ObservableObject {
     }
 
     /// Projects a point onto a line segment, returning the closest point and its fraction.
+    ///
+    /// Uses a planar (Euclidean) approximation treating latitude/longitude as Cartesian
+    /// coordinates. This is accurate enough for hiking-scale segments (tens of metres)
+    /// at non-polar latitudes, but would need a proper geodesic projection for segments
+    /// spanning many kilometres or near the poles.
     private func projectPointOntoSegment(
         point: CLLocationCoordinate2D,
         segStart: CLLocationCoordinate2D,
@@ -313,13 +295,13 @@ final class iOSRouteGuidance: ObservableObject {
 
     /// Updates the off-route flag and triggers/clears haptic feedback.
     private func updateOffRouteStatus(distanceFromRoute: Double) {
-        if distanceFromRoute > iOSRouteGuidanceConfig.offRouteThresholdMetres {
+        if distanceFromRoute > RouteGuidanceConfig.offRouteThresholdMetres {
             if !isOffRoute {
                 isOffRoute = true
                 notificationGenerator.notificationOccurred(.error)
                 print("iOS: Off route! Distance: \(Int(distanceFromRoute))m")
             }
-        } else if distanceFromRoute < iOSRouteGuidanceConfig.offRouteClearThresholdMetres {
+        } else if distanceFromRoute < RouteGuidanceConfig.offRouteClearThresholdMetres {
             if isOffRoute {
                 isOffRoute = false
                 print("iOS: Back on route")
@@ -334,14 +316,14 @@ final class iOSRouteGuidance: ObservableObject {
 
         let current = instructions[currentInstructionIndex]
 
-        if distanceAlongRoute >= current.cumulativeDistance - iOSRouteGuidanceConfig.atTurnDistanceMetres {
+        if distanceAlongRoute >= current.cumulativeDistance - RouteGuidanceConfig.atTurnDistanceMetres {
             if currentInstructionIndex + 1 < instructions.count {
                 currentInstructionIndex += 1
                 currentInstruction = instructions[currentInstructionIndex]
                 approachingHapticFired = false
                 atTurnHapticFired = false
             } else {
-                if distanceAlongRoute >= totalRouteDistance - iOSRouteGuidanceConfig.arrivedDistanceMetres {
+                if distanceAlongRoute >= totalRouteDistance - RouteGuidanceConfig.arrivedDistanceMetres {
                     handleArrival()
                 }
             }
@@ -355,15 +337,15 @@ final class iOSRouteGuidance: ObservableObject {
         let distToTurn = instruction.cumulativeDistance - distanceAlongRoute
 
         // Approaching turn (100m)
-        if distToTurn <= iOSRouteGuidanceConfig.approachingTurnDistanceMetres
-            && distToTurn > iOSRouteGuidanceConfig.atTurnDistanceMetres
+        if distToTurn <= RouteGuidanceConfig.approachingTurnDistanceMetres
+            && distToTurn > RouteGuidanceConfig.atTurnDistanceMetres
             && !approachingHapticFired {
             approachingHapticFired = true
             impactGenerator.impactOccurred()
         }
 
         // At turn (30m)
-        if distToTurn <= iOSRouteGuidanceConfig.atTurnDistanceMetres && !atTurnHapticFired {
+        if distToTurn <= RouteGuidanceConfig.atTurnDistanceMetres && !atTurnHapticFired {
             atTurnHapticFired = true
             playDirectionHaptic(instruction.direction)
         }

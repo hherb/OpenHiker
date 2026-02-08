@@ -35,6 +35,9 @@ import SwiftUI
 struct iOSNavigationOverlay: View {
     @ObservedObject var guidance: iOSRouteGuidance
 
+    /// User preference for metric (true) or imperial (false) units.
+    @AppStorage("useMetricUnits") private var useMetricUnits = true
+
     var body: some View {
         if guidance.isNavigating {
             VStack(spacing: 0) {
@@ -89,7 +92,7 @@ struct iOSNavigationOverlay: View {
     private var onRouteContent: some View {
         Group {
             if let distance = guidance.distanceToNextTurn {
-                Text("In \(formatDistance(distance))")
+                Text("In \(HikeStatsFormatter.formatDistance(distance, useMetric: useMetricUnits))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -137,7 +140,7 @@ struct iOSNavigationOverlay: View {
 
             // Distance and percentage
             HStack {
-                Text("\(formatDistance(guidance.remainingDistance)) remaining")
+                Text("\(HikeStatsFormatter.formatDistance(guidance.remainingDistance, useMetric: useMetricUnits)) remaining")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -149,23 +152,4 @@ struct iOSNavigationOverlay: View {
         }
     }
 
-    // MARK: - Helpers
-
-    /// Metres-per-kilometre constant for distance formatting.
-    private static let metresPerKilometre: Double = 1000.0
-
-    /// Formats a distance for display on the overlay.
-    ///
-    /// Under 1 km: shows metres (e.g., "120m").
-    /// Over 1 km: shows kilometres with one decimal (e.g., "2.4 km").
-    ///
-    /// - Parameter metres: Distance in metres.
-    /// - Returns: A formatted distance string.
-    private func formatDistance(_ metres: Double) -> String {
-        if metres < Self.metresPerKilometre {
-            return "\(Int(metres))m"
-        } else {
-            return String(format: "%.1f km", metres / Self.metresPerKilometre)
-        }
-    }
 }

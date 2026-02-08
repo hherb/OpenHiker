@@ -18,6 +18,7 @@
 import SwiftUI
 import MapKit
 import CoreLocation
+import Combine
 
 // MARK: - Navigation View
 
@@ -54,8 +55,17 @@ struct iOSNavigationView: View {
     /// Whether the GPS mode picker is showing.
     @State private var showingGPSModePicker = false
 
+    /// Whether a save error alert is showing.
+    @State private var showingSaveError = false
+
+    /// The error message for the save error alert.
+    @State private var saveErrorMessage = ""
+
     /// The selected route for navigation (triggers route picker dismissal).
     @State private var selectedRoute: PlannedRoute?
+
+    /// Subject for communicating recenter requests to the map view.
+    private let recenterSubject = PassthroughSubject<Void, Never>()
 
     /// User preference for metric or imperial units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
@@ -67,7 +77,8 @@ struct iOSNavigationView: View {
                 NavigationMapView(
                     locationManager: locationManager,
                     routeGuidance: routeGuidance,
-                    regionStorage: regionStorage
+                    regionStorage: regionStorage,
+                    recenterPublisher: recenterSubject.eraseToAnyPublisher()
                 )
                 .ignoresSafeArea(edges: .top)
 
@@ -96,10 +107,7 @@ struct iOSNavigationView: View {
                         VStack(spacing: 12) {
                             // Recenter button
                             mapButton(icon: "location.fill", color: .blue) {
-                                // Post notification for map to recenter
-                                NotificationCenter.default.post(
-                                    name: .navigationMapRecenter, object: nil
-                                )
+                                recenterSubject.send()
                             }
 
                             // GPS mode button
@@ -156,6 +164,11 @@ struct iOSNavigationView: View {
                     locationManager.duration ?? 0
                 )
                 Text("You recorded \(distance) in \(duration). Save this hike?")
+            }
+            .alert("Save Failed", isPresented: $showingSaveError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorMessage)
             }
             .onAppear {
                 locationManager.requestPermission()
@@ -316,6 +329,7 @@ struct iOSNavigationView: View {
         }
 
         let compressedTrack = TrackCompression.encode(trackPoints)
+        let (walkingTime, restingTime) = calculateWalkingRestingTime(trackPoints: trackPoints)
 
         let savedRoute = SavedRoute(
             name: routeGuidance.activeRoute?.name ?? "Hike \(Date().formatted(date: .abbreviated, time: .shortened))",
@@ -328,9 +342,9 @@ struct iOSNavigationView: View {
             totalDistance: locationManager.totalDistance,
             elevationGain: locationManager.elevationGain,
             elevationLoss: locationManager.elevationLoss,
-            walkingTime: 0,
-            restingTime: 0,
-            averageHeartRate: healthRelay.heartRate,
+            walkingTime: walkingTime,
+            restingTime: restingTime,
+            averageHeartRate: healthRelay.averageHeartRate,
             trackData: compressedTrack
         )
 
@@ -339,21 +353,48 @@ struct iOSNavigationView: View {
             print("Saved navigation track: \(savedRoute.name)")
         } catch {
             print("Error saving track: \(error.localizedDescription)")
+            saveErrorMessage = "Could not save your hike: \(error.localizedDescription)"
+            showingSaveError = true
         }
     }
 
     /// Discards the current recorded track without saving.
     private func discardTrack() {
-        // Track points are already cleared when tracking stops
+        locationManager.trackPoints.removeAll()
         print("Discarded navigation track")
     }
-}
 
-// MARK: - Navigation Map Recenter Notification
+    // MARK: - Track Statistics
 
-extension Notification.Name {
-    /// Posted when the user taps the recenter button to re-center the map on their location.
-    static let navigationMapRecenter = Notification.Name("navigationMapRecenter")
+    /// Calculates walking and resting time from recorded track points.
+    ///
+    /// A point-to-point speed below ``HikeStatisticsConfig/restingSpeedThreshold``
+    /// counts as resting; otherwise it counts as walking.
+    ///
+    /// - Parameter trackPoints: The recorded GPS locations.
+    /// - Returns: A tuple of (walkingTime, restingTime) in seconds.
+    private func calculateWalkingRestingTime(trackPoints: [CLLocation]) -> (TimeInterval, TimeInterval) {
+        guard trackPoints.count > 1 else { return (0, 0) }
+
+        var walking: TimeInterval = 0
+        var resting: TimeInterval = 0
+
+        for i in 1..<trackPoints.count {
+            let distance = trackPoints[i].distance(from: trackPoints[i - 1])
+            let timeDelta = trackPoints[i].timestamp.timeIntervalSince(trackPoints[i - 1].timestamp)
+
+            guard timeDelta > 0 else { continue }
+
+            let speed = distance / timeDelta
+            if speed >= HikeStatisticsConfig.restingSpeedThreshold {
+                walking += timeDelta
+            } else {
+                resting += timeDelta
+            }
+        }
+
+        return (walking, resting)
+    }
 }
 
 // MARK: - MBTiles Tile Overlay
@@ -363,7 +404,7 @@ extension Notification.Name {
 /// Used to render offline OpenTopoMap tiles on the iPhone navigation map.
 /// The overlay loads tile data from ``TileStore`` instances opened for each
 /// downloaded region.
-final class MBTilesTileOverlay: MKTileOverlay {
+private final class NavigationTileOverlay: MKTileOverlay {
 
     /// The tile stores for all available downloaded regions.
     private let tileStores: [TileStore]
@@ -393,6 +434,12 @@ final class MBTilesTileOverlay: MKTileOverlay {
         self.canReplaceMapContent = true
         self.minimumZ = 1
         self.maximumZ = 17
+    }
+
+    deinit {
+        for store in tileStores {
+            store.close()
+        }
     }
 
     /// Loads tile data from the local MBTiles database.
@@ -430,6 +477,9 @@ struct NavigationMapView: UIViewRepresentable {
     @ObservedObject var routeGuidance: iOSRouteGuidance
     @ObservedObject var regionStorage: RegionStorage
 
+    /// Publisher that emits when the user taps the recenter button.
+    let recenterPublisher: AnyPublisher<Void, Never>
+
     /// Creates and configures the MKMapView.
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -442,13 +492,12 @@ struct NavigationMapView: UIViewRepresentable {
         // Add offline tile overlay
         addTileOverlay(to: mapView)
 
-        // Observe recenter notifications
-        NotificationCenter.default.addObserver(
-            context.coordinator,
-            selector: #selector(Coordinator.recenterMap),
-            name: .navigationMapRecenter,
-            object: nil
-        )
+        // Subscribe to recenter requests
+        context.coordinator.recenterCancellable = recenterPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak mapView] in
+                mapView?.setUserTrackingMode(.followWithHeading, animated: true)
+            }
 
         return mapView
     }
@@ -457,6 +506,7 @@ struct NavigationMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         updateRouteOverlay(on: mapView, coordinator: context.coordinator)
         updateTrackOverlay(on: mapView, coordinator: context.coordinator)
+        updateTileOverlay(on: mapView, coordinator: context.coordinator)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -470,8 +520,23 @@ struct NavigationMapView: UIViewRepresentable {
         let regions = regionStorage.regions
         guard !regions.isEmpty else { return }
 
-        let overlay = MBTilesTileOverlay(regions: regions)
+        let overlay = NavigationTileOverlay(regions: regions)
         mapView.addOverlay(overlay, level: .aboveLabels)
+    }
+
+    /// Refreshes the tile overlay when regions change.
+    private func updateTileOverlay(on mapView: MKMapView, coordinator: Coordinator) {
+        let currentCount = regionStorage.regions.count
+        guard currentCount != coordinator.lastRegionCount else { return }
+        coordinator.lastRegionCount = currentCount
+
+        // Remove existing tile overlays
+        for overlay in mapView.overlays where overlay is NavigationTileOverlay {
+            mapView.removeOverlay(overlay)
+        }
+
+        // Add updated tile overlay
+        addTileOverlay(to: mapView)
     }
 
     /// Updates the route polyline overlay for the active planned route.
@@ -520,8 +585,11 @@ struct NavigationMapView: UIViewRepresentable {
         /// The current recorded track polyline overlay.
         var trackOverlay: MKPolyline?
 
-        /// Weak reference to the map view for recentering.
-        weak var mapView: MKMapView?
+        /// Tracks the last known region count to detect changes.
+        var lastRegionCount: Int = 0
+
+        /// Subscription for recenter requests.
+        var recenterCancellable: AnyCancellable?
 
         init(parent: NavigationMapView) {
             self.parent = parent
@@ -529,7 +597,7 @@ struct NavigationMapView: UIViewRepresentable {
 
         /// Provides renderers for map overlays.
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tileOverlay = overlay as? MBTilesTileOverlay {
+            if let tileOverlay = overlay as? NavigationTileOverlay {
                 return MKTileOverlayRenderer(overlay: tileOverlay)
             }
 
@@ -553,17 +621,6 @@ struct NavigationMapView: UIViewRepresentable {
             }
 
             return MKOverlayRenderer(overlay: overlay)
-        }
-
-        /// Stores a reference to the map view when it finishes loading.
-        func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
-            self.mapView = mapView
-        }
-
-        /// Re-centers the map on the user's current location.
-        @objc func recenterMap() {
-            guard let mapView = mapView else { return }
-            mapView.setUserTrackingMode(.followWithHeading, animated: true)
         }
     }
 }

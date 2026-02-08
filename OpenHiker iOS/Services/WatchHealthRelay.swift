@@ -19,47 +19,6 @@ import Foundation
 import Combine
 import SwiftUI
 
-// MARK: - UV Category
-
-/// WHO/WMO UV index exposure categories with associated colours.
-///
-/// Duplicated from the watchOS ``UVIndexManager`` so the iPhone can display
-/// UV categories without depending on WeatherKit.
-enum UVCategory: String, Equatable {
-    case low = "Low"
-    case moderate = "Moderate"
-    case high = "High"
-    case veryHigh = "Very High"
-    case extreme = "Extreme"
-
-    /// Maps a numeric UV index to its WHO/WMO category.
-    ///
-    /// - Parameter index: The UV index value (0-11+).
-    /// - Returns: The corresponding ``UVCategory``.
-    static func from(index: Int) -> UVCategory {
-        switch index {
-        case 0...2: return .low
-        case 3...5: return .moderate
-        case 6...7: return .high
-        case 8...10: return .veryHigh
-        default: return .extreme
-        }
-    }
-
-    /// The recommended display color for this UV category.
-    ///
-    /// Colors follow the standard WHO UV index color scheme.
-    var displayColor: Color {
-        switch self {
-        case .low: return .green
-        case .moderate: return .yellow
-        case .high: return .orange
-        case .veryHigh: return .red
-        case .extreme: return .purple
-        }
-    }
-}
-
 /// Receives live health and environmental data relayed from the Apple Watch
 /// via WatchConnectivity and publishes it for display on the iPhone navigation UI.
 ///
@@ -79,6 +38,11 @@ enum UVCategory: String, Equatable {
 /// ## Staleness
 /// Each value has a timestamp. Values older than ``maxReadingAgeSec`` are
 /// automatically cleared by a periodic timer to avoid displaying stale data.
+///
+/// ## Heart Rate Averaging
+/// When ``isReceivingData`` is `true`, incoming heart rate readings are
+/// accumulated so that ``averageHeartRate`` can be stored alongside saved routes.
+@MainActor
 final class WatchHealthRelay: ObservableObject {
 
     // MARK: - Published Properties
@@ -123,6 +87,21 @@ final class WatchHealthRelay: ObservableObject {
     /// Timer that periodically checks for stale readings.
     private var stalenessTimer: Timer?
 
+    /// Running sum of heart rate readings for computing the average.
+    private var heartRateSum: Double = 0
+
+    /// Number of heart rate readings received for computing the average.
+    private var heartRateCount: Int = 0
+
+    // MARK: - Computed Properties
+
+    /// The running average heart rate across all readings in this session, or `nil`
+    /// if no heart rate data has been received.
+    var averageHeartRate: Double? {
+        guard heartRateCount > 0 else { return nil }
+        return heartRateSum / Double(heartRateCount)
+    }
+
     // MARK: - Initialization
 
     /// Creates a new health relay and starts the staleness timer.
@@ -145,13 +124,14 @@ final class WatchHealthRelay: ObservableObject {
     ///   - heartRate: Heart rate in BPM, or `nil` if not available.
     ///   - spO2: Blood oxygen saturation as a fraction (0.0-1.0), or `nil`.
     ///   - uvIndex: UV index value (0-11+), or `nil`.
-    @MainActor
     func update(heartRate: Double?, spO2: Double?, uvIndex: Int?) {
         let now = Date()
 
         if let hr = heartRate {
             self.heartRate = hr
             self.heartRateTimestamp = now
+            self.heartRateSum += hr
+            self.heartRateCount += 1
         }
 
         if let spo2 = spO2 {
@@ -169,7 +149,6 @@ final class WatchHealthRelay: ObservableObject {
     }
 
     /// Clears all health data, typically when the watch workout ends.
-    @MainActor
     func clearAll() {
         heartRate = nil
         spO2 = nil
@@ -179,17 +158,23 @@ final class WatchHealthRelay: ObservableObject {
         heartRateTimestamp = nil
         spO2Timestamp = nil
         uvIndexTimestamp = nil
+        heartRateSum = 0
+        heartRateCount = 0
     }
 
     // MARK: - Staleness Timer
 
     /// Starts a repeating timer that clears stale readings.
+    ///
+    /// The timer fires on the main RunLoop because the class is `@MainActor`.
     private func startStalenessTimer() {
         stalenessTimer = Timer.scheduledTimer(
             withTimeInterval: Self.stalenessCheckIntervalSec,
             repeats: true
         ) { [weak self] _ in
-            self?.checkStaleness()
+            Task { @MainActor [weak self] in
+                self?.checkStaleness()
+            }
         }
     }
 
@@ -197,29 +182,25 @@ final class WatchHealthRelay: ObservableObject {
     private func checkStaleness() {
         let now = Date()
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        if let ts = heartRateTimestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
+            heartRate = nil
+            heartRateTimestamp = nil
+        }
 
-            if let ts = self.heartRateTimestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
-                self.heartRate = nil
-                self.heartRateTimestamp = nil
-            }
+        if let ts = spO2Timestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
+            spO2 = nil
+            spO2Timestamp = nil
+        }
 
-            if let ts = self.spO2Timestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
-                self.spO2 = nil
-                self.spO2Timestamp = nil
-            }
+        if let ts = uvIndexTimestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
+            uvIndex = nil
+            uvCategory = nil
+            uvIndexTimestamp = nil
+        }
 
-            if let ts = self.uvIndexTimestamp, now.timeIntervalSince(ts) > Self.maxReadingAgeSec {
-                self.uvIndex = nil
-                self.uvCategory = nil
-                self.uvIndexTimestamp = nil
-            }
-
-            // If all readings are nil, we're no longer actively receiving
-            if self.heartRate == nil && self.spO2 == nil && self.uvIndex == nil {
-                self.isReceivingData = false
-            }
+        // If all readings are nil, we're no longer actively receiving
+        if heartRate == nil && spO2 == nil && uvIndex == nil {
+            isReceivingData = false
         }
     }
 }

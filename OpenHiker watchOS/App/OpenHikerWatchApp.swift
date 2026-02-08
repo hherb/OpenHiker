@@ -86,13 +86,12 @@ struct OpenHikerWatchApp: App {
                     initializePlannedRouteStore()
                     checkForTrackRecovery()
                 }
-                .onReceive(healthKitManager.$currentHeartRate) { _ in
-                    relayHealthDataToPhone()
-                }
-                .onReceive(healthKitManager.$currentSpO2) { _ in
-                    relayHealthDataToPhone()
-                }
-                .onReceive(uvIndexManager.$currentUVIndex) { _ in
+                .onReceive(
+                    healthKitManager.$currentHeartRate
+                        .merge(with: healthKitManager.$currentSpO2)
+                        .merge(with: uvIndexManager.$currentUVIndex.map { $0.map(Double.init) })
+                        .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
+                ) { _ in
                     relayHealthDataToPhone()
                 }
                 .onReceive(healthKitManager.$workoutActive) { active in

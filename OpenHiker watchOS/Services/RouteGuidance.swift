@@ -19,30 +19,6 @@ import Foundation
 import CoreLocation
 import WatchKit
 
-// MARK: - Route Guidance Configuration
-
-/// Configuration constants for the route guidance engine.
-///
-/// Controls off-route detection thresholds, haptic trigger distances,
-/// and other navigation parameters.
-enum RouteGuidanceConfig {
-    /// Distance in metres from the route polyline beyond which the user is considered off-route.
-    static let offRouteThresholdMetres: Double = 50.0
-
-    /// Distance in metres from the route at which the off-route warning is cleared.
-    static let offRouteClearThresholdMetres: Double = 30.0
-
-    /// Distance in metres from a turn point at which the "approaching" haptic fires.
-    static let approachingTurnDistanceMetres: Double = 100.0
-
-    /// Distance in metres from a turn point at which the "at turn" haptic fires and
-    /// the instruction advances to the next one.
-    static let atTurnDistanceMetres: Double = 30.0
-
-    /// Distance in metres from the final destination to trigger "arrived" notification.
-    static let arrivedDistanceMetres: Double = 30.0
-}
-
 // MARK: - Route Guidance
 
 /// Tracks the user's position along a planned route and provides turn-by-turn navigation.
