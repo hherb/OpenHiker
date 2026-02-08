@@ -137,6 +137,24 @@ enum HikeStatisticsConfig {
 
     /// Conversion factor from m/s to mph.
     static let mphPerMps: Double = 2.23694
+
+    // MARK: - Heart Rate Zone Thresholds
+
+    /// Heart rate boundary between easy and moderate zones (bpm).
+    ///
+    /// Below this value the heart icon is green (easy effort).
+    static let easyHeartRateMax: Double = 120.0
+
+    /// Heart rate boundary between moderate and hard zones (bpm).
+    ///
+    /// Below this value (but above ``easyHeartRateMax``) the heart icon is
+    /// yellow (moderate effort). At or above this value it turns red (hard).
+    static let moderateHeartRateMax: Double = 150.0
+
+    // MARK: - Distance Formatting Thresholds
+
+    /// Meters per kilometre, used for compact distance formatting.
+    static let metersPerKilometre: Double = 1000.0
 }
 
 // MARK: - Formatting Helpers

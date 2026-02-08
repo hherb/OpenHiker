@@ -93,6 +93,12 @@ struct WatchPlannedRoutesView: View {
     /// Whether the rename sheet is displayed.
     @State private var showRenameSheet = false
 
+    /// Whether the rename error alert is displayed.
+    @State private var showRenameError = false
+
+    /// Whether to use metric units (km, m) or imperial (mi, ft).
+    @AppStorage("useMetricUnits") private var useMetricUnits = true
+
     var body: some View {
         NavigationStack {
             Group {
@@ -122,11 +128,21 @@ struct WatchPlannedRoutesView: View {
                     if var route = routeToRename {
                         route.name = newName
                         route.modifiedAt = Date()
-                        try? PlannedRouteStore.shared.save(route)
-                        routeStore.loadAll()
+                        do {
+                            try PlannedRouteStore.shared.save(route)
+                            routeStore.loadAll()
+                        } catch {
+                            print("Failed to rename route: \(error.localizedDescription)")
+                            showRenameError = true
+                        }
                     }
                     routeToRename = nil
                 }
+            }
+            .alert("Rename Failed", isPresented: $showRenameError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Could not save the new name. Please try again.")
             }
         }
     }
@@ -153,7 +169,7 @@ struct WatchPlannedRoutesView: View {
                             .lineLimit(1)
 
                         HStack {
-                            Label(formatDistance(route.totalDistance), systemImage: "ruler")
+                            Label(HikeStatsFormatter.formatDistance(route.totalDistance, useMetric: useMetricUnits), systemImage: "ruler")
                             Spacer()
                             Label(route.formattedDuration, systemImage: "clock")
                         }
@@ -186,16 +202,6 @@ struct WatchPlannedRoutesView: View {
         }
     }
 
-    /// Formats a distance in metres for compact display on the watch.
-    ///
-    /// - Parameter metres: Distance in metres.
-    /// - Returns: Formatted string like "12.4 km" or "800 m".
-    private func formatDistance(_ metres: Double) -> String {
-        if metres >= 1000 {
-            return String(format: "%.1f km", metres / 1000)
-        }
-        return "\(Int(metres)) m"
-    }
 }
 
 // MARK: - Regions List View

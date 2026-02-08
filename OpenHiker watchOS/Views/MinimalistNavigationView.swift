@@ -265,16 +265,9 @@ struct MinimalistNavigationView: View {
 
     // MARK: - Helpers
 
-    /// Metres-per-kilometre constant for distance formatting.
-    private static let metresPerKilometre: Double = 1000.0
-
-    /// Metres-per-mile constant for imperial distance formatting.
-    private static let metresPerMile: Double = 1609.344
-
-    /// Feet-per-metre constant for imperial distance formatting.
-    private static let feetPerMetre: Double = 3.28084
-
-    /// Formats a distance for display, respecting the user's unit preference.
+    /// Formats a distance for compact display, respecting the user's unit preference.
+    ///
+    /// Uses ``HikeStatisticsConfig`` constants for unit conversions.
     ///
     /// - Metric: "120m" or "2.4km"
     /// - Imperial: "394ft" or "1.5mi"
@@ -283,29 +276,32 @@ struct MinimalistNavigationView: View {
     /// - Returns: A compact formatted string with unit suffix.
     private func formatDistance(_ metres: Double) -> String {
         if useMetricUnits {
-            if metres < Self.metresPerKilometre {
+            if metres < HikeStatisticsConfig.metersPerKilometre {
                 return "\(Int(metres))m"
             } else {
-                return String(format: "%.1fkm", metres / Self.metresPerKilometre)
+                return String(format: "%.1fkm", metres / HikeStatisticsConfig.metersPerKilometre)
             }
         } else {
-            let feet = metres * Self.feetPerMetre
-            if metres < Self.metresPerMile {
+            let feet = metres * HikeStatisticsConfig.feetPerMeter
+            if metres < HikeStatisticsConfig.metersPerMile {
                 return "\(Int(feet))ft"
             } else {
-                return String(format: "%.1fmi", metres / Self.metresPerMile)
+                return String(format: "%.1fmi", metres / HikeStatisticsConfig.metersPerMile)
             }
         }
     }
 
     /// Returns a color for the heart rate value based on exercise intensity zone.
     ///
+    /// Uses ``HikeStatisticsConfig/easyHeartRateMax`` and
+    /// ``HikeStatisticsConfig/moderateHeartRateMax`` thresholds.
+    ///
     /// - Parameter bpm: Heart rate in beats per minute.
-    /// - Returns: Green (< 120), yellow (120-150), or red (> 150).
+    /// - Returns: Green (easy), yellow (moderate), or red (hard).
     private func heartRateColor(_ bpm: Double) -> Color {
-        if bpm < 120 {
+        if bpm < HikeStatisticsConfig.easyHeartRateMax {
             return .green
-        } else if bpm < 150 {
+        } else if bpm < HikeStatisticsConfig.moderateHeartRateMax {
             return .yellow
         } else {
             return .red

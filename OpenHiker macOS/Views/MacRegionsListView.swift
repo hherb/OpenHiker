@@ -135,6 +135,7 @@ struct MacRegionsListView: View {
                 if let region = regionToRename,
                    !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
                     storage.renameRegion(region, to: renameText.trimmingCharacters(in: .whitespaces))
+                    Task { await CloudSyncManager.shared.performSync() }
                 }
                 regionToRename = nil
             }

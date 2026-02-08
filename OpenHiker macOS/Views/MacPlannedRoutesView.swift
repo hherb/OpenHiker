@@ -79,6 +79,7 @@ struct MacPlannedRoutesView: View {
                     route.modifiedAt = Date()
                     try? PlannedRouteStore.shared.save(route)
                     routeStore.loadAll()
+                    Task { await CloudSyncManager.shared.performSync() }
                 }
                 routeToRename = nil
             }
