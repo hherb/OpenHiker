@@ -21,7 +21,6 @@ package com.openhiker.android.service.sync
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -39,7 +38,7 @@ import java.util.concurrent.TimeUnit
  *
  * Runs every [SYNC_INTERVAL_MINUTES] minutes when the device is connected
  * to a network (Wi-Fi or cellular). Reads the cloud folder URI from
- * DataStore preferences and delegates to [CloudDriveSyncEngine].
+ * SharedPreferences and delegates to [CloudDriveSyncEngine].
  *
  * Uses [HiltWorker] for dependency injection of the sync engine.
  *
@@ -108,9 +107,6 @@ class SyncWorker @AssistedInject constructor(
 
         /** Preference key for the cloud sync folder URI. */
         const val PREF_SYNC_FOLDER_URI = "sync_folder_uri"
-
-        /** DataStore key for the cloud sync folder URI (for SettingsScreen). */
-        val SYNC_FOLDER_URI_KEY = stringPreferencesKey("sync_folder_uri")
 
         /** Sync interval in minutes. */
         private const val SYNC_INTERVAL_MINUTES = 15L

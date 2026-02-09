@@ -107,6 +107,7 @@ dependencies {
     // WorkManager + Hilt Worker
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
+    ksp(libs.hilt.compiler)
 
     // DocumentFile (SAF)
     implementation(libs.androidx.documentfile)

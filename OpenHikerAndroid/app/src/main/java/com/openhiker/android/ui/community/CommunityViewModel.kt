@@ -155,21 +155,45 @@ class CommunityViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
 
     /**
+     * Intermediate flow combining the filter/sort inputs.
+     *
+     * Uses the 5-parameter combine overload for the data-dependent flows,
+     * then outer-combined with UI status flows for full reactivity.
+     */
+    private data class FilterState(
+        val entries: List<RouteIndexEntry>,
+        val query: String,
+        val sort: CommunitySortOption,
+        val activity: RoutingMode?,
+        val country: String?
+    )
+
+    /**
      * Combined UI state exposed to the composable.
      *
-     * Reactively recomputes whenever any input (entries, search, filter, sort) changes.
+     * Reactively recomputes whenever any input changes — including loading,
+     * refreshing, and error status. Uses nested [combine] to observe all
+     * 8 state flows (the 5-parameter overload limit is worked around by
+     * combining the filter inputs into a [FilterState] first).
      */
     val uiState: StateFlow<CommunityBrowseUiState> = combine(
-        _allEntries, _searchQuery, _sortOption, _activityFilter, _countryFilter
-    ) { entries, query, sort, activity, country ->
+        combine(
+            _allEntries, _searchQuery, _sortOption, _activityFilter, _countryFilter
+        ) { entries, query, sort, activity, country ->
+            FilterState(entries, query, sort, activity, country)
+        },
+        _isLoading,
+        _isRefreshing,
+        _error
+    ) { filterState, loading, refreshing, error ->
         val filtered = RouteIndexFilter.applyFilters(
-            entries = entries,
-            query = query,
-            activityType = activity,
-            countryCode = country
+            entries = filterState.entries,
+            query = filterState.query,
+            activityType = filterState.activity,
+            countryCode = filterState.country
         )
 
-        val sorted = when (sort) {
+        val sorted = when (filterState.sort) {
             CommunitySortOption.DATE -> RouteIndexFilter.sortByDateDescending(filtered)
             CommunitySortOption.DISTANCE -> RouteIndexFilter.sortByDistanceDescending(filtered)
             CommunitySortOption.ELEVATION -> RouteIndexFilter.sortByElevationDescending(filtered)
@@ -177,19 +201,19 @@ class CommunityViewModel @Inject constructor(
         }
 
         val listItems = sorted.map { it.toListItem() }
-        val countries = RouteIndexFilter.distinctCountries(entries)
+        val countries = RouteIndexFilter.distinctCountries(filterState.entries)
 
         CommunityBrowseUiState(
             routes = listItems,
-            searchQuery = query,
-            sortOption = sort,
-            activityFilter = activity,
-            countryFilter = country,
+            searchQuery = filterState.query,
+            sortOption = filterState.sort,
+            activityFilter = filterState.activity,
+            countryFilter = filterState.country,
             availableCountries = countries,
-            isLoading = _isLoading.value,
-            isRefreshing = _isRefreshing.value,
-            isEmpty = entries.isEmpty() && !_isLoading.value,
-            error = _error.value
+            isLoading = loading,
+            isRefreshing = refreshing,
+            isEmpty = filterState.entries.isEmpty() && !loading,
+            error = error
         )
     }.stateIn(
         scope = viewModelScope,

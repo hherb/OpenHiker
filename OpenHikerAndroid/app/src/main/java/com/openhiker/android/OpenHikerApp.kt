@@ -19,8 +19,11 @@
 package com.openhiker.android
 
 import android.app.Application
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import org.maplibre.android.MapLibre
+import javax.inject.Inject
 
 /**
  * Application class for OpenHiker Android.
@@ -29,14 +32,35 @@ import org.maplibre.android.MapLibre
  * throughout the application. This triggers Hilt's code generation and
  * sets up the base application-level dependency container.
  *
+ * Implements [Configuration.Provider] to supply a custom [HiltWorkerFactory]
+ * to WorkManager, enabling @HiltWorker-annotated workers to receive
+ * injected dependencies. The default WorkManager initializer is removed
+ * in AndroidManifest.xml to avoid double-initialization.
+ *
  * MapLibre is initialized in [onCreate] so the map rendering engine
  * is ready before any MapView is created.
  */
 @HiltAndroidApp
-class OpenHikerApp : Application() {
+class OpenHikerApp : Application(), Configuration.Provider {
+
+    /** Hilt-provided worker factory for @HiltWorker dependency injection. */
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
 
     override fun onCreate() {
         super.onCreate()
         MapLibre.getInstance(this)
     }
+
+    /**
+     * Provides the WorkManager configuration with a Hilt-aware [WorkerFactory].
+     *
+     * Called by WorkManager when the default initializer is disabled.
+     * This allows @HiltWorker-annotated workers (e.g., [SyncWorker])
+     * to receive constructor-injected dependencies.
+     */
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 }

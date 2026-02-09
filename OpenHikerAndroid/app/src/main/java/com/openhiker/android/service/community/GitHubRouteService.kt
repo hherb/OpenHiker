@@ -30,9 +30,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -219,7 +222,10 @@ class GitHubRouteService @Inject constructor(
     /** Creates a new branch from the given SHA. */
     private suspend fun createBranch(token: String, branchName: String, sha: String): String? {
         val url = "$API_BASE_URL/git/refs"
-        val payload = """{"ref":"refs/heads/$branchName","sha":"$sha"}"""
+        val payload = buildJsonObject {
+            put("ref", "refs/heads/$branchName")
+            put("sha", sha)
+        }.toString()
         return apiPost(url, token, payload)
     }
 
@@ -227,7 +233,10 @@ class GitHubRouteService @Inject constructor(
     private suspend fun createBlob(token: String, content: String): String? {
         val url = "$API_BASE_URL/git/blobs"
         val encoded = Base64.getEncoder().encodeToString(content.toByteArray(Charsets.UTF_8))
-        val payload = """{"content":"$encoded","encoding":"base64"}"""
+        val payload = buildJsonObject {
+            put("content", encoded)
+            put("encoding", "base64")
+        }.toString()
         val body = apiPost(url, token, payload) ?: return null
         return try {
             json.parseToJsonElement(body).jsonObject["sha"]?.jsonPrimitive?.content
@@ -255,10 +264,17 @@ class GitHubRouteService @Inject constructor(
         token: String, baseTreeSha: String, filePath: String, blobSha: String
     ): String? {
         val url = "$API_BASE_URL/git/trees"
-        val payload = """{
-            "base_tree":"$baseTreeSha",
-            "tree":[{"path":"$filePath","mode":"100644","type":"blob","sha":"$blobSha"}]
-        }""".trimIndent()
+        val payload = buildJsonObject {
+            put("base_tree", baseTreeSha)
+            putJsonArray("tree") {
+                add(buildJsonObject {
+                    put("path", filePath)
+                    put("mode", "100644")
+                    put("type", "blob")
+                    put("sha", blobSha)
+                })
+            }
+        }.toString()
         val body = apiPost(url, token, payload) ?: return null
         return try {
             json.parseToJsonElement(body).jsonObject["sha"]?.jsonPrimitive?.content
@@ -273,8 +289,11 @@ class GitHubRouteService @Inject constructor(
         token: String, message: String, treeSha: String, parentSha: String
     ): String? {
         val url = "$API_BASE_URL/git/commits"
-        val escapedMessage = message.replace("\"", "\\\"")
-        val payload = """{"message":"$escapedMessage","tree":"$treeSha","parents":["$parentSha"]}"""
+        val payload = buildJsonObject {
+            put("message", message)
+            put("tree", treeSha)
+            putJsonArray("parents") { add(parentSha) }
+        }.toString()
         val body = apiPost(url, token, payload) ?: return null
         return try {
             json.parseToJsonElement(body).jsonObject["sha"]?.jsonPrimitive?.content
@@ -289,7 +308,10 @@ class GitHubRouteService @Inject constructor(
         token: String, branchName: String, commitSha: String
     ): String? {
         val url = "$API_BASE_URL/git/refs/heads/$branchName"
-        val payload = """{"sha":"$commitSha","force":false}"""
+        val payload = buildJsonObject {
+            put("sha", commitSha)
+            put("force", false)
+        }.toString()
         return apiPatch(url, token, payload)
     }
 
@@ -298,14 +320,12 @@ class GitHubRouteService @Inject constructor(
         token: String, title: String, body: String, branchName: String
     ): String? {
         val url = "$API_BASE_URL/pulls"
-        val escapedTitle = title.replace("\"", "\\\"")
-        val escapedBody = body.replace("\"", "\\\"").replace("\n", "\\n")
-        val payload = """{
-            "title":"$escapedTitle",
-            "body":"$escapedBody",
-            "head":"$branchName",
-            "base":"main"
-        }""".trimIndent()
+        val payload = buildJsonObject {
+            put("title", title)
+            put("body", body)
+            put("head", branchName)
+            put("base", "main")
+        }.toString()
         val responseBody = apiPost(url, token, payload) ?: return null
         return try {
             json.parseToJsonElement(responseBody).jsonObject["html_url"]?.jsonPrimitive?.content

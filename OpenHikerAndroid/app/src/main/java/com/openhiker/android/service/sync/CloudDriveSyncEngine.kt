@@ -172,11 +172,25 @@ class CloudDriveSyncEngine @Inject constructor(
                 errors.add("Planned routes download: ${e.message}")
             }
 
+            // ── Upload/download saved routes ─────────────────────
+            // TODO: Saved route sync requires entity-model conversion
+            //  (SavedRouteEntity has trackData: ByteArray that needs
+            //  Base64 encoding for JSON cloud storage). Planned for a
+            //  follow-up once entity-to-model mappers are established.
+            //  Directories are pre-created above for forward compatibility.
+
+            // ── Upload/download waypoints ────────────────────────
+            // TODO: Waypoint sync requires entity-model conversion
+            //  (WaypointEntity has photo/thumbnail BLOBs and stores
+            //  category as String vs WaypointCategory enum). Planned
+            //  for a follow-up once entity-to-model mappers exist.
+
             // ── Replicate tombstones ─────────────────────────────
             for (tombstone in manifest.tombstones) {
                 if (tombstone.deletedAt > lastSync) {
                     try {
                         plannedRouteRepository.delete(tombstone.uuid)
+                        routeRepository.delete(tombstone.uuid)
                         waypointRepository.delete(tombstone.uuid)
                         deleted++
                     } catch (e: Exception) {
@@ -287,6 +301,10 @@ class CloudDriveSyncEngine @Inject constructor(
     /**
      * Checks whether a local entity should be uploaded based on its modification time.
      *
+     * Parses the ISO-8601 [modifiedAt] timestamp and compares it against the
+     * last sync epoch millis. Uploads if modified after last sync, on first
+     * sync, or if the timestamp cannot be parsed (fail-open).
+     *
      * @param modifiedAt ISO-8601 modification timestamp, or null if never modified.
      * @param lastSyncTimestamp Epoch milliseconds of the last sync.
      * @return True if the entity was modified after the last sync.
@@ -294,9 +312,12 @@ class CloudDriveSyncEngine @Inject constructor(
     private fun shouldUpload(modifiedAt: String?, lastSyncTimestamp: Long): Boolean {
         if (lastSyncTimestamp == 0L) return true
         if (modifiedAt == null) return true
-        // Simple comparison: if modifiedAt is present, always re-upload
-        // A more precise implementation would parse the ISO timestamp
-        return true
+        return try {
+            val modifiedEpoch = java.time.Instant.parse(modifiedAt).toEpochMilli()
+            modifiedEpoch > lastSyncTimestamp
+        } catch (e: Exception) {
+            true // Upload if timestamp cannot be parsed (fail-open)
+        }
     }
 
     /**
