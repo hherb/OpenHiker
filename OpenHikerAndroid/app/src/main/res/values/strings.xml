@@ -1,0 +1,32 @@
+<!--
+  OpenHiker - Offline Hiking Navigation
+  Copyright (C) 2024 - 2026 Dr Horst Herb - AGPL-3.0
+-->
+<resources>
+    <string name="app_name">OpenHiker</string>
+
+    <!-- Navigation tabs -->
+    <string name="tab_navigate">Navigate</string>
+    <string name="tab_regions">Regions</string>
+    <string name="tab_hikes">Hikes</string>
+    <string name="tab_routes">Routes</string>
+    <string name="tab_community">Community</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_map_section">Map</string>
+    <string name="settings_gps_section">GPS</string>
+    <string name="settings_navigation_section">Navigation</string>
+    <string name="settings_downloads_section">Downloads</string>
+    <string name="settings_cloud_sync_section">Cloud Sync</string>
+    <string name="settings_storage_section">Storage</string>
+    <string name="settings_about_section">About</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="save">Save</string>
+    <string name="error">Error</string>
+</resources>

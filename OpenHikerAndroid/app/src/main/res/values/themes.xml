@@ -1,0 +1,10 @@
+<!--
+  OpenHiker - Offline Hiking Navigation
+  Copyright (C) 2024 - 2026 Dr Horst Herb - AGPL-3.0
+-->
+<resources>
+    <style name="Theme.OpenHiker" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
