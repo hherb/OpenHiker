@@ -20,13 +20,18 @@ package com.openhiker.android.ui.regions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.openhiker.android.data.repository.RegionRepository
+import com.openhiker.android.data.repository.RegionDataSource
+import com.openhiker.android.di.IoDispatcher
 import com.openhiker.core.model.RegionMetadata
+import com.openhiker.core.util.FormatUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -56,15 +61,51 @@ data class RegionDisplayItem(
  * Provides the list of downloaded regions with computed display fields,
  * and supports rename, delete, and storage usage calculation.
  * All mutations are persisted through [RegionRepository].
+ *
+ * Display items and total storage are computed reactively on the IO
+ * dispatcher to avoid blocking the main thread with disk I/O.
  */
 @HiltViewModel
 class RegionListViewModel @Inject constructor(
-    private val regionRepository: RegionRepository
+    private val regionRepository: RegionDataSource,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     /** Observable list of all downloaded regions. */
     val regions: StateFlow<List<RegionMetadata>> = regionRepository.regions
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /**
+     * Precomputed display items for all regions, built on the IO dispatcher.
+     *
+     * Automatically updates whenever the region list changes. The composable
+     * observes this flow instead of calling a synchronous function during
+     * composition, avoiding disk I/O on the main thread.
+     */
+    val displayItems: StateFlow<List<RegionDisplayItem>> = regionRepository.regions
+        .map { regionList ->
+            regionList.map { metadata -> computeDisplayItem(metadata) }
+        }
+        .flowOn(ioDispatcher)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Total storage used by all downloaded regions, computed on the IO dispatcher.
+     *
+     * Sums MBTiles and routing database file sizes. Automatically updates
+     * whenever the region list changes.
+     */
+    val totalStorageBytesFlow: StateFlow<Long> = regionRepository.regions
+        .map { regionList ->
+            regionList.sumOf { metadata ->
+                val mbtiles = File(regionRepository.mbtilesPath(metadata.id))
+                val routing = File(regionRepository.routingDbPath(metadata.id))
+                (if (mbtiles.exists()) mbtiles.length() else 0L) +
+                    (if (routing.exists()) routing.length() else 0L)
+            }
+        }
+        .flowOn(ioDispatcher)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
 
     private val _renameDialogRegion = MutableStateFlow<RegionMetadata?>(null)
     /** Region currently being renamed, or null if no rename dialog is showing. */
@@ -81,36 +122,23 @@ class RegionListViewModel @Inject constructor(
     }
 
     /**
-     * Builds a display item for a region by reading file size from disk.
+     * Computes a display item for a region by reading file size from disk.
+     *
+     * Must be called from the IO dispatcher (guaranteed by the [displayItems]
+     * flow which uses [flowOn] with [Dispatchers.IO]).
      *
      * @param metadata The region metadata.
      * @return A [RegionDisplayItem] with computed display fields.
      */
-    fun buildDisplayItem(metadata: RegionMetadata): RegionDisplayItem {
+    private fun computeDisplayItem(metadata: RegionMetadata): RegionDisplayItem {
         val mbtilesFile = File(regionRepository.mbtilesPath(metadata.id))
         val fileSize = if (mbtilesFile.exists()) mbtilesFile.length() else 0L
         return RegionDisplayItem(
             metadata = metadata,
             fileSizeBytes = fileSize,
-            fileSizeFormatted = formatFileSize(fileSize),
+            fileSizeFormatted = FormatUtils.formatBytes(fileSize),
             areaKm2 = metadata.boundingBox.areaKm2
         )
-    }
-
-    /**
-     * Calculates the total storage used by all downloaded regions.
-     *
-     * Sums the file sizes of all MBTiles and routing database files.
-     *
-     * @return Total storage in bytes.
-     */
-    fun totalStorageBytes(): Long {
-        return regions.value.sumOf { metadata ->
-            val mbtiles = File(regionRepository.mbtilesPath(metadata.id))
-            val routing = File(regionRepository.routingDbPath(metadata.id))
-            (if (mbtiles.exists()) mbtiles.length() else 0L) +
-                (if (routing.exists()) routing.length() else 0L)
-        }
     }
 
     /**
@@ -167,24 +195,6 @@ class RegionListViewModel @Inject constructor(
         viewModelScope.launch {
             regionRepository.delete(regionId)
             _deleteDialogRegion.value = null
-        }
-    }
-
-    /**
-     * Formats a byte count as a human-readable size string.
-     *
-     * @param bytes The size in bytes.
-     * @return Formatted string like "15.2 MB" or "1.3 GB".
-     */
-    private fun formatFileSize(bytes: Long): String {
-        val kb = bytes / 1024.0
-        val mb = kb / 1024.0
-        val gb = mb / 1024.0
-        return when {
-            gb >= 1.0 -> "%.1f GB".format(gb)
-            mb >= 1.0 -> "%.1f MB".format(mb)
-            kb >= 1.0 -> "%.1f KB".format(kb)
-            else -> "$bytes B"
         }
     }
 }

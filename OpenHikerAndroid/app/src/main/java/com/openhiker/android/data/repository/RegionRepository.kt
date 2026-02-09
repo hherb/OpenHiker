@@ -19,6 +19,7 @@
 package com.openhiker.android.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.openhiker.core.model.RegionMetadata
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,7 @@ import javax.inject.Singleton
 @Singleton
 class RegionRepository @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : RegionDataSource {
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -55,18 +56,18 @@ class RegionRepository @Inject constructor(
     private val _regions = MutableStateFlow<List<RegionMetadata>>(emptyList())
 
     /** Observable list of all downloaded region metadata. */
-    val regions: StateFlow<List<RegionMetadata>> = _regions.asStateFlow()
+    override val regions: StateFlow<List<RegionMetadata>> = _regions.asStateFlow()
 
     /** Directory for storing region MBTiles and routing database files. */
     val regionsDirectory: File
         get() = File(context.filesDir, REGIONS_DIR).also { it.mkdirs() }
 
     /** File path for a region's MBTiles file. */
-    fun mbtilesPath(regionId: String): String =
+    override fun mbtilesPath(regionId: String): String =
         File(regionsDirectory, "$regionId.mbtiles").absolutePath
 
     /** File path for a region's routing database. */
-    fun routingDbPath(regionId: String): String =
+    override fun routingDbPath(regionId: String): String =
         File(regionsDirectory, "$regionId.routing.db").absolutePath
 
     /**
@@ -74,7 +75,7 @@ class RegionRepository @Inject constructor(
      *
      * Should be called at app startup to populate the [regions] StateFlow.
      */
-    suspend fun loadAll() = withContext(Dispatchers.IO) {
+    override suspend fun loadAll() = withContext(Dispatchers.IO) {
         val file = metadataFile()
         if (file.exists()) {
             try {
@@ -82,7 +83,7 @@ class RegionRepository @Inject constructor(
                 val metadata = json.decodeFromString<List<RegionMetadata>>(content)
                 _regions.value = metadata
             } catch (e: Exception) {
-                // Log error but don't crash — empty list is safe default
+                Log.e(TAG, "Failed to load region metadata from disk", e)
                 _regions.value = emptyList()
             }
         }
@@ -93,7 +94,7 @@ class RegionRepository @Inject constructor(
      *
      * @param metadata The region metadata to save.
      */
-    suspend fun save(metadata: RegionMetadata) = withContext(Dispatchers.IO) {
+    override suspend fun save(metadata: RegionMetadata) = withContext(Dispatchers.IO) {
         val current = _regions.value.toMutableList()
         current.removeAll { it.id == metadata.id }
         current.add(metadata)
@@ -107,7 +108,7 @@ class RegionRepository @Inject constructor(
      * @param regionId The region UUID.
      * @param newName The new display name.
      */
-    suspend fun rename(regionId: String, newName: String) = withContext(Dispatchers.IO) {
+    override suspend fun rename(regionId: String, newName: String) = withContext(Dispatchers.IO) {
         val current = _regions.value.map { region ->
             if (region.id == regionId) region.copy(name = newName)
             else region
@@ -121,22 +122,33 @@ class RegionRepository @Inject constructor(
      *
      * @param regionId The region UUID to delete.
      */
-    suspend fun delete(regionId: String) = withContext(Dispatchers.IO) {
+    override suspend fun delete(regionId: String) = withContext(Dispatchers.IO) {
         val current = _regions.value.filterNot { it.id == regionId }
         _regions.value = current
         persistMetadata(current)
 
         // Delete associated files
-        File(mbtilesPath(regionId)).delete()
-        File(routingDbPath(regionId)).delete()
+        if (!File(mbtilesPath(regionId)).delete()) {
+            Log.w(TAG, "Failed to delete MBTiles file for region $regionId")
+        }
+        if (!File(routingDbPath(regionId)).delete()) {
+            Log.w(TAG, "Failed to delete routing database for region $regionId")
+        }
     }
 
     /**
      * Writes the metadata list to disk as JSON.
+     *
+     * Logs an error if the write fails but does not propagate the exception,
+     * since the in-memory state has already been updated.
      */
     private fun persistMetadata(metadata: List<RegionMetadata>) {
-        val file = metadataFile()
-        file.writeText(json.encodeToString(metadata))
+        try {
+            val file = metadataFile()
+            file.writeText(json.encodeToString(metadata))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist region metadata to disk", e)
+        }
     }
 
     /** Returns the metadata JSON file, creating the parent directory if needed. */
@@ -146,6 +158,7 @@ class RegionRepository @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "RegionRepository"
         private const val METADATA_FILENAME = "regions_metadata.json"
         private const val REGIONS_DIR = "regions"
     }

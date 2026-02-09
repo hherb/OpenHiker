@@ -19,8 +19,9 @@
 package com.openhiker.android.ui.regions
 
 import android.graphics.PointF
-import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,20 +60,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import com.openhiker.android.ui.components.TileSourceSelector
 import com.openhiker.core.geo.BoundingBox
@@ -108,7 +108,7 @@ private const val DEFAULT_SELECTION_FRACTION = 0.6
  * @param onNavigateBack Callback to navigate back when done.
  * @param viewModel The region selector ViewModel.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegionSelectorScreen(
     onNavigateBack: () -> Unit,
@@ -228,54 +228,58 @@ fun RegionSelectorScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInteropFilter { event ->
-                        if (isDownloading) return@pointerInteropFilter false
+                    .pointerInput(isDownloading) {
+                        if (isDownloading) return@pointerInput
 
-                        when (event.action) {
-                            MotionEvent.ACTION_DOWN -> {
-                                dragStart = Offset(event.x, event.y)
-                                dragEnd = null
-                                selectionRect = null
-                                true
-                            }
-                            MotionEvent.ACTION_MOVE -> {
-                                dragEnd = Offset(event.x, event.y)
-                                true
-                            }
-                            MotionEvent.ACTION_UP -> {
-                                val start = dragStart
-                                val end = Offset(event.x, event.y)
-                                if (start != null) {
-                                    val minSelectionPx = with(density) {
-                                        MIN_SELECTION_SIZE_DP.dp.toPx()
-                                    }
-                                    val width = kotlin.math.abs(end.x - start.x)
-                                    val height = kotlin.math.abs(end.y - start.y)
+                        awaitEachGesture {
+                            // Wait for first finger down
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val startOffset = down.position
+                            dragStart = startOffset
+                            dragEnd = null
+                            selectionRect = null
+                            down.consume()
 
-                                    val map = mapLibreMap
-                                    if (map != null) {
-                                        if (width < minSelectionPx || height < minSelectionPx) {
-                                            // Snap to default: 60% of visible region
-                                            snapToDefaultSelection(map, viewModel)
-                                        } else {
-                                            // Convert screen rect to geographic bounds
-                                            convertSelectionToBounds(
-                                                map, start, end, viewModel
-                                            )
-                                        }
-                                        selectionRect = Rect(
-                                            left = minOf(start.x, end.x),
-                                            top = minOf(start.y, end.y),
-                                            right = maxOf(start.x, end.x),
-                                            bottom = maxOf(start.y, end.y)
+                            // Track drag moves until all pointers are lifted
+                            var lastPosition = startOffset
+                            do {
+                                val event = awaitPointerEvent()
+                                val current = event.changes.firstOrNull() ?: break
+                                lastPosition = current.position
+                                dragEnd = lastPosition
+                                current.consume()
+                            } while (event.changes.any { it.pressed })
+
+                            // Finger up: finalize selection
+                            val start = dragStart
+                            if (start != null) {
+                                val minSelectionPx = with(density) {
+                                    MIN_SELECTION_SIZE_DP.dp.toPx()
+                                }
+                                val width = kotlin.math.abs(lastPosition.x - start.x)
+                                val height = kotlin.math.abs(lastPosition.y - start.y)
+
+                                val map = mapLibreMap
+                                if (map != null) {
+                                    if (width < minSelectionPx || height < minSelectionPx) {
+                                        // Snap to default: 60% of visible region
+                                        snapToDefaultSelection(map, viewModel)
+                                    } else {
+                                        // Convert screen rect to geographic bounds
+                                        convertSelectionToBounds(
+                                            map, start, lastPosition, viewModel
                                         )
                                     }
+                                    selectionRect = Rect(
+                                        left = minOf(start.x, lastPosition.x),
+                                        top = minOf(start.y, lastPosition.y),
+                                        right = maxOf(start.x, lastPosition.x),
+                                        bottom = maxOf(start.y, lastPosition.y)
+                                    )
                                 }
-                                dragStart = null
-                                dragEnd = null
-                                true
                             }
-                            else -> false
+                            dragStart = null
+                            dragEnd = null
                         }
                     }
             ) {
@@ -364,10 +368,10 @@ private fun snapToDefaultSelection(
     val visibleRegion = map.projection.visibleRegion
     val bounds = visibleRegion.latLngBounds
 
-    val centerLat = (bounds.latNorth + bounds.latSouth) / 2.0
-    val centerLon = (bounds.lonEast + bounds.lonWest) / 2.0
-    val latSpan = (bounds.latNorth - bounds.latSouth) * DEFAULT_SELECTION_FRACTION
-    val lonSpan = (bounds.lonEast - bounds.lonWest) * DEFAULT_SELECTION_FRACTION
+    val centerLat = (bounds.latitudeNorth + bounds.latitudeSouth) / 2.0
+    val centerLon = (bounds.longitudeEast + bounds.longitudeWest) / 2.0
+    val latSpan = (bounds.latitudeNorth - bounds.latitudeSouth) * DEFAULT_SELECTION_FRACTION
+    val lonSpan = (bounds.longitudeEast - bounds.longitudeWest) * DEFAULT_SELECTION_FRACTION
 
     val bbox = BoundingBox(
         north = centerLat + latSpan / 2,

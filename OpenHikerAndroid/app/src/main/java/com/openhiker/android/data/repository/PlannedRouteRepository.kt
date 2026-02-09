@@ -19,6 +19,7 @@
 package com.openhiker.android.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.openhiker.core.model.PlannedRoute
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +63,7 @@ class PlannedRouteRepository @Inject constructor(
      *
      * Reads all JSON files in the `planned_routes/` directory and
      * deserializes them into [PlannedRoute] objects. Invalid files
-     * are silently skipped.
+     * are logged and skipped.
      */
     suspend fun loadAll() = withContext(Dispatchers.IO) {
         val dir = storageDirectory
@@ -75,7 +76,8 @@ class PlannedRouteRepository @Inject constructor(
             ?.mapNotNull { file ->
                 try {
                     json.decodeFromString<PlannedRoute>(file.readText())
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.w(TAG, "Skipping corrupted route file: ${file.name}", e)
                     null
                 }
             }
@@ -91,8 +93,12 @@ class PlannedRouteRepository @Inject constructor(
      * @param route The planned route to save.
      */
     suspend fun save(route: PlannedRoute) = withContext(Dispatchers.IO) {
-        val file = File(storageDirectory, "${route.id}.json")
-        file.writeText(json.encodeToString(route))
+        try {
+            val file = File(storageDirectory, "${route.id}.json")
+            file.writeText(json.encodeToString(route))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save planned route: ${route.id}", e)
+        }
 
         val current = _routes.value.toMutableList()
         current.removeAll { it.id == route.id }
@@ -111,7 +117,8 @@ class PlannedRouteRepository @Inject constructor(
         if (!file.exists()) return@withContext null
         try {
             json.decodeFromString<PlannedRoute>(file.readText())
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to deserialize planned route: $id", e)
             null
         }
     }
@@ -131,11 +138,14 @@ class PlannedRouteRepository @Inject constructor(
      * @param id The route UUID to delete.
      */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
-        File(storageDirectory, "$id.json").delete()
+        if (!File(storageDirectory, "$id.json").delete()) {
+            Log.w(TAG, "Failed to delete route file for route $id")
+        }
         _routes.value = _routes.value.filterNot { it.id == id }
     }
 
     companion object {
+        private const val TAG = "PlannedRouteRepo"
         private const val ROUTES_DIR = "planned_routes"
     }
 }

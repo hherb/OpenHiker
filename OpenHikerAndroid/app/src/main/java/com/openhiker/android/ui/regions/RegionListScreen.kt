@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openhiker.core.model.RegionMetadata
+import com.openhiker.core.util.FormatUtils
 
 /**
  * Region list and management screen.
@@ -85,6 +86,8 @@ fun RegionListScreen(
     viewModel: RegionListViewModel = hiltViewModel()
 ) {
     val regions by viewModel.regions.collectAsState()
+    val displayItems by viewModel.displayItems.collectAsState()
+    val totalStorageBytes by viewModel.totalStorageBytesFlow.collectAsState()
     val renameRegion by viewModel.renameDialogRegion.collectAsState()
     val deleteRegion by viewModel.deleteDialogRegion.collectAsState()
 
@@ -164,22 +167,19 @@ fun RegionListScreen(
                 // Storage summary header
                 item {
                     StorageSummary(
-                        totalBytes = viewModel.totalStorageBytes(),
+                        totalBytes = totalStorageBytes,
                         regionCount = regions.size
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Region cards
-                items(regions, key = { it.id }) { region ->
-                    val displayItem = remember(region) {
-                        viewModel.buildDisplayItem(region)
-                    }
+                // Region cards (display items precomputed on IO dispatcher)
+                items(displayItems, key = { it.metadata.id }) { displayItem ->
                     RegionCard(
                         item = displayItem,
-                        onViewOnMap = { onViewOnMap(region) },
-                        onRename = { viewModel.showRenameDialog(region) },
-                        onDelete = { viewModel.showDeleteDialog(region) }
+                        onViewOnMap = { onViewOnMap(displayItem.metadata) },
+                        onRename = { viewModel.showRenameDialog(displayItem.metadata) },
+                        onDelete = { viewModel.showDeleteDialog(displayItem.metadata) }
                     )
                 }
 
@@ -217,7 +217,7 @@ private fun StorageSummary(totalBytes: Long, regionCount: Int) {
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = formatStorageSize(totalBytes),
+                    text = FormatUtils.formatBytes(totalBytes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -364,20 +364,3 @@ private fun RenameDialog(
     )
 }
 
-/**
- * Formats a byte count as a human-readable storage size.
- *
- * @param bytes The size in bytes.
- * @return Formatted string like "15.2 MB" or "1.3 GB".
- */
-private fun formatStorageSize(bytes: Long): String {
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    val gb = mb / 1024.0
-    return when {
-        gb >= 1.0 -> "%.1f GB".format(gb)
-        mb >= 1.0 -> "%.1f MB".format(mb)
-        kb >= 1.0 -> "%.1f KB".format(kb)
-        else -> "$bytes B"
-    }
-}

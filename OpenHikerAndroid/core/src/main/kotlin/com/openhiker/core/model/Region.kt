@@ -19,6 +19,7 @@
 package com.openhiker.core.model
 
 import com.openhiker.core.geo.BoundingBox
+import com.openhiker.core.util.FormatUtils
 import kotlinx.serialization.Serializable
 
 /**
@@ -68,19 +69,12 @@ data class Region(
     /**
      * Human-readable file size string.
      *
+     * Delegates to [FormatUtils.formatBytes] for consistent formatting
+     * across the entire application.
+     *
      * @return Formatted size like "15.2 MB" or "1.3 GB".
      */
-    fun fileSizeFormatted(): String {
-        val kb = fileSizeBytes / 1024.0
-        val mb = kb / 1024.0
-        val gb = mb / 1024.0
-        return when {
-            gb >= 1.0 -> "%.1f GB".format(gb)
-            mb >= 1.0 -> "%.1f MB".format(mb)
-            kb >= 1.0 -> "%.1f KB".format(kb)
-            else -> "$fileSizeBytes B"
-        }
-    }
+    fun fileSizeFormatted(): String = FormatUtils.formatBytes(fileSizeBytes)
 }
 
 /**
