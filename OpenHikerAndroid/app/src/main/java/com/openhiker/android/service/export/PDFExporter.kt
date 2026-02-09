@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -77,11 +78,10 @@ class PDFExporter @Inject constructor(
      */
     suspend fun exportSavedRoute(savedRoute: SavedRouteEntity): File? =
         withContext(Dispatchers.IO) {
+            val document = PdfDocument()
             try {
                 val trackPoints = TrackCompression.decompress(savedRoute.trackData)
                 val elevationPoints = buildElevationFromTrackPoints(trackPoints)
-
-                val document = PdfDocument()
 
                 // Page 1: Statistics
                 renderStatisticsPage(
@@ -112,11 +112,12 @@ class PDFExporter @Inject constructor(
                     document = document,
                     fileName = sanitizeFileName(savedRoute.name)
                 )
-                document.close()
                 file
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export saved route as PDF: ${savedRoute.id}", e)
                 null
+            } finally {
+                document.close()
             }
         }
 
@@ -132,9 +133,8 @@ class PDFExporter @Inject constructor(
      */
     suspend fun exportPlannedRoute(plannedRoute: PlannedRoute): File? =
         withContext(Dispatchers.IO) {
+            val document = PdfDocument()
             try {
-                val document = PdfDocument()
-
                 // Page 1: Statistics
                 renderStatisticsPage(
                     document = document,
@@ -165,11 +165,12 @@ class PDFExporter @Inject constructor(
                     document = document,
                     fileName = sanitizeFileName(plannedRoute.name)
                 )
-                document.close()
                 file
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export planned route as PDF: ${plannedRoute.id}", e)
                 null
+            } finally {
+                document.close()
             }
         }
 
@@ -449,7 +450,7 @@ class PDFExporter @Inject constructor(
 
             canvas.drawLine(x, chartTop, x, chartBottom, gridPaint)
             canvas.drawText(
-                "%.1f km".format(distance / METRES_PER_KILOMETRE),
+                String.format(Locale.US, "%.1f km", distance / METRES_PER_KILOMETRE),
                 x - DISTANCE_LABEL_HORIZONTAL_OFFSET,
                 chartBottom + DISTANCE_LABEL_VERTICAL_OFFSET,
                 axisLabelPaint

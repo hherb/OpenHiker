@@ -192,7 +192,7 @@ fun HikeDetailScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         ElevationProfileChart(
-                            elevationPoints = uiState.elevationProfile,
+                            points = uiState.elevationProfile,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(200.dp)
@@ -266,7 +266,7 @@ fun HikeDetailScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteHike()
+                    viewModel.confirmDelete()
                     onNavigateBack()
                 }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)

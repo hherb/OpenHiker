@@ -311,8 +311,9 @@ fun AppNavigation() {
             composable(
                 route = Routes.WAYPOINT_DETAIL,
                 arguments = listOf(navArgument("waypointId") { type = NavType.StringType })
-            ) {
+            ) { backStackEntry ->
                 WaypointDetailScreen(
+                    waypointId = backStackEntry.arguments?.getString("waypointId") ?: "",
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

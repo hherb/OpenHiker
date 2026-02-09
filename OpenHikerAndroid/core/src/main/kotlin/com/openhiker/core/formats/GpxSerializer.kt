@@ -21,6 +21,7 @@ package com.openhiker.core.formats
 import com.openhiker.core.compression.TrackPoint
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.ElevationPoint
+import java.util.Locale
 
 /**
  * Generates GPX 1.1 XML from route and track data.
@@ -82,11 +83,11 @@ object GpxSerializer {
 
         for (point in trackPoints) {
             sb.append("\n      <trkpt lat=\"")
-            sb.append("%.7f".format(point.latitude))
+            sb.append(String.format(Locale.US, "%.7f", point.latitude))
             sb.append("\" lon=\"")
-            sb.append("%.7f".format(point.longitude))
+            sb.append(String.format(Locale.US, "%.7f", point.longitude))
             sb.append("\">")
-            sb.append("\n        <ele>%.1f</ele>".format(point.altitude))
+            sb.append(String.format(Locale.US, "\n        <ele>%.1f</ele>", point.altitude))
             sb.append("\n        <time>")
             sb.append(timestampToIso(point.timestamp))
             sb.append("</time>")
@@ -143,9 +144,9 @@ object GpxSerializer {
             }
 
             sb.append("\n    <rtept lat=\"")
-            sb.append("%.7f".format(coord.latitude))
+            sb.append(String.format(Locale.US, "%.7f", coord.latitude))
             sb.append("\" lon=\"")
-            sb.append("%.7f".format(coord.longitude))
+            sb.append(String.format(Locale.US, "%.7f", coord.longitude))
             sb.append("\">")
 
             val elevation = elevationProfile?.let {
@@ -154,7 +155,7 @@ object GpxSerializer {
                 )
             }
             if (elevation != null) {
-                sb.append("\n      <ele>%.1f</ele>".format(elevation))
+                sb.append(String.format(Locale.US, "\n      <ele>%.1f</ele>", elevation))
             }
 
             sb.append("\n    </rtept>")

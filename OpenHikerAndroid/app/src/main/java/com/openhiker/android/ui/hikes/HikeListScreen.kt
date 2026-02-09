@@ -164,7 +164,7 @@ fun HikeListScreen(
     uiState.deleteConfirmationHike?.let { hike ->
         DeleteHikeDialog(
             hikeName = hike.name,
-            onDismiss = viewModel::cancelDelete,
+            onDismiss = viewModel::dismissDelete,
             onConfirm = { viewModel.confirmDelete() }
         )
     }

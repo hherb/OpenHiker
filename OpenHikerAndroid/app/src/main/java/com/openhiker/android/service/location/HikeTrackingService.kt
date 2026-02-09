@@ -45,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -132,7 +133,7 @@ class HikeTrackingService : Service() {
     /** Live statistics updated on each GPS fix during recording. */
     val liveStats: StateFlow<LiveHikeStats> = _liveStats.asStateFlow()
 
-    private val trackPoints = mutableListOf<TrackPoint>()
+    private val trackPoints = java.util.concurrent.CopyOnWriteArrayList<TrackPoint>()
     private var locationJob: Job? = null
     private var timerJob: Job? = null
     private var autoSaveJob: Job? = null
@@ -176,9 +177,7 @@ class HikeTrackingService : Service() {
     }
 
     override fun onDestroy() {
-        locationJob?.cancel()
-        timerJob?.cancel()
-        autoSaveJob?.cancel()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -253,6 +252,9 @@ class HikeTrackingService : Service() {
     /**
      * Stops recording, compresses the track, and saves to the database.
      *
+     * Only deletes the crash-recovery draft file if the save succeeds.
+     * If saving fails, the draft is preserved so data can be recovered.
+     *
      * @return The saved route entity ID, or null if no points were recorded.
      */
     suspend fun stopRecording(): String? {
@@ -266,7 +268,12 @@ class HikeTrackingService : Service() {
 
         _recordingState.value = HikeRecordingState.IDLE
         locationProvider.stopTracking()
-        deleteDraft()
+
+        if (routeId != null) {
+            deleteDraft()
+        } else {
+            Log.w(TAG, "Save returned null — keeping draft file for recovery")
+        }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -438,51 +445,61 @@ class HikeTrackingService : Service() {
     /**
      * Compresses the track and saves the completed hike to the database.
      *
-     * @return The saved route entity ID, or null if no points recorded.
+     * Wraps the entire save operation in a try-catch to prevent silent data
+     * loss. On failure, the error is logged and null is returned so the
+     * caller can preserve the crash-recovery draft file.
+     *
+     * @return The saved route entity ID, or null if no points recorded or save failed.
      */
     private suspend fun saveHike(): String? {
         if (trackPoints.isEmpty()) return null
 
-        val id = UUID.randomUUID().toString()
-        val startTime = hikeStartTime?.toString() ?: Instant.now().toString()
-        val endTime = Instant.now().toString()
-        val stats = _liveStats.value
-        val compressed = TrackCompression.compress(trackPoints.toList())
+        return try {
+            val id = UUID.randomUUID().toString()
+            val startTime = hikeStartTime?.toString() ?: Instant.now().toString()
+            val endTime = Instant.now().toString()
+            val stats = _liveStats.value
+            val snapshot = trackPoints.toList()
+            val compressed = TrackCompression.compress(snapshot)
 
-        val first = trackPoints.first()
-        val last = trackPoints.last()
+            val first = snapshot.first()
+            val last = snapshot.last()
 
-        val calories = CalorieEstimator.estimate(
-            distanceMetres = stats.totalDistance,
-            elevationGainMetres = stats.elevationGain,
-            durationSeconds = stats.elapsedSeconds.toDouble()
-        )
+            val calories = CalorieEstimator.estimate(
+                distanceMetres = stats.totalDistance,
+                elevationGainMetres = stats.elevationGain,
+                durationSeconds = stats.elapsedSeconds.toDouble()
+            )
 
-        val entity = SavedRouteEntity(
-            id = id,
-            name = "Hike — ${java.time.LocalDate.now()}",
-            startLatitude = first.latitude,
-            startLongitude = first.longitude,
-            endLatitude = last.latitude,
-            endLongitude = last.longitude,
-            startTime = startTime,
-            endTime = endTime,
-            totalDistance = stats.totalDistance,
-            elevationGain = stats.elevationGain,
-            elevationLoss = stats.elevationLoss,
-            walkingTime = stats.walkingTime,
-            restingTime = stats.restingTime,
-            averageHeartRate = null,
-            maxHeartRate = null,
-            estimatedCalories = calories,
-            comment = "",
-            regionId = null,
-            trackData = compressed,
-            modifiedAt = Instant.now().toString()
-        )
+            val entity = SavedRouteEntity(
+                id = id,
+                name = "Hike — ${java.time.LocalDate.now()}",
+                startLatitude = first.latitude,
+                startLongitude = first.longitude,
+                endLatitude = last.latitude,
+                endLongitude = last.longitude,
+                startTime = startTime,
+                endTime = endTime,
+                totalDistance = stats.totalDistance,
+                elevationGain = stats.elevationGain,
+                elevationLoss = stats.elevationLoss,
+                walkingTime = stats.walkingTime,
+                restingTime = stats.restingTime,
+                averageHeartRate = null,
+                maxHeartRate = null,
+                estimatedCalories = calories,
+                comment = "",
+                regionId = null,
+                trackData = compressed,
+                modifiedAt = Instant.now().toString()
+            )
 
-        routeRepository.save(entity)
-        return id
+            routeRepository.save(entity)
+            id
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save hike — draft file preserved for recovery", e)
+            null
+        }
     }
 
     /**
@@ -531,9 +548,10 @@ class HikeTrackingService : Service() {
         val isPaused = _recordingState.value == HikeRecordingState.PAUSED
 
         val contentText = if (isPaused) {
-            "Paused — %.1f km".format(distanceKm)
+            String.format(java.util.Locale.US, "Paused — %.1f km", distanceKm)
         } else {
-            "%.1f km | %s".format(
+            String.format(
+                java.util.Locale.US, "%.1f km | %s",
                 distanceKm,
                 HikeStatsFormatter.formatDuration(stats.elapsedSeconds.toDouble())
             )

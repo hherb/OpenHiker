@@ -499,7 +499,7 @@ private fun ElevationProfileSection(elevationProfile: List<ElevationPoint>) {
         )
         Spacer(modifier = Modifier.height(ICON_TEXT_SPACING.dp))
         ElevationProfileChart(
-            elevationProfile = elevationProfile,
+            points = elevationProfile,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(ELEVATION_CHART_HEIGHT.dp)
