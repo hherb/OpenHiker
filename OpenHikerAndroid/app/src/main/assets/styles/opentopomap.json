@@ -1,0 +1,22 @@
+{
+  "version": 8,
+  "sources": {
+    "opentopomap": {
+      "type": "raster",
+      "tiles": [
+        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256,
+      "attribution": "\u00a9 OpenStreetMap contributors, SRTM | \u00a9 OpenTopoMap (CC-BY-SA)"
+    }
+  },
+  "layers": [
+    {
+      "id": "opentopomap",
+      "type": "raster",
+      "source": "opentopomap"
+    }
+  ]
+}
