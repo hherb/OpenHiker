@@ -174,10 +174,16 @@ class LocationProvider @Inject constructor(
     fun updateAccuracyMode(mode: GpsAccuracyMode) {
         currentAccuracyMode = mode
         if (isTracking) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w(TAG, "Location permission revoked, cannot update accuracy mode")
+                return
+            }
+
             // Restart with new parameters
             locationManager.removeUpdates(this)
             try {
-                @Suppress("MissingPermission")
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     mode.intervalMs,
@@ -185,6 +191,18 @@ class LocationProvider @Inject constructor(
                     this,
                     Looper.getMainLooper()
                 )
+
+                // Re-register network provider as supplementary source
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        mode.intervalMs * 2,
+                        mode.minDisplacementMetres * 2,
+                        this,
+                        Looper.getMainLooper()
+                    )
+                }
+
                 Log.d(TAG, "GPS accuracy updated: ${mode.id} (${mode.intervalMs}ms, ${mode.minDisplacementMetres}m)")
             } catch (e: SecurityException) {
                 Log.e(TAG, "Security exception updating GPS accuracy", e)
@@ -211,15 +229,17 @@ class LocationProvider @Inject constructor(
                 if (stationaryCount >= STATIONARY_COUNT_THRESHOLD && !isStationary) {
                     isStationary = true
                     Log.d(TAG, "User appears stationary, reducing update frequency")
+                    reducePollingForStationary()
                 }
                 return
             }
 
-            // User is moving again — reset stationary state
+            // User is moving again — reset stationary state and restore normal polling
             if (isStationary) {
                 isStationary = false
                 stationaryCount = 0
-                Log.d(TAG, "User is moving again")
+                Log.d(TAG, "User is moving again, restoring normal update frequency")
+                restoreNormalPolling()
             }
             stationaryCount = 0
 
@@ -284,6 +304,65 @@ class LocationProvider @Inject constructor(
         sensorManager = null
     }
 
+    /**
+     * Reduces GPS polling frequency when the user is stationary.
+     *
+     * Multiplies the current accuracy mode's interval by [STATIONARY_INTERVAL_MULTIPLIER]
+     * to save battery when no movement is detected.
+     */
+    private fun reducePollingForStationary() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val mode = currentAccuracyMode
+        locationManager.removeUpdates(this)
+        try {
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                mode.intervalMs * STATIONARY_INTERVAL_MULTIPLIER,
+                mode.minDisplacementMetres,
+                this,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception reducing polling", e)
+        }
+    }
+
+    /**
+     * Restores normal GPS polling frequency after the user starts moving again.
+     */
+    private fun restoreNormalPolling() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val mode = currentAccuracyMode
+        locationManager.removeUpdates(this)
+        try {
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                mode.intervalMs,
+                mode.minDisplacementMetres,
+                this,
+                Looper.getMainLooper()
+            )
+
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    mode.intervalMs * 2,
+                    mode.minDisplacementMetres * 2,
+                    this,
+                    Looper.getMainLooper()
+                )
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception restoring polling", e)
+        }
+    }
+
     companion object {
         private const val TAG = "LocationProvider"
 
@@ -303,5 +382,11 @@ class LocationProvider @Inject constructor(
          * declaring the user stationary. Used for battery optimization.
          */
         private const val STATIONARY_COUNT_THRESHOLD = 5
+
+        /**
+         * Multiplier applied to the GPS update interval when the user is stationary.
+         * A value of 3 means updates are requested 3x less frequently while standing still.
+         */
+        private const val STATIONARY_INTERVAL_MULTIPLIER = 3L
     }
 }

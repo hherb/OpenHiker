@@ -19,11 +19,14 @@
 package com.openhiker.android.ui.settings
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsToggleable
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import com.openhiker.android.MainActivity
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -32,17 +35,25 @@ import org.junit.Test
  *
  * These tests verify that all settings sections are visible and interactive.
  * They require an Android device or emulator to run as they use the Compose
- * test framework ([createComposeRule]).
+ * test framework with Hilt dependency injection.
  *
- * Note: These tests scaffold the UI test infrastructure. They will need a
- * Hilt test rule or manual ViewModel injection to run against the full
- * SettingsScreen with real ViewModels. For now they verify the composable
- * structure using test tags.
+ * Uses [HiltAndroidTest] with [createAndroidComposeRule] so that
+ * `hiltViewModel()` calls within the composable resolve correctly against
+ * the Hilt-generated test component.
  */
+@HiltAndroidTest
 class SettingsScreenTest {
 
-    @get:Rule
-    val composeTestRule = createComposeRule()
+    @get:Rule(order = 0)
+    val hiltRule = HiltAndroidRule(this)
+
+    @get:Rule(order = 1)
+    val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    @Before
+    fun setUp() {
+        hiltRule.inject()
+    }
 
     @Test
     fun settingsScreen_displaysMapSection() {

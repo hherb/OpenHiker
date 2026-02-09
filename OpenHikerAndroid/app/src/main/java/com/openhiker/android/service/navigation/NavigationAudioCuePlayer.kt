@@ -76,18 +76,13 @@ class NavigationAudioCuePlayer @Inject constructor(
     var enabled: Boolean = false
 
     /**
-     * Lazily-initialised [ToneGenerator] bound to the notification audio stream.
+     * The current [ToneGenerator] instance, or null if unavailable or released.
      *
-     * Returns `null` if the device does not support tone generation (logged as a warning).
+     * Created on demand via [getOrCreateToneGenerator] and released via [release].
+     * Unlike a `by lazy` delegate, this can be re-created after release.
      */
-    private val toneGenerator: ToneGenerator? by lazy {
-        try {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME_PERCENT)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "ToneGenerator unavailable on this device: ${e.message}")
-            null
-        }
-    }
+    private var toneGenerator: ToneGenerator? = null
+    private var toneGeneratorFailed = false
 
     /**
      * Plays the audio cue pattern associated with the given navigation event.
@@ -101,9 +96,29 @@ class NavigationAudioCuePlayer @Inject constructor(
      *
      * @param event The navigation event that determines which tone pattern to play.
      */
+    /**
+     * Creates or returns the existing [ToneGenerator].
+     *
+     * Returns null if tone generation is not supported on this device.
+     * Can re-create the generator after [release] has been called.
+     */
+    private fun getOrCreateToneGenerator(): ToneGenerator? {
+        toneGenerator?.let { return it }
+        if (toneGeneratorFailed) return null
+        return try {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME_PERCENT).also {
+                toneGenerator = it
+            }
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "ToneGenerator unavailable on this device: ${e.message}")
+            toneGeneratorFailed = true
+            null
+        }
+    }
+
     suspend fun playNavigationCue(event: NavigationCueEvent) {
         if (!enabled) return
-        val generator = toneGenerator ?: return
+        val generator = getOrCreateToneGenerator() ?: return
 
         try {
             when (event) {
@@ -143,9 +158,8 @@ class NavigationAudioCuePlayer @Inject constructor(
      * Releases the underlying [ToneGenerator] resources.
      *
      * Call this when the navigation session ends or when the service is destroyed
-     * to free native audio resources promptly. After calling [release], the
-     * [toneGenerator] lazy property will **not** be re-initialised — create a
-     * new [NavigationAudioCuePlayer] instance if audio cues are needed again.
+     * to free native audio resources promptly. The [ToneGenerator] will be
+     * re-created automatically on the next call to [playNavigationCue].
      */
     fun release() {
         try {
@@ -153,6 +167,7 @@ class NavigationAudioCuePlayer @Inject constructor(
         } catch (e: RuntimeException) {
             Log.w(TAG, "Error releasing ToneGenerator: ${e.message}")
         }
+        toneGenerator = null
     }
 
     companion object {

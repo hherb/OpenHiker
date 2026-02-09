@@ -24,6 +24,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import org.maplibre.android.MapLibre
+import org.maplibre.android.offline.OfflineManager
 import javax.inject.Inject
 
 /**
@@ -77,7 +78,15 @@ class OpenHikerApp : Application(), Configuration.Provider {
     private fun initMapLibre() {
         try {
             MapLibre.getInstance(this)
-            Log.d(TAG, "MapLibre initialized with ${MAP_CACHE_SIZE_BYTES / BYTES_PER_MB}MB cache")
+            OfflineManager.getInstance(this).setMaximumAmbientCacheSize(
+                MAP_CACHE_SIZE_BYTES
+            ) { error ->
+                if (error != null) {
+                    Log.w(TAG, "Failed to set MapLibre cache size: ${error.message}")
+                } else {
+                    Log.d(TAG, "MapLibre initialized with ${MAP_CACHE_SIZE_BYTES / BYTES_PER_MB}MB cache")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MapLibre", e)
         }

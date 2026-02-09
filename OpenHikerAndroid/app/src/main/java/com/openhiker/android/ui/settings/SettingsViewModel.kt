@@ -187,19 +187,25 @@ class SettingsViewModel @Inject constructor(
      * @param zoom Minimum zoom level (valid range: 1-18).
      */
     fun setDefaultMinZoom(zoom: Int) {
+        val currentMax = _uiState.value.preferences.defaultMaxZoom
+        val clamped = zoom.coerceIn(1, currentMax)
         viewModelScope.launch {
-            preferencesRepository.setDefaultMinZoom(zoom.coerceIn(1, 18))
+            preferencesRepository.setDefaultMinZoom(clamped)
         }
     }
 
     /**
      * Sets the default maximum zoom level for new tile downloads.
      *
+     * Enforces that max zoom is never less than the current min zoom.
+     *
      * @param zoom Maximum zoom level (valid range: 1-18).
      */
     fun setDefaultMaxZoom(zoom: Int) {
+        val currentMin = _uiState.value.preferences.defaultMinZoom
+        val clamped = zoom.coerceIn(currentMin, 18)
         viewModelScope.launch {
-            preferencesRepository.setDefaultMaxZoom(zoom.coerceIn(1, 18))
+            preferencesRepository.setDefaultMaxZoom(clamped)
         }
     }
 

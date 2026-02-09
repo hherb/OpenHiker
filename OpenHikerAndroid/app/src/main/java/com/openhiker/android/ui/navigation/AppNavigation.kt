@@ -193,7 +193,7 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
         Row(modifier = Modifier.fillMaxSize()) {
             AdaptiveNavigationRail(
                 navController = navController,
-                currentRoute = currentDestination?.route
+                currentDestination = currentDestination
             )
             Scaffold(
                 topBar = {
@@ -303,7 +303,7 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
 @Composable
 private fun AdaptiveNavigationRail(
     navController: NavHostController,
-    currentRoute: String?
+    currentDestination: androidx.navigation.NavDestination?
 ) {
     NavigationRail(
         header = {
@@ -325,7 +325,9 @@ private fun AdaptiveNavigationRail(
         }
     ) {
         navItems.forEach { item ->
-            val selected = currentRoute == item.route
+            val selected = currentDestination?.hierarchy?.any {
+                it.route == item.route
+            } == true
 
             NavigationRailItem(
                 icon = { Icon(item.icon, contentDescription = item.label) },
