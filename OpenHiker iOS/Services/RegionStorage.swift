@@ -58,6 +58,16 @@ class RegionStorage: ObservableObject {
         documentsDirectory.appendingPathComponent(metadataFileName)
     }
 
+    /// Updates the published ``regions`` array on the main thread to avoid
+    /// "Publishing changes from background threads" warnings from SwiftUI.
+    private func updateRegions(_ newValue: [Region]) {
+        if Thread.isMainThread {
+            regions = newValue
+        } else {
+            DispatchQueue.main.async { self.regions = newValue }
+        }
+    }
+
     /// Private initializer enforcing singleton pattern.
     /// Creates the regions directory if needed and loads existing region metadata.
     private init() {
@@ -80,10 +90,10 @@ class RegionStorage: ObservableObject {
         guard fileManager.fileExists(atPath: metadataURL.path),
               let data = try? Data(contentsOf: metadataURL),
               let loadedRegions = try? JSONDecoder().decode([Region].self, from: data) else {
-            regions = []
+            updateRegions([])
             return
         }
-        regions = loadedRegions.sorted { $0.createdAt > $1.createdAt }
+        updateRegions(loadedRegions.sorted { $0.createdAt > $1.createdAt })
     }
 
     /// Saves a new or updated region to persistent storage.
@@ -101,7 +111,7 @@ class RegionStorage: ObservableObject {
         do {
             let data = try JSONEncoder().encode(allRegions)
             try data.write(to: metadataURL)
-            regions = allRegions
+            updateRegions(allRegions)
         } catch {
             print("Error saving region metadata: \(error.localizedDescription)")
         }
@@ -145,7 +155,7 @@ class RegionStorage: ObservableObject {
         do {
             let data = try JSONEncoder().encode(allRegions)
             try data.write(to: metadataURL)
-            regions = allRegions
+            updateRegions(allRegions)
         } catch {
             print("Error updating region metadata after deletion: \(error.localizedDescription)")
         }
