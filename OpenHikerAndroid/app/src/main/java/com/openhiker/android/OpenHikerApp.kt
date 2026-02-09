@@ -20,6 +20,7 @@ package com.openhiker.android
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import org.maplibre.android.MapLibre
 
 /**
  * Application class for OpenHiker Android.
@@ -27,6 +28,15 @@ import dagger.hilt.android.HiltAndroidApp
  * Annotated with [HiltAndroidApp] to enable Hilt dependency injection
  * throughout the application. This triggers Hilt's code generation and
  * sets up the base application-level dependency container.
+ *
+ * MapLibre is initialized in [onCreate] so the map rendering engine
+ * is ready before any MapView is created.
  */
 @HiltAndroidApp
-class OpenHikerApp : Application()
+class OpenHikerApp : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        MapLibre.getInstance(this)
+    }
+}

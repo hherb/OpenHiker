@@ -48,6 +48,7 @@ import com.openhiker.android.ui.community.CommunityBrowseScreen
 import com.openhiker.android.ui.hikes.HikeListScreen
 import com.openhiker.android.ui.map.MapScreen
 import com.openhiker.android.ui.regions.RegionListScreen
+import com.openhiker.android.ui.regions.RegionSelectorScreen
 import com.openhiker.android.ui.routing.RoutePlanningScreen
 import com.openhiker.android.ui.settings.SettingsScreen
 
@@ -61,6 +62,7 @@ import com.openhiker.android.ui.settings.SettingsScreen
 object Routes {
     const val NAVIGATE = "navigate"
     const val REGIONS = "regions"
+    const val REGION_SELECTOR = "region_selector"
     const val HIKES = "hikes"
     const val ROUTES = "routes"
     const val COMMUNITY = "community"
@@ -111,48 +113,56 @@ fun AppNavigation() {
         currentDestination?.hierarchy?.any { it.route == item.route } == true
     }?.label ?: when (currentDestination?.route) {
         Routes.SETTINGS -> "Settings"
+        Routes.REGION_SELECTOR -> "Download Region"
         else -> "OpenHiker"
     }
 
+    // Hide top/bottom bars on full-screen pages
+    val isFullScreen = currentDestination?.route == Routes.REGION_SELECTOR
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(currentTitle) },
-                actions = {
-                    IconButton(onClick = {
-                        navController.navigate(Routes.SETTINGS) {
-                            launchSingleTop = true
+            if (!isFullScreen) {
+                TopAppBar(
+                    title = { Text(currentTitle) },
+                    actions = {
+                        IconButton(onClick = {
+                            navController.navigate(Routes.SETTINGS) {
+                                launchSingleTop = true
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings"
+                            )
                         }
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
-            NavigationBar {
-                bottomNavItems.forEach { item ->
-                    val selected = currentDestination?.hierarchy?.any {
-                        it.route == item.route
-                    } == true
+            if (!isFullScreen) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        val selected = currentDestination?.hierarchy?.any {
+                            it.route == item.route
+                        } == true
 
-                    NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                        NavigationBarItem(
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -163,7 +173,28 @@ fun AppNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Routes.NAVIGATE) { MapScreen() }
-            composable(Routes.REGIONS) { RegionListScreen() }
+            composable(Routes.REGIONS) {
+                RegionListScreen(
+                    onNavigateToSelector = {
+                        navController.navigate(Routes.REGION_SELECTOR)
+                    },
+                    onViewOnMap = { region ->
+                        // Navigate to map tab — the MapViewModel handles offline region display
+                        navController.navigate(Routes.NAVIGATE) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
+            composable(Routes.REGION_SELECTOR) {
+                RegionSelectorScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
             composable(Routes.HIKES) { HikeListScreen() }
             composable(Routes.ROUTES) { RoutePlanningScreen() }
             composable(Routes.COMMUNITY) { CommunityBrowseScreen() }
