@@ -20,6 +20,7 @@ package com.openhiker.android.ui.hikes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.openhiker.android.data.db.routes.SavedRouteEntity
 import com.openhiker.android.data.repository.RouteRepository
 import com.openhiker.core.model.HikeStatsFormatter
@@ -91,6 +92,7 @@ data class HikeListItem(
  * @property isLoading True while the initial data load is in progress.
  * @property isEmpty True when no hikes exist at all (ignoring search/sort).
  * @property deleteConfirmationHike The hike pending delete confirmation, or null.
+ * @property error An error message to display to the user, or null.
  */
 data class HikeListUiState(
     val hikes: List<HikeListItem> = emptyList(),
@@ -98,7 +100,8 @@ data class HikeListUiState(
     val searchQuery: String = "",
     val isLoading: Boolean = true,
     val isEmpty: Boolean = false,
-    val deleteConfirmationHike: HikeListItem? = null
+    val deleteConfirmationHike: HikeListItem? = null,
+    val error: String? = null
 )
 
 /**
@@ -129,9 +132,12 @@ class HikeListViewModel @Inject constructor(
     /** The hike currently awaiting delete confirmation, or null. */
     private val _deleteConfirmationHike = MutableStateFlow<HikeListItem?>(null)
 
+    /** Error message for delete failures and other operations, or null. */
+    private val _error = MutableStateFlow<String?>(null)
+
     /**
      * Observable UI state combining routes, sort option, search query,
-     * and delete confirmation into a single immutable snapshot.
+     * delete confirmation, and error state into a single immutable snapshot.
      *
      * Uses [combine] to reactively recompute whenever any input changes:
      * the route list from the database, the sort option, or the search query.
@@ -142,8 +148,16 @@ class HikeListViewModel @Inject constructor(
         routeRepository.observeAll(),
         _sortOption,
         _searchQuery,
-        _deleteConfirmationHike
-    ) { routes, sortOption, query, deleteHike ->
+        _deleteConfirmationHike,
+        _error
+    ) { args ->
+        @Suppress("UNCHECKED_CAST")
+        val routes = args[0] as List<SavedRouteEntity>
+        val sortOption = args[1] as HikeSortOption
+        val query = args[2] as String
+        val deleteHike = args[3] as HikeListItem?
+        val error = args[4] as String?
+
         val allItems = routes.map { entity -> entity.toListItem() }
         val filtered = filterByQuery(allItems, query)
         val sorted = sortItems(filtered, sortOption)
@@ -154,7 +168,8 @@ class HikeListViewModel @Inject constructor(
             searchQuery = query,
             isLoading = false,
             isEmpty = routes.isEmpty(),
-            deleteConfirmationHike = deleteHike
+            deleteConfirmationHike = deleteHike,
+            error = error
         )
     }.stateIn(
         scope = viewModelScope,
@@ -224,13 +239,19 @@ class HikeListViewModel @Inject constructor(
      *
      * Deletes the saved route from the database via [RouteRepository]
      * and dismisses the confirmation dialog. If no hike is pending
-     * confirmation, this is a no-op.
+     * confirmation, this is a no-op. On failure, surfaces the error
+     * message to the UI via [HikeListUiState.error].
      */
     fun confirmDelete() {
         val hike = _deleteConfirmationHike.value ?: return
         _deleteConfirmationHike.value = null
         viewModelScope.launch {
-            routeRepository.delete(hike.id)
+            try {
+                routeRepository.delete(hike.id)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete hike: ${hike.id}", e)
+                _error.value = "Failed to delete \"${hike.name}\": ${e.message}"
+            }
         }
     }
 
@@ -241,12 +262,29 @@ class HikeListViewModel @Inject constructor(
      * its own undo mechanism). For user-initiated deletion via button,
      * prefer [requestDelete] / [confirmDelete] for safety.
      *
+     * On failure, surfaces the error message to the UI via [HikeListUiState.error].
+     *
      * @param hikeId The UUID of the saved route to delete.
      */
     fun deleteHike(hikeId: String) {
         viewModelScope.launch {
-            routeRepository.delete(hikeId)
+            try {
+                routeRepository.delete(hikeId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete hike: $hikeId", e)
+                _error.value = "Failed to delete hike: ${e.message}"
+            }
         }
+    }
+
+    /**
+     * Clears the error message from the UI state.
+     *
+     * Call after the error has been displayed to the user (e.g. after a
+     * Snackbar is dismissed) to prevent re-display on recomposition.
+     */
+    fun clearError() {
+        _error.value = null
     }
 
     /**
@@ -308,6 +346,8 @@ class HikeListViewModel @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "HikeListViewModel"
+
         /**
          * Timeout in milliseconds before the upstream flow collection stops
          * after the last subscriber disappears. A 5-second window survives

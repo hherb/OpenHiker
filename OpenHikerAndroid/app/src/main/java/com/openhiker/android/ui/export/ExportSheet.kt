@@ -18,7 +18,7 @@
 
 package com.openhiker.android.ui.export
 
-import android.content.Context
+import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -42,83 +42,78 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.openhiker.android.data.db.routes.SavedRouteEntity
-import com.openhiker.android.data.repository.PlannedRouteRepository
-import com.openhiker.android.data.repository.RouteRepository
-import com.openhiker.android.service.export.GPXExporter
-import com.openhiker.android.service.export.PDFExporter
-import com.openhiker.core.model.PlannedRoute
-import kotlinx.coroutines.Dispatchers
+import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-
-/**
- * Export format options available to the user.
- *
- * @property displayName Human-readable format name.
- * @property description Brief explanation of the export format.
- */
-private enum class ExportFormat(
-    val displayName: String,
-    val description: String
-) {
-    /** GPX 1.1 XML format, compatible with hiking apps and GPS devices. */
-    GPX(
-        displayName = "GPX",
-        description = "GPS Exchange Format — compatible with hiking apps and GPS devices"
-    ),
-
-    /** PDF document with statistics and elevation chart. */
-    PDF(
-        displayName = "PDF",
-        description = "PDF report with statistics and elevation profile"
-    )
-}
 
 /**
  * Modal bottom sheet for exporting a route or hike in different formats.
  *
  * Presents two export format options (GPX and PDF). When the user taps an option,
  * the export is performed asynchronously with a loading indicator, and the
- * resulting file is shared via the system share sheet ([android.content.Intent.ACTION_SEND]).
+ * resulting file is shared via the system share sheet ([Intent.ACTION_SEND]).
  *
  * Supports both:
  * - **Saved routes (hikes)**: Pass a non-null [hikeId] to export a recorded hike.
  * - **Planned routes**: Pass a non-null [routeId] to export a planned route.
  *
- * If both IDs are null, an error toast is shown. If both are provided,
+ * If both IDs are null, an error is shown. If both are provided,
  * the planned route takes precedence.
  *
  * Dependencies ([GPXExporter], [PDFExporter], [RouteRepository], [PlannedRouteRepository])
- * are resolved from the Hilt composition locals via the [ExportSheetViewModel].
+ * are resolved via the Hilt-injected [ExportSheetViewModel].
  *
  * @param onDismiss Callback invoked when the sheet is dismissed (by swipe or tap).
  * @param hikeId UUID of a saved route entity to export, or null.
  * @param routeId UUID of a planned route to export, or null.
+ * @param viewModel The Hilt-injected ViewModel handling export logic.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExportSheet(
     onDismiss: () -> Unit,
     hikeId: String? = null,
-    routeId: String? = null
+    routeId: String? = null,
+    viewModel: ExportSheetViewModel = hiltViewModel()
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
 
-    var exportInProgress by remember { mutableStateOf<ExportFormat?>(null) }
+    // Show error messages via Toast using applicationContext to avoid lifecycle issues
+    LaunchedEffect(uiState.errorMessage) {
+        val message = uiState.errorMessage ?: return@LaunchedEffect
+        Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
+        viewModel.clearError()
+    }
+
+    // Launch share intent when ready
+    LaunchedEffect(uiState.shareIntent) {
+        val intent = uiState.shareIntent ?: return@LaunchedEffect
+        try {
+            val chooser = Intent.createChooser(intent, "Share Route")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch share intent", e)
+            Toast.makeText(
+                context.applicationContext,
+                "No app available to share this file.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        viewModel.clearShareIntent()
+        onDismiss()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -141,19 +136,15 @@ fun ExportSheet(
             // GPX option
             ExportOptionRow(
                 format = ExportFormat.GPX,
-                isLoading = exportInProgress == ExportFormat.GPX,
-                enabled = exportInProgress == null,
+                isLoading = uiState.exportInProgress == ExportFormat.GPX,
+                enabled = uiState.exportInProgress == null,
                 onClick = {
-                    exportInProgress = ExportFormat.GPX
                     scope.launch {
-                        performExport(
-                            context = context,
+                        viewModel.performExport(
                             format = ExportFormat.GPX,
                             hikeId = hikeId,
                             routeId = routeId
                         )
-                        exportInProgress = null
-                        onDismiss()
                     }
                 }
             )
@@ -163,19 +154,15 @@ fun ExportSheet(
             // PDF option
             ExportOptionRow(
                 format = ExportFormat.PDF,
-                isLoading = exportInProgress == ExportFormat.PDF,
-                enabled = exportInProgress == null,
+                isLoading = uiState.exportInProgress == ExportFormat.PDF,
+                enabled = uiState.exportInProgress == null,
                 onClick = {
-                    exportInProgress = ExportFormat.PDF
                     scope.launch {
-                        performExport(
-                            context = context,
+                        viewModel.performExport(
                             format = ExportFormat.PDF,
                             hikeId = hikeId,
                             routeId = routeId
                         )
-                        exportInProgress = null
-                        onDismiss()
                     }
                 }
             )
@@ -247,183 +234,6 @@ private fun ExportOptionRow(
                 modifier = Modifier.size(LOADING_INDICATOR_SIZE.dp),
                 strokeWidth = LOADING_INDICATOR_STROKE.dp
             )
-        }
-    }
-}
-
-/**
- * Performs the export operation and launches the system share sheet.
- *
- * Resolves the route/hike data from the appropriate repository, calls the
- * correct exporter (GPX or PDF), and launches a share intent with the result.
- *
- * This function handles all error cases:
- * - No IDs provided: shows a toast error.
- * - Route/hike not found: shows a toast error.
- * - Export failure: shows a toast error.
- *
- * @param context Android context for repository access, toasts, and intents.
- * @param format The export format to use.
- * @param hikeId UUID of a saved route to export, or null.
- * @param routeId UUID of a planned route to export, or null.
- */
-private suspend fun performExport(
-    context: Context,
-    format: ExportFormat,
-    hikeId: String?,
-    routeId: String?
-) {
-    try {
-        // Determine the data source and export
-        val exportedFile: File? = withContext(Dispatchers.IO) {
-            when {
-                routeId != null -> exportPlannedRoute(context, format, routeId)
-                hikeId != null -> exportSavedRoute(context, format, hikeId)
-                else -> {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            context,
-                            "No route selected for export.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    null
-                }
-            }
-        }
-
-        if (exportedFile != null) {
-            launchShareIntent(context, format, exportedFile)
-        }
-    } catch (e: Exception) {
-        Log.e(TAG, "Export failed", e)
-        withContext(Dispatchers.Main) {
-            Toast.makeText(
-                context,
-                "Export failed: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-}
-
-/**
- * Exports a planned route in the specified format.
- *
- * Loads the route from [PlannedRouteRepository] and delegates to the
- * appropriate exporter.
- *
- * @param context Android context for service instantiation.
- * @param format The export format (GPX or PDF).
- * @param routeId UUID of the planned route.
- * @return The exported file, or null if the route was not found or export failed.
- */
-private suspend fun exportPlannedRoute(
-    context: Context,
-    format: ExportFormat,
-    routeId: String
-): File? {
-    val repository = PlannedRouteRepository(context)
-    val route: PlannedRoute? = repository.getById(routeId)
-
-    if (route == null) {
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Route not found.", Toast.LENGTH_SHORT).show()
-        }
-        return null
-    }
-
-    return when (format) {
-        ExportFormat.GPX -> {
-            val exporter = GPXExporter(context)
-            exporter.exportPlannedRoute(route)
-        }
-        ExportFormat.PDF -> {
-            val exporter = PDFExporter(context)
-            exporter.exportPlannedRoute(route)
-        }
-    }
-}
-
-/**
- * Exports a saved route (recorded hike) in the specified format.
- *
- * Loads the route from [RouteRepository] and delegates to the
- * appropriate exporter.
- *
- * @param context Android context for service instantiation.
- * @param format The export format (GPX or PDF).
- * @param hikeId UUID of the saved route.
- * @return The exported file, or null if the route was not found or export failed.
- */
-private suspend fun exportSavedRoute(
-    context: Context,
-    format: ExportFormat,
-    hikeId: String
-): File? {
-    // Note: RouteRepository requires RouteDao from Room, which is provided by Hilt.
-    // For the export sheet we instantiate the exporters directly with the context.
-    // The caller (ExportSheetViewModel or parent composable) should provide the entity.
-    // As a fallback, we log a warning — in production this will be wired through DI.
-    Log.w(TAG, "Saved route export requires Hilt-injected RouteRepository. " +
-        "Using direct PlannedRouteRepository for hikeId: $hikeId is not supported here. " +
-        "This path should be invoked via ExportSheetViewModel with proper DI.")
-    withContext(Dispatchers.Main) {
-        Toast.makeText(
-            context,
-            "Saved route export requires the full app context. " +
-                "Please use the hike detail screen's export option.",
-            Toast.LENGTH_LONG
-        ).show()
-    }
-    return null
-}
-
-/**
- * Launches the system share sheet with the exported file.
- *
- * Creates a share intent using the appropriate exporter and starts a
- * chooser activity so the user can pick a receiving app.
- *
- * @param context Android context for starting the activity.
- * @param format The export format (determines the MIME type and exporter used).
- * @param file The exported file to share.
- */
-private suspend fun launchShareIntent(
-    context: Context,
-    format: ExportFormat,
-    file: File
-) {
-    val intent = when (format) {
-        ExportFormat.GPX -> GPXExporter(context).createShareIntent(file)
-        ExportFormat.PDF -> PDFExporter(context).createShareIntent(file)
-    }
-
-    if (intent != null) {
-        withContext(Dispatchers.Main) {
-            try {
-                val chooser = android.content.Intent.createChooser(
-                    intent,
-                    "Share ${format.displayName}"
-                )
-                chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(chooser)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to launch share intent", e)
-                Toast.makeText(
-                    context,
-                    "No app available to share this file.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    } else {
-        withContext(Dispatchers.Main) {
-            Toast.makeText(
-                context,
-                "Failed to prepare file for sharing.",
-                Toast.LENGTH_SHORT
-            ).show()
         }
     }
 }

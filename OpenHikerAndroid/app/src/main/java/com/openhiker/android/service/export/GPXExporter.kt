@@ -69,17 +69,18 @@ class GPXExporter @Inject constructor(
      * the app's cache directory.
      *
      * @param savedRoute The saved route entity containing compressed track data.
-     * @return A [File] containing the GPX XML, suitable for sharing. Returns null
-     *         if decompression or serialization fails.
+     * @return A [Result] containing the GPX [File] on success, or the exception on failure.
      */
-    suspend fun exportSavedRoute(savedRoute: SavedRouteEntity): File? =
+    suspend fun exportSavedRoute(savedRoute: SavedRouteEntity): Result<File> =
         withContext(Dispatchers.IO) {
             try {
                 val trackPoints = TrackCompression.decompress(savedRoute.trackData)
 
                 if (trackPoints.isEmpty()) {
                     Log.w(TAG, "No track points after decompression for route: ${savedRoute.id}")
-                    return@withContext null
+                    return@withContext Result.failure(
+                        IllegalStateException("No track points found in route data")
+                    )
                 }
 
                 val gpxXml = GpxSerializer.serializeTrack(
@@ -89,13 +90,15 @@ class GPXExporter @Inject constructor(
                     timestampToIso = ::timestampToIso8601
                 )
 
-                writeToFile(
-                    content = gpxXml,
-                    fileName = sanitizeFileName(savedRoute.name)
+                Result.success(
+                    writeToFile(
+                        content = gpxXml,
+                        fileName = sanitizeFileName(savedRoute.name)
+                    )
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export saved route as GPX: ${savedRoute.id}", e)
-                null
+                Result.failure(e)
             }
         }
 
@@ -107,10 +110,9 @@ class GPXExporter @Inject constructor(
      * The result is written to a temporary file in the app's cache directory.
      *
      * @param plannedRoute The planned route to export.
-     * @return A [File] containing the GPX XML, suitable for sharing. Returns null
-     *         if serialization fails.
+     * @return A [Result] containing the GPX [File] on success, or the exception on failure.
      */
-    suspend fun exportPlannedRoute(plannedRoute: PlannedRoute): File? =
+    suspend fun exportPlannedRoute(plannedRoute: PlannedRoute): Result<File> =
         withContext(Dispatchers.IO) {
             try {
                 val gpxXml = GpxSerializer.serializeRoute(
@@ -121,13 +123,15 @@ class GPXExporter @Inject constructor(
                     elevationProfile = plannedRoute.elevationProfile
                 )
 
-                writeToFile(
-                    content = gpxXml,
-                    fileName = sanitizeFileName(plannedRoute.name)
+                Result.success(
+                    writeToFile(
+                        content = gpxXml,
+                        fileName = sanitizeFileName(plannedRoute.name)
+                    )
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export planned route as GPX: ${plannedRoute.id}", e)
-                null
+                Result.failure(e)
             }
         }
 

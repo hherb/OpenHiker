@@ -90,7 +90,8 @@ data class HikeDetailUiState(
     val elevationProfile: List<ElevationPoint> = emptyList(),
     val waypoints: List<WaypointSummary> = emptyList(),
     val isRenameDialogVisible: Boolean = false,
-    val isDeleteDialogVisible: Boolean = false
+    val isDeleteDialogVisible: Boolean = false,
+    val isDeleted: Boolean = false
 )
 
 /**
@@ -365,6 +366,7 @@ class HikeDetailViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isDeleteDialogVisible = false,
+                        isDeleted = true,
                         error = null
                     )
                 }

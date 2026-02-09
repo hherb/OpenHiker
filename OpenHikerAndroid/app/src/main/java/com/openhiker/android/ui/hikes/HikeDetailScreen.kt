@@ -55,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,13 @@ fun HikeDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
+
+    // Navigate back after successful deletion
+    LaunchedEffect(uiState.isDeleted) {
+        if (uiState.isDeleted) {
+            onNavigateBack()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -265,10 +273,7 @@ fun HikeDetailScreen(
                 Text("Are you sure you want to delete \"${uiState.hikeName}\"? This cannot be undone.")
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.confirmDelete()
-                    onNavigateBack()
-                }) {
+                TextButton(onClick = { viewModel.confirmDelete() }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },

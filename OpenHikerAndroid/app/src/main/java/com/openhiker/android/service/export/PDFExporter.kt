@@ -73,10 +73,9 @@ class PDFExporter @Inject constructor(
      * then renders statistics and an elevation profile chart.
      *
      * @param savedRoute The saved route entity with compressed track data.
-     * @return A [File] containing the PDF, suitable for sharing. Returns null
-     *         if generation fails.
+     * @return A [Result] containing the PDF [File] on success, or the exception on failure.
      */
-    suspend fun exportSavedRoute(savedRoute: SavedRouteEntity): File? =
+    suspend fun exportSavedRoute(savedRoute: SavedRouteEntity): Result<File> =
         withContext(Dispatchers.IO) {
             val document = PdfDocument()
             try {
@@ -112,10 +111,10 @@ class PDFExporter @Inject constructor(
                     document = document,
                     fileName = sanitizeFileName(savedRoute.name)
                 )
-                file
+                Result.success(file)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export saved route as PDF: ${savedRoute.id}", e)
-                null
+                Result.failure(e)
             } finally {
                 document.close()
             }
@@ -128,10 +127,9 @@ class PDFExporter @Inject constructor(
      * elevation chart on page 2.
      *
      * @param plannedRoute The planned route to export.
-     * @return A [File] containing the PDF, suitable for sharing. Returns null
-     *         if generation fails.
+     * @return A [Result] containing the PDF [File] on success, or the exception on failure.
      */
-    suspend fun exportPlannedRoute(plannedRoute: PlannedRoute): File? =
+    suspend fun exportPlannedRoute(plannedRoute: PlannedRoute): Result<File> =
         withContext(Dispatchers.IO) {
             val document = PdfDocument()
             try {
@@ -165,10 +163,10 @@ class PDFExporter @Inject constructor(
                     document = document,
                     fileName = sanitizeFileName(plannedRoute.name)
                 )
-                file
+                Result.success(file)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to export planned route as PDF: ${plannedRoute.id}", e)
-                null
+                Result.failure(e)
             } finally {
                 document.close()
             }
