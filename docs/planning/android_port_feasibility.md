@@ -261,8 +261,8 @@ The iOS app features targeted for Android:
 | UI Layer (21 screens) | 35% | Complete rewrite in Compose |
 | Map display + tile overlay | 12% | Map SDK integration, offline tiles |
 | Platform services (GPS, permissions, storage) | 15% | Android-specific APIs |
-| Cloud sync (CloudKit → Firebase) | 10% | New backend, migration design |
-| P2P transfer | 8% | Nearby Connections API |
+| Cloud sync (file-based via SAF) | 8% | Per-entity atomic files, no backend |
+| P2P transfer | — | Deferred to future phase |
 | Tile downloading | 5% | HTTP + coroutines |
 | Routing engine + graph builder | 5% | Algorithm port + Room DB |
 | Elevation data | 3% | Nearly direct translation |
@@ -279,7 +279,7 @@ For a developer experienced in both iOS and Android:
 - **Platform services** (GPS, permissions, background tasks, haptics): ~15%. Conceptually identical but API surfaces differ.
 - **UI rewrite** (Compose screens, navigation, state management): ~35%. Largest single item. SwiftUI → Compose is conceptual mapping, not mechanical translation.
 - **Infrastructure** (project setup, build system, CI, dependency management): ~10%.
-- **Cloud/sync/P2P** (Firebase, Nearby Connections): ~15%. Most design-intensive area.
+- **Cloud sync** (file-based via SAF): ~8%. Per-entity atomic files with last-writer-wins resolution. P2P deferred.
 
 ---
 
@@ -292,13 +292,13 @@ For a developer experienced in both iOS and Android:
 - **Kotlin/Compose maturity** — Well-established ecosystem with strong tooling
 
 ### Medium Risk
-- **Offline map SDK choice** — Needs evaluation/prototyping to confirm MBTiles tile overlay performance
+- **Offline map SDK** — MapLibre selected; native `mbtiles://` URI support confirmed but needs performance validation with large MBTiles files
 - **Background GPS tracking** — Android restrictions on background location (requires foreground service, user-visible notification, Play Store review scrutiny)
 - **OSM tile usage policy** — Same rate limiting rules apply; need proper User-Agent header
 - **Tablet/foldable layouts** — Android device fragmentation requires more layout testing than iOS iPad support
 
 ### High Risk
-- **Cloud sync cross-platform** — If iOS and Android users need shared sync, CloudKit must be replaced on both platforms. This is a significant architectural decision.
+- **Cloud sync cross-platform** — Resolved: file-based sync via SAF (Storage Access Framework) with per-entity atomic files to user-chosen cloud drives. Same format adoptable on iOS via Files app, enabling true cross-platform sync.
 - **Play Store location permission review** — Google has strict policies for `ACCESS_BACKGROUND_LOCATION`. The app must justify background access (active hike tracking). Rejection risk if not properly documented.
 - **P2P cross-platform** — If iOS↔Android sharing is desired, neither MultipeerConnectivity nor Nearby Connections works cross-platform. Would need a custom protocol.
 
@@ -329,8 +329,8 @@ For a developer experienced in both iOS and Android:
 
 ### Phase 4: Social & Sync
 16. Community route browsing (GitHub API)
-17. Firebase cloud sync
-18. Nearby Connections P2P transfer
+17. File-based cloud sync via SAF
+(P2P transfer deferred to future phase)
 
 ---
 
