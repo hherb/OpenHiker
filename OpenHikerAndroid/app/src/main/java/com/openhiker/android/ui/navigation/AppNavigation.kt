@@ -49,6 +49,7 @@ import com.openhiker.android.ui.hikes.HikeListScreen
 import com.openhiker.android.ui.map.MapScreen
 import com.openhiker.android.ui.regions.RegionListScreen
 import com.openhiker.android.ui.regions.RegionSelectorScreen
+import com.openhiker.android.ui.routing.NavigationScreen
 import com.openhiker.android.ui.routing.RoutePlanningScreen
 import com.openhiker.android.ui.settings.SettingsScreen
 
@@ -67,6 +68,10 @@ object Routes {
     const val ROUTES = "routes"
     const val COMMUNITY = "community"
     const val SETTINGS = "settings"
+    const val TURN_BY_TURN = "turn_by_turn/{routeId}"
+
+    /** Builds the turn-by-turn navigation route with a specific route ID. */
+    fun turnByTurn(routeId: String): String = "turn_by_turn/$routeId"
 }
 
 /**
@@ -118,7 +123,8 @@ fun AppNavigation() {
     }
 
     // Hide top/bottom bars on full-screen pages
-    val isFullScreen = currentDestination?.route == Routes.REGION_SELECTOR
+    val isFullScreen = currentDestination?.route == Routes.REGION_SELECTOR ||
+        currentDestination?.route == Routes.TURN_BY_TURN
 
     Scaffold(
         topBar = {
@@ -196,7 +202,20 @@ fun AppNavigation() {
                 )
             }
             composable(Routes.HIKES) { HikeListScreen() }
-            composable(Routes.ROUTES) { RoutePlanningScreen() }
+            composable(Routes.ROUTES) {
+                RoutePlanningScreen(
+                    onStartNavigation = { routeId ->
+                        navController.navigate(Routes.turnByTurn(routeId)) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable(Routes.TURN_BY_TURN) {
+                NavigationScreen(
+                    onNavigationStopped = { navController.popBackStack() }
+                )
+            }
             composable(Routes.COMMUNITY) { CommunityBrowseScreen() }
             composable(Routes.SETTINGS) { SettingsScreen() }
         }
