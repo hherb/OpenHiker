@@ -48,19 +48,37 @@ class WritableRoutingStore(private val path: String) : Closeable {
     /**
      * Creates or opens the routing database and initialises the schema.
      *
-     * If the file already exists, it is deleted and recreated.
+     * Builds the new database in a temporary file first, then atomically
+     * replaces any existing file on success. This prevents data loss if
+     * schema creation fails partway through.
      * Creates all tables and indexes defined in [RoutingDbSchema].
      */
     fun create() {
-        // Delete any existing file to start fresh
         val file = File(path)
-        if (file.exists()) {
-            file.delete()
-        }
         file.parentFile?.mkdirs()
 
-        db = SQLiteDatabase.openOrCreateDatabase(path, null)
-        createSchema()
+        val tempPath = "$path.tmp"
+        val tempFile = File(tempPath)
+        tempFile.delete()
+
+        try {
+            val tempDb = SQLiteDatabase.openOrCreateDatabase(tempPath, null)
+            db = tempDb
+            createSchema()
+            // Schema created successfully — replace the old file
+            if (file.exists()) {
+                file.delete()
+            }
+            tempFile.renameTo(file)
+            // Reopen at the final path
+            tempDb.close()
+            db = SQLiteDatabase.openOrCreateDatabase(path, null)
+        } catch (e: Exception) {
+            db?.close()
+            db = null
+            tempFile.delete()
+            throw e
+        }
     }
 
     /**

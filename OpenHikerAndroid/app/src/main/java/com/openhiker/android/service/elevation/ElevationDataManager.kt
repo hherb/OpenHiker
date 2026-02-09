@@ -35,8 +35,10 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -168,7 +170,7 @@ class ElevationDataManager @Inject constructor(
         if (!gzFile.exists()) return@withContext null
 
         try {
-            val bytes = GZIPInputStream(gzFile.inputStream()).use { it.readBytes() }
+            val bytes = GZIPInputStream(gzFile.inputStream()).use { it.readBounded() }
             val lat = floor(latitude).toInt()
             val lon = floor(longitude).toInt()
             HgtParser.parse(bytes, lat, lon)
@@ -230,8 +232,8 @@ class ElevationDataManager @Inject constructor(
                 val gzFile = File(storageDir, "$filename.gz")
                 gzFile.writeBytes(gzBytes)
 
-                // Decompress
-                return GZIPInputStream(gzBytes.inputStream()).use { it.readBytes() }
+                // Decompress with size limit to prevent OOM from corrupted files
+                return GZIPInputStream(gzBytes.inputStream()).use { it.readBounded() }
             } catch (e: IOException) {
                 lastException = e
                 Log.w(TAG, "Download attempt ${attempt + 1} failed for $url: ${e.message}")
@@ -296,4 +298,35 @@ class ElevationDataManager @Inject constructor(
         private const val FALLBACK_ENDPOINT =
             "https://opentopography.s3.sdsc.edu/raster/SRTM_GL1/SRTM_GL1_srtm"
     }
+}
+
+/**
+ * Maximum decompressed HGT file size in bytes (30 MB).
+ *
+ * SRTM1 (3601x3601 x 2 bytes) is ~25.9 MB. This limit prevents OOM
+ * from corrupted or malicious .hgt.gz files producing unbounded output.
+ */
+private const val MAX_DECOMPRESSED_HGT_BYTES = 30L * 1024 * 1024
+
+/**
+ * Reads all bytes from an [InputStream] with a size limit to prevent OOM.
+ *
+ * @throws IOException if the decompressed data exceeds [MAX_DECOMPRESSED_HGT_BYTES].
+ */
+private fun InputStream.readBounded(): ByteArray {
+    val buffer = ByteArray(8192)
+    val output = ByteArrayOutputStream()
+    var totalRead = 0L
+    while (true) {
+        val bytesRead = read(buffer)
+        if (bytesRead == -1) break
+        totalRead += bytesRead
+        if (totalRead > MAX_DECOMPRESSED_HGT_BYTES) {
+            throw IOException(
+                "Decompressed HGT file exceeds size limit of $MAX_DECOMPRESSED_HGT_BYTES bytes"
+            )
+        }
+        output.write(buffer, 0, bytesRead)
+    }
+    return output.toByteArray()
 }

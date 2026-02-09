@@ -58,7 +58,7 @@ import javax.inject.Singleton
 @Singleton
 class NavigationService @Inject constructor(
     private val locationProvider: LocationProvider,
-    private val vibrator: Vibrator
+    private val vibrator: Vibrator?
 ) {
     private val _navigationState = MutableStateFlow(NavigationState())
     private val _offRouteState = MutableStateFlow(OffRouteState())
@@ -178,6 +178,7 @@ class NavigationService @Inject constructor(
      */
     @Suppress("DEPRECATION")
     private fun vibrate(event: HapticEvent) {
+        val vibrator = vibrator ?: return
         if (!vibrator.hasVibrator()) return
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
