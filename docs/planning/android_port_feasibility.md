@@ -49,7 +49,7 @@ The iOS app features targeted for Android:
 - **osmdroid** — Open-source, native MBTiles support, no API key needed. Lighter weight but less polished.
 - **MapLibre** — Open-source fork of Mapbox GL, good offline support.
 
-**Recommendation:** Mapbox or MapLibre for closest feature parity with the iOS MKTileOverlay approach. osmdroid is a viable zero-cost alternative.
+**Decision:** MapLibre Native Android. osmdroid was archived in November 2024 (no longer maintained). Mapbox is not free. MapLibre is free (BSD-2), GPU-accelerated, has native MBTiles support via `mbtiles://` URI, official Compose integration, and active maintenance under the Linux Foundation.
 
 **Effort:** Medium. The tile coordinate math (including TMS Y-flipping) is identical — it's just wiring it into a different map SDK.
 
@@ -234,7 +234,7 @@ The iOS app features targeted for Android:
 | Language | Kotlin |
 | UI Framework | Jetpack Compose |
 | Navigation | Compose Navigation |
-| Map SDK | MapLibre or Mapbox |
+| Map SDK | MapLibre Native Android |
 | HTTP Client | OkHttp + Retrofit |
 | Database | Room (SQLite) |
 | Concurrency | Kotlin Coroutines + Flow |
@@ -244,8 +244,8 @@ The iOS app features targeted for Android:
 | Image Loading | Coil |
 | Charts | Vico or MPAndroidChart |
 | PDF | Android PdfDocument API |
-| Cloud Sync | Firebase Firestore |
-| P2P | Nearby Connections API |
+| Cloud Sync | File-based sync via SAF (Dropbox/GDrive/iCloud Drive) |
+| P2P | Deferred (Nearby Connections API candidate) |
 | Background Work | WorkManager |
 | Build System | Gradle with KTS |
 | Min SDK | API 26 (Android 8.0) |
@@ -339,7 +339,8 @@ For a developer experienced in both iOS and Android:
 The port is **feasible and well-scoped**. The iOS app's clean architecture — with shared pure-logic code separated from platform services — means the hardest parts (routing algorithms, tile coordinate math, elevation queries, data formats) are directly portable. The bulk of the work is UI rewriting (Compose) and platform service adaptation (GPS, storage, permissions), both of which have mature Android equivalents.
 
 The two decisions with the largest architectural impact are:
-1. **Map SDK choice** (MapLibre vs. Mapbox vs. osmdroid) — affects offline tile handling throughout the app
-2. **Cloud sync strategy** — whether to keep CloudKit for iOS and Firebase for Android (separate ecosystems) or unify on a shared backend
+1. **Map SDK:** MapLibre Native Android (decided — free, GPU-accelerated, native MBTiles, active maintenance)
+2. **Cloud sync:** File-based export/import to user-chosen cloud drive via SAF (decided — platform-agnostic, no backend required, cross-platform compatible with iOS)
+3. **P2P sharing:** Deferred to a later phase
 
-Neither is a blocker, but both should be decided early as they ripple through the codebase.
+See `android_implementation_plan.md` for the detailed stepwise implementation plan.
