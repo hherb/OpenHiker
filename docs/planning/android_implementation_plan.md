@@ -699,7 +699,25 @@ The goal is hike recording/review, waypoint management, and data export.
 
 **What:** Record GPS tracks during hikes with statistics.
 
-- Extend `LocationForegroundService` to record track points during active hike
+> **Note:** The following GPS hike-recording features were deferred from Phase 2
+> to Phase 3 to keep Phase 2 focused on routing and turn-by-turn navigation.
+> Phase 2 delivered the basic `LocationProvider` (GPS + compass) and a minimal
+> `HikeTrackingService` foreground service that keeps GPS alive. Phase 3 extends
+> these to support full hike recording.
+
+**Deferred from Phase 2 (GPS features to add):**
+- Track point recording to in-memory list in `LocationProvider`
+- Elevation gain/loss accumulation with noise filter (ignore changes < 3m)
+- `FusedLocationProviderClient` integration with priority modes:
+  - High accuracy: `PRIORITY_HIGH_ACCURACY`, interval 2s, minDisplacement 5m
+  - Balanced: `PRIORITY_BALANCED_POWER_ACCURACY`, interval 5s, minDisplacement 10m
+  - Low power: `PRIORITY_LOW_POWER`, interval 10s, minDisplacement 50m
+- Pause/resume hike recording in `HikeTrackingService`
+- Notification actions: Pause/Resume, Stop (with distance/time stats in notification)
+- Runtime permission handling for `ACCESS_BACKGROUND_LOCATION` (separate request with rationale dialog)
+
+**Hike recording features:**
+- Extend `HikeTrackingService` to record track points during active hike
 - `HikeStatistics` accumulation (uses `core/geo/Haversine`):
   - Total distance (Haversine sum of consecutive points)
   - Elevation gain/loss (with noise filter: ignore changes < 3m)
@@ -713,7 +731,7 @@ The goal is hike recording/review, waypoint management, and data export.
 - Save to `RouteRepository` on hike completion
 - Auto-save draft every 5 minutes to `filesDir/hike_draft.bin` (crash recovery)
 
-**Depends on:** Step 2.1 (GPS service).
+**Depends on:** Step 2.1 (GPS service — basic LocationProvider and HikeTrackingService from Phase 2).
 **Deliverable:** Hikes recorded with statistics and compressed tracks.
 
 #### Step 3.2 — Hike History UI

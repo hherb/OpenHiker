@@ -58,18 +58,19 @@ object LocationModule {
      *
      * On Android 12+ (API 31), uses [VibratorManager] to get the default vibrator.
      * On older versions, uses the legacy [Vibrator] service directly.
+     * Returns null on devices without vibration hardware (some tablets, emulators).
      * Used for navigation turn alerts, off-route warnings, and arrival notifications.
      */
     @Provides
     @Singleton
     @Suppress("DEPRECATION")
-    fun provideVibrator(@ApplicationContext context: Context): Vibrator {
+    fun provideVibrator(@ApplicationContext context: Context): Vibrator? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager =
-                context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            vibratorManager.defaultVibrator
+                context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
         } else {
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
     }
 }
