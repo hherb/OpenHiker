@@ -47,6 +47,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.openhiker.android.ui.community.CommunityBrowseScreen
+import com.openhiker.android.ui.community.CommunityRouteDetailScreen
+import com.openhiker.android.ui.community.RouteUploadScreen
 import com.openhiker.android.ui.hikes.HikeDetailScreen
 import com.openhiker.android.ui.hikes.HikeListScreen
 import com.openhiker.android.ui.map.MapScreen
@@ -76,6 +78,8 @@ object Routes {
     const val ROUTES = "routes"
     const val ROUTE_DETAIL = "route_detail/{routeId}"
     const val COMMUNITY = "community"
+    const val COMMUNITY_ROUTE_DETAIL = "community_route_detail/{routePath}"
+    const val ROUTE_UPLOAD = "route_upload/{routeId}"
     const val SETTINGS = "settings"
     const val TURN_BY_TURN = "turn_by_turn/{routeId}"
     const val WAYPOINTS = "waypoints"
@@ -93,6 +97,13 @@ object Routes {
 
     /** Builds the waypoint detail route with a specific waypoint ID. */
     fun waypointDetail(waypointId: String): String = "waypoint_detail/$waypointId"
+
+    /** Builds the community route detail route with the repository path. */
+    fun communityRouteDetail(routePath: String): String =
+        "community_route_detail/${java.net.URLEncoder.encode(routePath, "UTF-8")}"
+
+    /** Builds the route upload route with a specific route ID. */
+    fun routeUpload(routeId: String): String = "route_upload/$routeId"
 }
 
 /**
@@ -141,6 +152,8 @@ fun AppNavigation() {
         Routes.REGION_SELECTOR -> "Download Region"
         Routes.HIKE_DETAIL -> "Hike Detail"
         Routes.ROUTE_DETAIL -> "Route Detail"
+        Routes.COMMUNITY_ROUTE_DETAIL -> "Community Route"
+        Routes.ROUTE_UPLOAD -> "Share Route"
         Routes.WAYPOINTS -> "Waypoints"
         Routes.WAYPOINT_DETAIL -> "Waypoint"
         Routes.ADD_WAYPOINT -> "Add Waypoint"
@@ -153,6 +166,8 @@ fun AppNavigation() {
         Routes.TURN_BY_TURN,
         Routes.HIKE_DETAIL,
         Routes.ROUTE_DETAIL,
+        Routes.COMMUNITY_ROUTE_DETAIL,
+        Routes.ROUTE_UPLOAD,
         Routes.WAYPOINT_DETAIL,
         Routes.ADD_WAYPOINT
     )
@@ -254,8 +269,36 @@ fun AppNavigation() {
                 )
             }
 
-            composable(Routes.COMMUNITY) { CommunityBrowseScreen() }
+            composable(Routes.COMMUNITY) {
+                CommunityBrowseScreen(
+                    onNavigateToDetail = { routePath ->
+                        navController.navigate(Routes.communityRouteDetail(routePath))
+                    }
+                )
+            }
             composable(Routes.SETTINGS) { SettingsScreen() }
+
+            // ── Community route detail ───────────────────────────────
+
+            composable(
+                route = Routes.COMMUNITY_ROUTE_DETAIL,
+                arguments = listOf(navArgument("routePath") { type = NavType.StringType })
+            ) {
+                CommunityRouteDetailScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // ── Route upload ─────────────────────────────────────────
+
+            composable(
+                route = Routes.ROUTE_UPLOAD,
+                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+            ) {
+                RouteUploadScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
             // ── Hike detail ──────────────────────────────────────────
 

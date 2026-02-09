@@ -104,6 +104,14 @@ dependencies {
     ksp(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)
 
+    // WorkManager + Hilt Worker
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.compiler)
+
+    // DocumentFile (SAF)
+    implementation(libs.androidx.documentfile)
+
     // Network
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)

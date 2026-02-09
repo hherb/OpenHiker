@@ -15,7 +15,8 @@
   You should have received a copy of the GNU Affero General Public License
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Network permissions for tile downloading -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -65,6 +66,23 @@
             android:name=".service.location.HikeTrackingService"
             android:foregroundServiceType="location"
             android:exported="false" />
+
+        <!--
+            Disable the default WorkManager initializer so that we can
+            supply a Hilt-aware WorkerFactory via Configuration.Provider
+            in OpenHikerApp. Without this, @HiltWorker-annotated workers
+            (SyncWorker) would fail to receive injected dependencies.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
     </application>
 
