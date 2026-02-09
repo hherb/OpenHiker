@@ -19,77 +19,219 @@
 package com.openhiker.android.ui.settings
 
 import android.app.Application
-import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.openhiker.android.data.repository.GpsAccuracyMode
+import com.openhiker.android.data.repository.UnitSystem
+import com.openhiker.android.data.repository.UserPreferences
+import com.openhiker.android.data.repository.UserPreferencesRepository
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
 import com.openhiker.android.service.sync.SyncWorker
+import com.openhiker.core.model.TileServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * UI state for the settings screen.
  *
- * @property syncEnabled Whether cloud sync is enabled.
- * @property syncFolderUri The configured cloud folder URI, or null.
- * @property syncFolderName Display name of the sync folder.
- * @property isSyncing True while a manual sync is in progress.
- * @property lastSyncResult Human-readable result of the last sync.
- * @property error Error message for display, or null.
+ * Combines user preferences with transient UI state (sync progress,
+ * storage calculations, errors). The [preferences] field mirrors the
+ * persisted [UserPreferences] while the remaining fields are ephemeral.
+ *
+ * @property preferences Current user preferences from DataStore.
+ * @property isSyncing True while a manual sync operation is running.
+ * @property lastSyncResult Human-readable result of the last sync operation.
+ * @property elevationCacheSizeBytes Size of cached elevation HGT files.
+ * @property osmCacheSizeBytes Size of cached OSM XML data.
+ * @property totalRegionSizeBytes Total size of all downloaded MBTiles regions.
+ * @property error Error message for snackbar display, or null.
+ * @property syncFolderDisplayName Display name of the selected sync folder.
  */
 data class SettingsUiState(
-    val syncEnabled: Boolean = false,
-    val syncFolderUri: String? = null,
-    val syncFolderName: String = "Not configured",
+    val preferences: UserPreferences = UserPreferences(),
     val isSyncing: Boolean = false,
     val lastSyncResult: String? = null,
-    val error: String? = null
+    val elevationCacheSizeBytes: Long = 0L,
+    val osmCacheSizeBytes: Long = 0L,
+    val totalRegionSizeBytes: Long = 0L,
+    val error: String? = null,
+    val syncFolderDisplayName: String = "Not configured"
 )
 
 /**
  * ViewModel for the settings screen.
  *
- * Manages cloud sync configuration: enabling/disabling sync, selecting
- * the cloud folder, and triggering manual sync operations.
+ * Manages all user preferences via [UserPreferencesRepository] (DataStore)
+ * and handles cloud sync operations. Settings changes are persisted
+ * immediately and propagated reactively to all consumers via Flow.
  *
- * @param application Application context for SharedPreferences and WorkManager.
+ * Sections managed:
+ * - Map: default tile server
+ * - GPS: accuracy mode
+ * - Navigation: unit system, haptic feedback, audio cues, screen-on
+ * - Downloads: default zoom range, concurrent download limit
+ * - Cloud Sync: folder selection, enable/disable, manual sync
+ * - Storage: cache sizes, clear operations
+ * - About: version info and license
+ *
+ * @param application Application context for file system access and WorkManager.
+ * @param preferencesRepository DataStore-backed preferences persistence.
  * @param syncEngine Cloud drive sync engine for manual sync operations.
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val application: Application,
+    private val preferencesRepository: UserPreferencesRepository,
     private val syncEngine: CloudDriveSyncEngine
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
 
-    /** Observable UI state. */
+    /** Observable UI state combining preferences with transient state. */
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    /** Observable user preferences for direct consumption by other screens. */
+    val preferences: StateFlow<UserPreferences> = preferencesRepository.preferencesFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, UserPreferences())
+
     init {
-        loadSyncSettings()
+        observePreferences()
+        calculateStorageSizes()
     }
+
+    // ── Map Settings ─────────────────────────────────────────────
+
+    /**
+     * Sets the default tile server for map display.
+     *
+     * @param server The tile server to use as default.
+     */
+    fun setDefaultTileServer(server: TileServer) {
+        viewModelScope.launch {
+            preferencesRepository.setDefaultTileServer(server.id)
+        }
+    }
+
+    // ── GPS Settings ─────────────────────────────────────────────
+
+    /**
+     * Sets the GPS accuracy mode controlling update frequency and power usage.
+     *
+     * @param mode The desired GPS accuracy/power trade-off.
+     */
+    fun setGpsAccuracyMode(mode: GpsAccuracyMode) {
+        viewModelScope.launch {
+            preferencesRepository.setGpsAccuracyMode(mode)
+        }
+    }
+
+    // ── Navigation Settings ──────────────────────────────────────
+
+    /**
+     * Sets the display unit system (metric or imperial).
+     *
+     * @param unitSystem The unit system to use for distances and elevations.
+     */
+    fun setUnitSystem(unitSystem: UnitSystem) {
+        viewModelScope.launch {
+            preferencesRepository.setUnitSystem(unitSystem)
+        }
+    }
+
+    /**
+     * Toggles haptic feedback during turn-by-turn navigation.
+     *
+     * @param enabled True to enable vibrations, false to disable.
+     */
+    fun setHapticFeedbackEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setHapticFeedbackEnabled(enabled)
+        }
+    }
+
+    /**
+     * Toggles audio cues as an alternative to haptic feedback.
+     *
+     * @param enabled True to enable audio cues for navigation events.
+     */
+    fun setAudioCuesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAudioCuesEnabled(enabled)
+        }
+    }
+
+    /**
+     * Toggles keeping the screen on during active navigation.
+     *
+     * @param enabled True to prevent screen sleep during navigation.
+     */
+    fun setKeepScreenOnDuringNavigation(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setKeepScreenOnDuringNavigation(enabled)
+        }
+    }
+
+    // ── Download Settings ────────────────────────────────────────
+
+    /**
+     * Sets the default minimum zoom level for new tile downloads.
+     *
+     * @param zoom Minimum zoom level (valid range: 1-18).
+     */
+    fun setDefaultMinZoom(zoom: Int) {
+        val currentMax = _uiState.value.preferences.defaultMaxZoom
+        val clamped = zoom.coerceIn(1, currentMax)
+        viewModelScope.launch {
+            preferencesRepository.setDefaultMinZoom(clamped)
+        }
+    }
+
+    /**
+     * Sets the default maximum zoom level for new tile downloads.
+     *
+     * Enforces that max zoom is never less than the current min zoom.
+     *
+     * @param zoom Maximum zoom level (valid range: 1-18).
+     */
+    fun setDefaultMaxZoom(zoom: Int) {
+        val currentMin = _uiState.value.preferences.defaultMinZoom
+        val clamped = zoom.coerceIn(currentMin, 18)
+        viewModelScope.launch {
+            preferencesRepository.setDefaultMaxZoom(clamped)
+        }
+    }
+
+    /**
+     * Sets the maximum number of concurrent tile downloads.
+     *
+     * @param limit Parallel download count (valid range: 2-12).
+     */
+    fun setConcurrentDownloadLimit(limit: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setConcurrentDownloadLimit(limit)
+        }
+    }
+
+    // ── Cloud Sync Settings ──────────────────────────────────────
 
     /**
      * Sets the cloud sync folder from a SAF tree URI.
      *
-     * Persists the URI in SharedPreferences and schedules periodic sync.
+     * Persists the URI, takes persistable permission, and enables sync
+     * with a scheduled WorkManager job.
      *
      * @param uri The SAF tree URI selected by the user.
      */
     fun setSyncFolder(uri: Uri) {
-        val prefs = application.getSharedPreferences(SyncWorker.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(SyncWorker.PREF_SYNC_FOLDER_URI, uri.toString())
-            .apply()
-
-        // Take persistable URI permission
+        // Take persistable URI permission for access across app restarts
         try {
             application.contentResolver.takePersistableUriPermission(
                 uri,
@@ -100,41 +242,45 @@ class SettingsViewModel @Inject constructor(
             Log.w(TAG, "Failed to take persistable URI permission", e)
         }
 
-        _uiState.value = _uiState.value.copy(
-            syncFolderUri = uri.toString(),
-            syncFolderName = uri.lastPathSegment ?: "Cloud folder",
-            syncEnabled = true
-        )
+        viewModelScope.launch {
+            preferencesRepository.setSyncFolderUri(uri.toString())
+            preferencesRepository.setSyncEnabled(true)
+            SyncWorker.schedule(application)
 
-        SyncWorker.schedule(application)
+            _uiState.value = _uiState.value.copy(
+                syncFolderDisplayName = uri.lastPathSegment ?: "Cloud folder"
+            )
+        }
     }
 
     /**
-     * Toggles cloud sync on or off.
+     * Toggles automatic cloud sync on or off.
      *
-     * When disabled, cancels the periodic WorkManager job.
-     * When enabled, schedules the periodic sync (requires a folder to be set).
+     * When disabled, cancels the periodic WorkManager job. When enabled,
+     * schedules periodic sync (requires a folder to be configured).
      *
      * @param enabled True to enable, false to disable.
      */
     fun setSyncEnabled(enabled: Boolean) {
-        _uiState.value = _uiState.value.copy(syncEnabled = enabled)
+        viewModelScope.launch {
+            preferencesRepository.setSyncEnabled(enabled)
 
-        if (enabled && _uiState.value.syncFolderUri != null) {
-            SyncWorker.schedule(application)
-        } else {
-            SyncWorker.cancel(application)
+            if (enabled && _uiState.value.preferences.syncFolderUri != null) {
+                SyncWorker.schedule(application)
+            } else {
+                SyncWorker.cancel(application)
+            }
         }
-
-        val prefs = application.getSharedPreferences(SyncWorker.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(PREF_SYNC_ENABLED, enabled).apply()
     }
 
     /**
      * Triggers a manual sync operation immediately.
+     *
+     * Runs the sync engine directly (not via WorkManager) and reports
+     * the result via [SettingsUiState.lastSyncResult].
      */
     fun syncNow() {
-        val folderUri = _uiState.value.syncFolderUri ?: run {
+        val folderUri = _uiState.value.preferences.syncFolderUri ?: run {
             _uiState.value = _uiState.value.copy(error = "Please select a cloud folder first")
             return
         }
@@ -162,28 +308,105 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // ── Storage Management ───────────────────────────────────────
+
     /**
-     * Clears the error message after display.
+     * Deletes all cached elevation HGT files to free storage.
+     */
+    fun clearElevationCache() {
+        viewModelScope.launch {
+            try {
+                val elevationDir = java.io.File(application.filesDir, "elevation")
+                if (elevationDir.exists()) {
+                    elevationDir.listFiles()?.forEach { it.delete() }
+                }
+                calculateStorageSizes()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear elevation cache", e)
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to clear elevation cache: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Deletes all cached OSM XML data to free storage.
+     */
+    fun clearOsmCache() {
+        viewModelScope.launch {
+            try {
+                val osmDir = java.io.File(application.filesDir, "osm")
+                if (osmDir.exists()) {
+                    osmDir.listFiles()?.forEach { it.delete() }
+                }
+                calculateStorageSizes()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear OSM cache", e)
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to clear OSM cache: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // ── Error Handling ───────────────────────────────────────────
+
+    /**
+     * Clears the error message after it has been displayed.
      */
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    /** Loads saved sync preferences on init. */
-    private fun loadSyncSettings() {
-        val prefs = application.getSharedPreferences(SyncWorker.PREFS_NAME, Context.MODE_PRIVATE)
-        val folderUri = prefs.getString(SyncWorker.PREF_SYNC_FOLDER_URI, null)
-        val enabled = prefs.getBoolean(PREF_SYNC_ENABLED, false)
+    // ── Private Helpers ──────────────────────────────────────────
 
-        _uiState.value = SettingsUiState(
-            syncEnabled = enabled,
-            syncFolderUri = folderUri,
-            syncFolderName = folderUri?.let { Uri.parse(it).lastPathSegment } ?: "Not configured"
-        )
+    /**
+     * Observes the DataStore preferences flow and updates the UI state
+     * whenever any preference changes.
+     */
+    private fun observePreferences() {
+        viewModelScope.launch {
+            preferencesRepository.preferencesFlow.collect { prefs ->
+                _uiState.value = _uiState.value.copy(
+                    preferences = prefs,
+                    syncFolderDisplayName = prefs.syncFolderUri?.let { uriString ->
+                        Uri.parse(uriString).lastPathSegment ?: "Cloud folder"
+                    } ?: "Not configured"
+                )
+            }
+        }
+    }
+
+    /**
+     * Calculates the sizes of cached data directories for the storage section.
+     */
+    private fun calculateStorageSizes() {
+        viewModelScope.launch {
+            val elevationSize = directorySize(java.io.File(application.filesDir, "elevation"))
+            val osmSize = directorySize(java.io.File(application.filesDir, "osm"))
+            val regionsSize = directorySize(java.io.File(application.filesDir, "regions"))
+
+            _uiState.value = _uiState.value.copy(
+                elevationCacheSizeBytes = elevationSize,
+                osmCacheSizeBytes = osmSize,
+                totalRegionSizeBytes = regionsSize
+            )
+        }
     }
 
     companion object {
         private const val TAG = "SettingsVM"
-        private const val PREF_SYNC_ENABLED = "sync_enabled"
+
+        /**
+         * Calculates the total size of all files in a directory.
+         *
+         * @param dir The directory to measure.
+         * @return Total size in bytes, or 0 if the directory doesn't exist.
+         */
+        fun directorySize(dir: java.io.File): Long {
+            if (!dir.exists() || !dir.isDirectory) return 0L
+            return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
     }
 }

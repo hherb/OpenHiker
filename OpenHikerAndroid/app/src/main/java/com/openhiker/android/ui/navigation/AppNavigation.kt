@@ -18,6 +18,8 @@
 
 package com.openhiker.android.ui.navigation
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
@@ -31,15 +33,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -107,45 +116,52 @@ object Routes {
 }
 
 /**
- * Represents a bottom navigation tab with its route, label, and icon.
+ * Represents a navigation tab with its route, label, and icon.
+ *
+ * Used for both bottom navigation (compact) and navigation rail (medium/expanded).
  *
  * @property route The navigation route string for this tab.
- * @property label The display label shown under the tab icon.
- * @property icon The Material icon displayed in the navigation bar.
+ * @property label The display label shown with the tab icon.
+ * @property icon The Material icon displayed in the navigation bar or rail.
  */
-data class BottomNavItem(
+data class NavItem(
     val route: String,
     val label: String,
     val icon: ImageVector
 )
 
-/** Bottom navigation tabs displayed in the main navigation bar. */
-val bottomNavItems = listOf(
-    BottomNavItem(Routes.NAVIGATE, "Navigate", Icons.Default.Explore),
-    BottomNavItem(Routes.REGIONS, "Regions", Icons.Default.Map),
-    BottomNavItem(Routes.HIKES, "Hikes", Icons.Default.Hiking),
-    BottomNavItem(Routes.ROUTES, "Routes", Icons.Default.Route),
-    BottomNavItem(Routes.COMMUNITY, "Community", Icons.Default.People)
+/** Navigation tabs displayed in the bottom bar or navigation rail. */
+val navItems = listOf(
+    NavItem(Routes.NAVIGATE, "Navigate", Icons.Default.Explore),
+    NavItem(Routes.REGIONS, "Regions", Icons.Default.Map),
+    NavItem(Routes.HIKES, "Hikes", Icons.Default.Hiking),
+    NavItem(Routes.ROUTES, "Routes", Icons.Default.Route),
+    NavItem(Routes.COMMUNITY, "Community", Icons.Default.People)
 )
 
 /**
- * Root composable for app navigation.
+ * Root composable for app navigation with adaptive layout.
+ *
+ * Uses [WindowSizeClass] to choose the navigation pattern:
+ * - **Compact width** (phones): Bottom navigation bar
+ * - **Medium/Expanded width** (tablets, foldables): Navigation rail on the left
  *
  * Sets up a [Scaffold] with:
  * - A top app bar with the current screen title and settings gear icon
- * - A bottom navigation bar with 5 tabs (Navigate, Regions, Hikes, Routes, Community)
+ * - Adaptive navigation (bottom bar or rail) with 5 tabs
  * - A [NavHost] that renders the appropriate screen for each route
  *
- * Phase 3 additions: hike detail, route detail, waypoint list/detail/add screens.
+ * @param windowSizeClass The current window size classification from the activity.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppNavigation() {
+fun AppNavigation(windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val useNavigationRail = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
 
-    val currentTitle = bottomNavItems.find { item ->
+    val currentTitle = navItems.find { item ->
         currentDestination?.hierarchy?.any { it.route == item.route } == true
     }?.label ?: when (currentDestination?.route) {
         Routes.SETTINGS -> "Settings"
@@ -172,200 +188,328 @@ fun AppNavigation() {
         Routes.ADD_WAYPOINT
     )
 
-    Scaffold(
-        topBar = {
-            if (!isFullScreen) {
-                TopAppBar(
-                    title = { Text(currentTitle) },
-                    actions = {
-                        IconButton(onClick = {
-                            navController.navigate(Routes.SETTINGS) {
-                                launchSingleTop = true
+    if (useNavigationRail && !isFullScreen) {
+        // ── Tablet / Foldable: Navigation Rail on left ──────────
+        Row(modifier = Modifier.fillMaxSize()) {
+            AdaptiveNavigationRail(
+                navController = navController,
+                currentDestination = currentDestination
+            )
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(currentTitle) },
+                        actions = {
+                            IconButton(
+                                onClick = {
+                                    navController.navigate(Routes.SETTINGS) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Open settings"
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings"
+                                )
                             }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings"
+                        }
+                    )
+                }
+            ) { innerPadding ->
+                AppNavHost(
+                    navController = navController,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+        }
+    } else {
+        // ── Phone: Bottom Navigation Bar ────────────────────────
+        Scaffold(
+            topBar = {
+                if (!isFullScreen) {
+                    TopAppBar(
+                        title = { Text(currentTitle) },
+                        actions = {
+                            IconButton(
+                                onClick = {
+                                    navController.navigate(Routes.SETTINGS) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "Open settings"
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings"
+                                )
+                            }
+                        }
+                    )
+                }
+            },
+            bottomBar = {
+                if (!isFullScreen) {
+                    NavigationBar {
+                        navItems.forEach { item ->
+                            val selected = currentDestination?.hierarchy?.any {
+                                it.route == item.route
+                            } == true
+
+                            NavigationBarItem(
+                                icon = { Icon(item.icon, contentDescription = item.label) },
+                                label = { Text(item.label) },
+                                selected = selected,
+                                onClick = {
+                                    navController.navigate(item.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "${item.label} tab"
+                                }
                             )
                         }
                     }
-                )
-            }
-        },
-        bottomBar = {
-            if (!isFullScreen) {
-                NavigationBar {
-                    bottomNavItems.forEach { item ->
-                        val selected = currentDestination?.hierarchy?.any {
-                            it.route == item.route
-                        } == true
-
-                        NavigationBarItem(
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
                 }
             }
+        ) { innerPadding ->
+            AppNavHost(
+                navController = navController,
+                modifier = Modifier.padding(innerPadding)
+            )
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.NAVIGATE,
-            modifier = Modifier.padding(innerPadding)
+    }
+}
+
+/**
+ * Navigation rail for tablet and foldable layouts.
+ *
+ * Displays a vertical rail of navigation items on the left side of the screen,
+ * with a Settings icon button at the top. Used when the window width is
+ * [WindowWidthSizeClass.Medium] or [WindowWidthSizeClass.Expanded].
+ *
+ * @param navController The app's NavHostController for navigation.
+ * @param currentRoute The currently active route for selection highlighting.
+ */
+@Composable
+private fun AdaptiveNavigationRail(
+    navController: NavHostController,
+    currentDestination: androidx.navigation.NavDestination?
+) {
+    NavigationRail(
+        header = {
+            IconButton(
+                onClick = {
+                    navController.navigate(Routes.SETTINGS) {
+                        launchSingleTop = true
+                    }
+                },
+                modifier = Modifier.semantics {
+                    contentDescription = "Open settings"
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings"
+                )
+            }
+        }
+    ) {
+        navItems.forEach { item ->
+            val selected = currentDestination?.hierarchy?.any {
+                it.route == item.route
+            } == true
+
+            NavigationRailItem(
+                icon = { Icon(item.icon, contentDescription = item.label) },
+                label = { Text(item.label) },
+                selected = selected,
+                onClick = {
+                    navController.navigate(item.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                modifier = Modifier.semantics {
+                    contentDescription = "${item.label} tab"
+                }
+            )
+        }
+    }
+}
+
+/**
+ * Central navigation host containing all screen destinations.
+ *
+ * Extracted from AppNavigation to be shared between phone (Scaffold)
+ * and tablet (Row + NavigationRail + Scaffold) layouts.
+ *
+ * @param navController The shared NavHostController.
+ * @param modifier Modifier applied to the NavHost container.
+ */
+@Composable
+private fun AppNavHost(
+    navController: NavHostController,
+    modifier: Modifier = Modifier
+) {
+    NavHost(
+        navController = navController,
+        startDestination = Routes.NAVIGATE,
+        modifier = modifier
+    ) {
+        // ── Tab screens ──────────────────────────────────────────
+
+        composable(Routes.NAVIGATE) { MapScreen() }
+
+        composable(Routes.REGIONS) {
+            RegionListScreen(
+                onNavigateToSelector = {
+                    navController.navigate(Routes.REGION_SELECTOR)
+                },
+                onViewOnMap = {
+                    navController.navigate(Routes.NAVIGATE) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
+        }
+
+        composable(Routes.REGION_SELECTOR) {
+            RegionSelectorScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.HIKES) {
+            HikeListScreen(
+                onNavigateToDetail = { hikeId ->
+                    navController.navigate(Routes.hikeDetail(hikeId))
+                }
+            )
+        }
+
+        composable(Routes.ROUTES) {
+            RoutePlanningScreen(
+                onStartNavigation = { routeId ->
+                    navController.navigate(Routes.turnByTurn(routeId)) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(Routes.COMMUNITY) {
+            CommunityBrowseScreen(
+                onNavigateToDetail = { routePath ->
+                    navController.navigate(Routes.communityRouteDetail(routePath))
+                }
+            )
+        }
+        composable(Routes.SETTINGS) { SettingsScreen() }
+
+        // ── Community route detail ───────────────────────────────
+
+        composable(
+            route = Routes.COMMUNITY_ROUTE_DETAIL,
+            arguments = listOf(navArgument("routePath") { type = NavType.StringType })
         ) {
-            // ── Tab screens ──────────────────────────────────────────
+            CommunityRouteDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
 
-            composable(Routes.NAVIGATE) { MapScreen() }
+        // ── Route upload ─────────────────────────────────────────
 
-            composable(Routes.REGIONS) {
-                RegionListScreen(
-                    onNavigateToSelector = {
-                        navController.navigate(Routes.REGION_SELECTOR)
-                    },
-                    onViewOnMap = {
-                        navController.navigate(Routes.NAVIGATE) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+        composable(
+            route = Routes.ROUTE_UPLOAD,
+            arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+        ) {
+            RouteUploadScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ── Hike detail ──────────────────────────────────────────
+
+        composable(
+            route = Routes.HIKE_DETAIL,
+            arguments = listOf(navArgument("hikeId") { type = NavType.StringType })
+        ) {
+            HikeDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ── Route detail ─────────────────────────────────────────
+
+        composable(
+            route = Routes.ROUTE_DETAIL,
+            arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+        ) {
+            RouteDetailScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onStartNavigation = { routeId ->
+                    navController.navigate(Routes.turnByTurn(routeId)) {
+                        launchSingleTop = true
                     }
-                )
-            }
+                }
+            )
+        }
 
-            composable(Routes.REGION_SELECTOR) {
-                RegionSelectorScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
+        // ── Turn-by-turn navigation ──────────────────────────────
 
-            composable(Routes.HIKES) {
-                HikeListScreen(
-                    onNavigateToDetail = { hikeId ->
-                        navController.navigate(Routes.hikeDetail(hikeId))
-                    }
-                )
-            }
+        composable(
+            route = Routes.TURN_BY_TURN,
+            arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+        ) {
+            NavigationScreen(
+                onNavigationStopped = { navController.popBackStack() }
+            )
+        }
 
-            composable(Routes.ROUTES) {
-                RoutePlanningScreen(
-                    onStartNavigation = { routeId ->
-                        navController.navigate(Routes.turnByTurn(routeId)) {
-                            launchSingleTop = true
-                        }
-                    }
-                )
-            }
+        // ── Waypoint screens ─────────────────────────────────────
 
-            composable(Routes.COMMUNITY) {
-                CommunityBrowseScreen(
-                    onNavigateToDetail = { routePath ->
-                        navController.navigate(Routes.communityRouteDetail(routePath))
-                    }
-                )
-            }
-            composable(Routes.SETTINGS) { SettingsScreen() }
+        composable(Routes.WAYPOINTS) {
+            WaypointListScreen(
+                onNavigateToDetail = { waypointId ->
+                    navController.navigate(Routes.waypointDetail(waypointId))
+                },
+                onNavigateToAdd = {
+                    navController.navigate(Routes.ADD_WAYPOINT)
+                }
+            )
+        }
 
-            // ── Community route detail ───────────────────────────────
+        composable(
+            route = Routes.WAYPOINT_DETAIL,
+            arguments = listOf(navArgument("waypointId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            WaypointDetailScreen(
+                waypointId = backStackEntry.arguments?.getString("waypointId") ?: "",
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
 
-            composable(
-                route = Routes.COMMUNITY_ROUTE_DETAIL,
-                arguments = listOf(navArgument("routePath") { type = NavType.StringType })
-            ) {
-                CommunityRouteDetailScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            // ── Route upload ─────────────────────────────────────────
-
-            composable(
-                route = Routes.ROUTE_UPLOAD,
-                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
-            ) {
-                RouteUploadScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            // ── Hike detail ──────────────────────────────────────────
-
-            composable(
-                route = Routes.HIKE_DETAIL,
-                arguments = listOf(navArgument("hikeId") { type = NavType.StringType })
-            ) {
-                HikeDetailScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            // ── Route detail ─────────────────────────────────────────
-
-            composable(
-                route = Routes.ROUTE_DETAIL,
-                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
-            ) {
-                RouteDetailScreen(
-                    onNavigateBack = { navController.popBackStack() },
-                    onStartNavigation = { routeId ->
-                        navController.navigate(Routes.turnByTurn(routeId)) {
-                            launchSingleTop = true
-                        }
-                    }
-                )
-            }
-
-            // ── Turn-by-turn navigation ──────────────────────────────
-
-            composable(
-                route = Routes.TURN_BY_TURN,
-                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
-            ) {
-                NavigationScreen(
-                    onNavigationStopped = { navController.popBackStack() }
-                )
-            }
-
-            // ── Waypoint screens ─────────────────────────────────────
-
-            composable(Routes.WAYPOINTS) {
-                WaypointListScreen(
-                    onNavigateToDetail = { waypointId ->
-                        navController.navigate(Routes.waypointDetail(waypointId))
-                    },
-                    onNavigateToAdd = {
-                        navController.navigate(Routes.ADD_WAYPOINT)
-                    }
-                )
-            }
-
-            composable(
-                route = Routes.WAYPOINT_DETAIL,
-                arguments = listOf(navArgument("waypointId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                WaypointDetailScreen(
-                    waypointId = backStackEntry.arguments?.getString("waypointId") ?: "",
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            composable(Routes.ADD_WAYPOINT) {
-                AddWaypointScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
+        composable(Routes.ADD_WAYPOINT) {
+            AddWaypointScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

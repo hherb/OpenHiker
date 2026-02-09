@@ -1,0 +1,74 @@
+<!--
+  OpenHiker - Offline Hiking Navigation
+  Copyright (C) 2024 - 2026 Dr Horst Herb - AGPL-3.0
+
+  Adaptive icon foreground: mountain silhouette with hiking trail
+  Trail-green color: #4CAF50
+-->
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Mountain range silhouette -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="
+            M24,78
+            L42,38
+            L50,50
+            L62,30
+            L84,78
+            Z" />
+
+    <!-- Secondary peak (smaller mountain behind) -->
+    <path
+        android:fillColor="#388E3C"
+        android:pathData="
+            M18,78
+            L34,48
+            L42,58
+            L50,42
+            L58,58
+            L62,52
+            L72,38
+            L90,78
+            Z" />
+
+    <!-- Main mountain with peak -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="
+            M30,78
+            L54,30
+            L78,78
+            Z" />
+
+    <!-- Snow cap on main peak -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="
+            M47,42
+            L54,30
+            L61,42
+            L57,42
+            L54,36
+            L51,42
+            Z" />
+
+    <!-- Winding hiking trail -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="
+            M54,78
+            Q50,70 56,64
+            Q62,58 52,52
+            Q46,48 54,42" />
+
+</vector>

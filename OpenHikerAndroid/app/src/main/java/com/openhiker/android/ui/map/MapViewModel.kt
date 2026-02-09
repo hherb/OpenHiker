@@ -28,6 +28,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.RegionRepository
+import com.openhiker.android.data.repository.UserPreferencesRepository
 import com.openhiker.android.service.map.OfflineStyleGenerator
 import com.openhiker.core.model.RegionMetadata
 import com.openhiker.core.model.TileServer
@@ -100,7 +101,8 @@ sealed class MapMode {
 @HiltViewModel
 class MapViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val regionRepository: RegionRepository
+    private val regionRepository: RegionRepository,
+    private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
 
     private val dataStore = context.mapDataStore
@@ -125,6 +127,25 @@ class MapViewModel @Inject constructor(
         viewModelScope.launch {
             restoreCameraPosition()
             regionRepository.loadAll()
+        }
+        observeDefaultTileServer()
+    }
+
+    /**
+     * Observes the default tile server preference and switches the map
+     * mode when it changes (only in online mode).
+     */
+    private fun observeDefaultTileServer() {
+        viewModelScope.launch {
+            userPreferencesRepository.preferencesFlow.collect { prefs ->
+                val currentMode = _mapMode.value
+                if (currentMode is MapMode.Online) {
+                    val preferred = TileServer.ALL.find { it.id == prefs.defaultTileServerId }
+                    if (preferred != null && preferred.id != currentMode.tileServer.id) {
+                        _mapMode.value = MapMode.Online(preferred)
+                    }
+                }
+            }
         }
     }
 

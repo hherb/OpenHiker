@@ -1,0 +1,27 @@
+OpenHiker is a free, open-source offline hiking navigation app that puts you in control of your outdoor adventures -- no internet connection required on the trail.
+
+OFFLINE MAP NAVIGATION
+Download detailed topographic map tiles from OpenTopoMap before your hike. Once downloaded, maps are stored locally on your device so you can navigate deep in the backcountry without cell service. Choose from multiple tile sources including OpenTopoMap, CyclOSM, and standard OpenStreetMap.
+
+GPS TRACKING WITH ELEVATION PROFILES
+Record your hikes with full GPS tracking. View real-time statistics including distance, elevation gain and loss, pace, and moving time. Review completed hikes with detailed elevation profiles and track visualizations on the map.
+
+TURN-BY-TURN NAVIGATION
+Plan routes before your hike and get turn-by-turn guidance on the trail. The app provides off-route detection and clear directional instructions so you stay on the right path. Navigation works entirely offline using locally stored routing data.
+
+WAYPOINTS AND ROUTE PLANNING
+Mark trailheads, campsites, water sources, viewpoints, and other points of interest as waypoints. Plan routes with multiple waypoints and save them for future use. Import and export routes in standard formats for interoperability with other hiking apps.
+
+COMMUNITY ROUTE SHARING
+Share your favorite routes with friends and the hiking community. Transfer routes, waypoints, and map regions directly between devices -- no server or account required.
+
+PRIVACY FIRST
+OpenHiker contains no ads, no analytics, no tracking, and no user accounts. Your location data never leaves your device. Tile downloads are the only network activity, and those happen only when you explicitly request them. Your hiking data stays yours.
+
+OPEN SOURCE (AGPL-3.0)
+OpenHiker is licensed under the GNU Affero General Public License v3.0. The complete source code is publicly available on GitHub. You can inspect, modify, and redistribute the code. Community contributions are welcome.
+
+OPTIONAL CLOUD SYNC
+Back up your map regions, routes, waypoints, and hike history to Google Drive or a local folder of your choice. Cloud sync is completely opt-in and disabled by default.
+
+This app uses map data from OpenStreetMap contributors (ODbL license) and tile rendering by OpenTopoMap.

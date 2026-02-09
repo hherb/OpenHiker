@@ -37,6 +37,13 @@
     <!-- Foreground service notification (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        Background location is used ONLY during active hike recording
+        via the foreground service. The user must explicitly start recording
+        and can see the persistent notification. No location data is
+        transmitted to any server.
+    -->
+
     <application
         android:name=".OpenHikerApp"
         android:allowBackup="true"
@@ -44,6 +51,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:localeConfig="@xml/locales_config"
         android:theme="@style/Theme.OpenHiker">
 
         <activity
