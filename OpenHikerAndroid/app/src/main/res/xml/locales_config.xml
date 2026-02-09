@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OpenHiker - Offline Hiking Navigation
+  Copyright (C) 2024 - 2026 Dr Horst Herb
+  AGPL-3.0 License
+
+  Per-app language preferences configuration (Android 13+).
+  Lists all languages the app supports for the system language picker.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+</locale-config>

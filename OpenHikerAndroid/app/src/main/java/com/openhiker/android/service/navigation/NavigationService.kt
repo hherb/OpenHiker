@@ -64,6 +64,12 @@ class NavigationService @Inject constructor(
     private val _offRouteState = MutableStateFlow(OffRouteState())
     private val _isNavigating = MutableStateFlow(false)
 
+    /** Whether haptic feedback vibrations are enabled. Controlled via settings. */
+    var hapticFeedbackEnabled: Boolean = true
+
+    /** Whether audio cues should play for navigation events. Controlled via settings. */
+    var audioCuesEnabled: Boolean = false
+
     /** Current navigation state for the UI. */
     val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
 
@@ -175,9 +181,12 @@ class NavigationService @Inject constructor(
 
     /**
      * Triggers a haptic vibration pattern.
+     *
+     * Respects the [hapticFeedbackEnabled] setting — if disabled, this is a no-op.
      */
     @Suppress("DEPRECATION")
     private fun vibrate(event: HapticEvent) {
+        if (!hapticFeedbackEnabled) return
         val vibrator = vibrator ?: return
         if (!vibrator.hasVibrator()) return
 

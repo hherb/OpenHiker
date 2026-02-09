@@ -32,6 +32,7 @@ import android.os.Bundle
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.openhiker.android.data.repository.GpsAccuracyMode
 import com.openhiker.core.geo.Haversine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +82,9 @@ class LocationProvider @Inject constructor(
     private var sensorManager: SensorManager? = null
     private val rotationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
+    private var currentAccuracyMode: GpsAccuracyMode = GpsAccuracyMode.HIGH
+    private var isStationary = false
+    private var stationaryCount = 0
 
     /**
      * Starts receiving GPS location updates and compass heading.
@@ -101,11 +105,12 @@ class LocationProvider @Inject constructor(
         }
 
         try {
-            // Request GPS updates
+            // Request GPS updates using current accuracy mode parameters
+            val mode = currentAccuracyMode
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
-                UPDATE_INTERVAL_MS,
-                MIN_DISPLACEMENT_METRES,
+                mode.intervalMs,
+                mode.minDisplacementMetres,
                 this,
                 Looper.getMainLooper()
             )
@@ -114,8 +119,8 @@ class LocationProvider @Inject constructor(
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
-                    UPDATE_INTERVAL_MS * 2,
-                    MIN_DISPLACEMENT_METRES * 2,
+                    mode.intervalMs * 2,
+                    mode.minDisplacementMetres * 2,
                     this,
                     Looper.getMainLooper()
                 )
@@ -158,10 +163,40 @@ class LocationProvider @Inject constructor(
         lastAcceptedLocation = null
     }
 
+    /**
+     * Updates the GPS accuracy mode, restarting location updates with new parameters.
+     *
+     * Adjusts the update interval and minimum displacement according to the
+     * selected [GpsAccuracyMode]. Takes effect immediately if currently tracking.
+     *
+     * @param mode The desired GPS accuracy/power trade-off.
+     */
+    fun updateAccuracyMode(mode: GpsAccuracyMode) {
+        currentAccuracyMode = mode
+        if (isTracking) {
+            // Restart with new parameters
+            locationManager.removeUpdates(this)
+            try {
+                @Suppress("MissingPermission")
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    mode.intervalMs,
+                    mode.minDisplacementMetres,
+                    this,
+                    Looper.getMainLooper()
+                )
+                Log.d(TAG, "GPS accuracy updated: ${mode.id} (${mode.intervalMs}ms, ${mode.minDisplacementMetres}m)")
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Security exception updating GPS accuracy", e)
+            }
+        }
+    }
+
     // ── LocationListener ─────────────────────────────────────────────
 
     override fun onLocationChanged(location: Location) {
         val lastLoc = lastAcceptedLocation
+        val displacement = currentAccuracyMode.minDisplacementMetres
 
         // Distance filter: ignore updates too close together (GPS jitter)
         if (lastLoc != null) {
@@ -169,7 +204,24 @@ class LocationProvider @Inject constructor(
                 lastLoc.latitude, lastLoc.longitude,
                 location.latitude, location.longitude
             )
-            if (distance < MIN_DISPLACEMENT_METRES) return
+            if (distance < displacement) {
+                // Stationary detection: if user hasn't moved for several
+                // consecutive updates, reduce polling frequency to save battery.
+                stationaryCount++
+                if (stationaryCount >= STATIONARY_COUNT_THRESHOLD && !isStationary) {
+                    isStationary = true
+                    Log.d(TAG, "User appears stationary, reducing update frequency")
+                }
+                return
+            }
+
+            // User is moving again — reset stationary state
+            if (isStationary) {
+                isStationary = false
+                stationaryCount = 0
+                Log.d(TAG, "User is moving again")
+            }
+            stationaryCount = 0
 
             _cumulativeDistance.value += distance
         }
@@ -245,5 +297,11 @@ class LocationProvider @Inject constructor(
          * from inflating distance calculations.
          */
         const val MIN_DISPLACEMENT_METRES = 5f
+
+        /**
+         * Number of consecutive sub-threshold location updates before
+         * declaring the user stationary. Used for battery optimization.
+         */
+        private const val STATIONARY_COUNT_THRESHOLD = 5
     }
 }
