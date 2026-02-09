@@ -40,38 +40,59 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.openhiker.android.ui.community.CommunityBrowseScreen
+import com.openhiker.android.ui.hikes.HikeDetailScreen
 import com.openhiker.android.ui.hikes.HikeListScreen
 import com.openhiker.android.ui.map.MapScreen
 import com.openhiker.android.ui.regions.RegionListScreen
 import com.openhiker.android.ui.regions.RegionSelectorScreen
 import com.openhiker.android.ui.routing.NavigationScreen
+import com.openhiker.android.ui.routing.RouteDetailScreen
 import com.openhiker.android.ui.routing.RoutePlanningScreen
 import com.openhiker.android.ui.settings.SettingsScreen
+import com.openhiker.android.ui.waypoints.AddWaypointScreen
+import com.openhiker.android.ui.waypoints.WaypointDetailScreen
+import com.openhiker.android.ui.waypoints.WaypointListScreen
 
 /**
  * Navigation route constants for all app destinations.
  *
  * Each constant maps to a composable screen in the NavHost graph.
- * Top-level tabs use simple route strings; detail screens would
- * use parameterized routes (e.g., "hike/{id}").
+ * Top-level tabs use simple route strings; detail screens use
+ * parameterised routes (e.g., "hike_detail/{hikeId}").
  */
 object Routes {
     const val NAVIGATE = "navigate"
     const val REGIONS = "regions"
     const val REGION_SELECTOR = "region_selector"
     const val HIKES = "hikes"
+    const val HIKE_DETAIL = "hike_detail/{hikeId}"
     const val ROUTES = "routes"
+    const val ROUTE_DETAIL = "route_detail/{routeId}"
     const val COMMUNITY = "community"
     const val SETTINGS = "settings"
     const val TURN_BY_TURN = "turn_by_turn/{routeId}"
+    const val WAYPOINTS = "waypoints"
+    const val WAYPOINT_DETAIL = "waypoint_detail/{waypointId}"
+    const val ADD_WAYPOINT = "add_waypoint"
+
+    /** Builds the hike detail route with a specific hike ID. */
+    fun hikeDetail(hikeId: String): String = "hike_detail/$hikeId"
+
+    /** Builds the route detail route with a specific route ID. */
+    fun routeDetail(routeId: String): String = "route_detail/$routeId"
 
     /** Builds the turn-by-turn navigation route with a specific route ID. */
     fun turnByTurn(routeId: String): String = "turn_by_turn/$routeId"
+
+    /** Builds the waypoint detail route with a specific waypoint ID. */
+    fun waypointDetail(waypointId: String): String = "waypoint_detail/$waypointId"
 }
 
 /**
@@ -104,8 +125,7 @@ val bottomNavItems = listOf(
  * - A bottom navigation bar with 5 tabs (Navigate, Regions, Hikes, Routes, Community)
  * - A [NavHost] that renders the appropriate screen for each route
  *
- * The settings screen is accessible from the gear icon in the top bar,
- * not from the bottom navigation tabs.
+ * Phase 3 additions: hike detail, route detail, waypoint list/detail/add screens.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,12 +139,23 @@ fun AppNavigation() {
     }?.label ?: when (currentDestination?.route) {
         Routes.SETTINGS -> "Settings"
         Routes.REGION_SELECTOR -> "Download Region"
+        Routes.HIKE_DETAIL -> "Hike Detail"
+        Routes.ROUTE_DETAIL -> "Route Detail"
+        Routes.WAYPOINTS -> "Waypoints"
+        Routes.WAYPOINT_DETAIL -> "Waypoint"
+        Routes.ADD_WAYPOINT -> "Add Waypoint"
         else -> "OpenHiker"
     }
 
-    // Hide top/bottom bars on full-screen pages
-    val isFullScreen = currentDestination?.route == Routes.REGION_SELECTOR ||
-        currentDestination?.route == Routes.TURN_BY_TURN
+    // Hide top/bottom bars on full-screen pages (detail screens have their own top bar)
+    val isFullScreen = currentDestination?.route in setOf(
+        Routes.REGION_SELECTOR,
+        Routes.TURN_BY_TURN,
+        Routes.HIKE_DETAIL,
+        Routes.ROUTE_DETAIL,
+        Routes.WAYPOINT_DETAIL,
+        Routes.ADD_WAYPOINT
+    )
 
     Scaffold(
         topBar = {
@@ -178,14 +209,16 @@ fun AppNavigation() {
             startDestination = Routes.NAVIGATE,
             modifier = Modifier.padding(innerPadding)
         ) {
+            // ── Tab screens ──────────────────────────────────────────
+
             composable(Routes.NAVIGATE) { MapScreen() }
+
             composable(Routes.REGIONS) {
                 RegionListScreen(
                     onNavigateToSelector = {
                         navController.navigate(Routes.REGION_SELECTOR)
                     },
-                    onViewOnMap = { region ->
-                        // Navigate to map tab — the MapViewModel handles offline region display
+                    onViewOnMap = {
                         navController.navigate(Routes.NAVIGATE) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
@@ -196,12 +229,21 @@ fun AppNavigation() {
                     }
                 )
             }
+
             composable(Routes.REGION_SELECTOR) {
                 RegionSelectorScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            composable(Routes.HIKES) { HikeListScreen() }
+
+            composable(Routes.HIKES) {
+                HikeListScreen(
+                    onNavigateToDetail = { hikeId ->
+                        navController.navigate(Routes.hikeDetail(hikeId))
+                    }
+                )
+            }
+
             composable(Routes.ROUTES) {
                 RoutePlanningScreen(
                     onStartNavigation = { routeId ->
@@ -211,13 +253,75 @@ fun AppNavigation() {
                     }
                 )
             }
-            composable(Routes.TURN_BY_TURN) {
+
+            composable(Routes.COMMUNITY) { CommunityBrowseScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen() }
+
+            // ── Hike detail ──────────────────────────────────────────
+
+            composable(
+                route = Routes.HIKE_DETAIL,
+                arguments = listOf(navArgument("hikeId") { type = NavType.StringType })
+            ) {
+                HikeDetailScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // ── Route detail ─────────────────────────────────────────
+
+            composable(
+                route = Routes.ROUTE_DETAIL,
+                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+            ) {
+                RouteDetailScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onStartNavigation = { routeId ->
+                        navController.navigate(Routes.turnByTurn(routeId)) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
+            // ── Turn-by-turn navigation ──────────────────────────────
+
+            composable(
+                route = Routes.TURN_BY_TURN,
+                arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+            ) {
                 NavigationScreen(
                     onNavigationStopped = { navController.popBackStack() }
                 )
             }
-            composable(Routes.COMMUNITY) { CommunityBrowseScreen() }
-            composable(Routes.SETTINGS) { SettingsScreen() }
+
+            // ── Waypoint screens ─────────────────────────────────────
+
+            composable(Routes.WAYPOINTS) {
+                WaypointListScreen(
+                    onNavigateToDetail = { waypointId ->
+                        navController.navigate(Routes.waypointDetail(waypointId))
+                    },
+                    onNavigateToAdd = {
+                        navController.navigate(Routes.ADD_WAYPOINT)
+                    }
+                )
+            }
+
+            composable(
+                route = Routes.WAYPOINT_DETAIL,
+                arguments = listOf(navArgument("waypointId") { type = NavType.StringType })
+            ) {
+                WaypointDetailScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.ADD_WAYPOINT) {
+                AddWaypointScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
