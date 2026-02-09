@@ -46,6 +46,13 @@ struct iOSNavigationView: View {
     @ObservedObject private var routeStore = PlannedRouteStore.shared
     @ObservedObject private var regionStorage = RegionStorage.shared
 
+    /// The active map display style (Roads / Trails / Cycling).
+    /// Defaults to "Roads" (Apple Maps) unless the user is within a downloaded topo region.
+    @AppStorage("navigationMapStyle") private var mapViewStyle: MapViewStyle = .standard
+
+    /// Whether the initial map style has been auto-selected based on user location.
+    @State private var hasAutoSelectedStyle = false
+
     /// Whether the route picker sheet is showing.
     @State private var showingRoutePicker = false
 
@@ -78,6 +85,7 @@ struct iOSNavigationView: View {
                     locationManager: locationManager,
                     routeGuidance: routeGuidance,
                     regionStorage: regionStorage,
+                    mapStyle: mapViewStyle,
                     recenterPublisher: recenterSubject.eraseToAnyPublisher()
                 )
                 .ignoresSafeArea(edges: .top)
@@ -131,6 +139,16 @@ struct iOSNavigationView: View {
                     }
                 }
 
+                ToolbarItem(placement: .principal) {
+                    Picker("Map Style", selection: $mapViewStyle) {
+                        ForEach(MapViewStyle.allCases, id: \.self) { style in
+                            Text(style.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     if !locationManager.isTracking && !routeGuidance.isNavigating {
                         startTrackingButton
@@ -174,6 +192,7 @@ struct iOSNavigationView: View {
                 locationManager.requestPermission()
                 locationManager.startLocationUpdates()
                 routeStore.loadAll()
+                autoSelectMapStyleIfNeeded()
             }
             .onDisappear {
                 if !locationManager.isTracking {
@@ -183,6 +202,7 @@ struct iOSNavigationView: View {
             .onChange(of: locationManager.currentLocation) { _, newLocation in
                 guard let location = newLocation else { return }
                 routeGuidance.updateLocation(location)
+                autoSelectMapStyleIfNeeded()
             }
         }
     }
@@ -364,6 +384,32 @@ struct iOSNavigationView: View {
         print("Discarded navigation track")
     }
 
+    // MARK: - Map Style Auto-Selection
+
+    /// Checks if the user's current location is within any downloaded region.
+    ///
+    /// If so, defaults to the "Trails" map style so offline topo tiles are shown.
+    /// Otherwise keeps the current style (defaults to "Roads" / Apple Maps).
+    /// Only runs once per view appearance to avoid overriding manual user choice.
+    private func autoSelectMapStyleIfNeeded() {
+        guard !hasAutoSelectedStyle else { return }
+        hasAutoSelectedStyle = true
+
+        guard let location = locationManager.currentLocation else {
+            // Re-check when location becomes available
+            hasAutoSelectedStyle = false
+            return
+        }
+
+        let isWithinRegion = regionStorage.regions.contains { region in
+            region.boundingBox.contains(location.coordinate)
+        }
+
+        if isWithinRegion && mapViewStyle == .standard {
+            mapViewStyle = .hiking
+        }
+    }
+
     // MARK: - Track Statistics
 
     /// Calculates walking and resting time from recorded track points.
@@ -404,7 +450,7 @@ struct iOSNavigationView: View {
 /// Used to render offline OpenTopoMap tiles on the iPhone navigation map.
 /// The overlay loads tile data from ``TileStore`` instances opened for each
 /// downloaded region.
-private final class NavigationTileOverlay: MKTileOverlay {
+final class NavigationTileOverlay: MKTileOverlay {
 
     /// The tile stores for all available downloaded regions.
     private let tileStores: [TileStore]
@@ -470,12 +516,16 @@ private final class NavigationTileOverlay: MKTileOverlay {
 
 /// A `UIViewRepresentable` wrapping `MKMapView` for the navigation map.
 ///
-/// Provides offline tile overlay, route polyline, user location tracking,
-/// and recorded track visualization.
+/// Provides tile overlay rendering (Apple Maps, OpenTopoMap, or CyclOSM),
+/// offline MBTiles overlay from downloaded regions, route polyline,
+/// user location tracking, and recorded track visualization.
 struct NavigationMapView: UIViewRepresentable {
     @ObservedObject var locationManager: iOSLocationManager
     @ObservedObject var routeGuidance: iOSRouteGuidance
     @ObservedObject var regionStorage: RegionStorage
+
+    /// The current map display style (Roads / Trails / Cycling).
+    let mapStyle: MapViewStyle
 
     /// Publisher that emits when the user taps the recenter button.
     let recenterPublisher: AnyPublisher<Void, Never>
@@ -489,8 +539,8 @@ struct NavigationMapView: UIViewRepresentable {
         mapView.showsCompass = true
         mapView.showsScale = true
 
-        // Add offline tile overlay
-        addTileOverlay(to: mapView)
+        // Add tile overlays based on current style
+        applyMapStyle(to: mapView, coordinator: context.coordinator)
 
         // Subscribe to recenter requests
         context.coordinator.recenterCancellable = recenterPublisher
@@ -504,39 +554,92 @@ struct NavigationMapView: UIViewRepresentable {
 
     /// Updates the map overlays when state changes.
     func updateUIView(_ mapView: MKMapView, context: Context) {
+        updateMapStyleIfNeeded(on: mapView, coordinator: context.coordinator)
         updateRouteOverlay(on: mapView, coordinator: context.coordinator)
         updateTrackOverlay(on: mapView, coordinator: context.coordinator)
-        updateTileOverlay(on: mapView, coordinator: context.coordinator)
+        updateOfflineTileOverlay(on: mapView, coordinator: context.coordinator)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
-    // MARK: - Overlay Management
+    // MARK: - Map Style Management
 
-    /// Adds the offline tile overlay to the map.
-    private func addTileOverlay(to mapView: MKMapView) {
+    /// Applies the current map style by adding the appropriate tile overlays.
+    ///
+    /// - For "Roads": no tile overlay (Apple Maps default)
+    /// - For "Trails"/"Cycling": adds an online tile overlay, plus offline tiles on top
+    private func applyMapStyle(to mapView: MKMapView, coordinator: Coordinator) {
+        coordinator.lastMapStyle = mapStyle
+
+        if let tileTemplate = mapStyle.tileURLTemplate {
+            // Online tile overlay (OpenTopoMap or CyclOSM)
+            let onlineOverlay = MKTileOverlay(urlTemplate: tileTemplate)
+            onlineOverlay.canReplaceMapContent = true
+            onlineOverlay.minimumZ = 1
+            onlineOverlay.maximumZ = 18
+            onlineOverlay.tileSize = CGSize(width: 256, height: 256)
+            mapView.addOverlay(onlineOverlay, level: .aboveLabels)
+            coordinator.onlineTileOverlay = onlineOverlay
+        }
+
+        // Add offline MBTiles overlay on top for downloaded regions
+        addOfflineTileOverlay(to: mapView, coordinator: coordinator)
+    }
+
+    /// Detects map style changes and swaps overlays accordingly.
+    private func updateMapStyleIfNeeded(on mapView: MKMapView, coordinator: Coordinator) {
+        guard mapStyle != coordinator.lastMapStyle else { return }
+
+        // Remove existing tile overlays
+        if let onlineOverlay = coordinator.onlineTileOverlay {
+            mapView.removeOverlay(onlineOverlay)
+            coordinator.onlineTileOverlay = nil
+        }
+        if let offlineOverlay = coordinator.offlineTileOverlay {
+            mapView.removeOverlay(offlineOverlay)
+            coordinator.offlineTileOverlay = nil
+        }
+
+        // Apply new style
+        applyMapStyle(to: mapView, coordinator: coordinator)
+    }
+
+    // MARK: - Offline Tile Overlay
+
+    /// Adds the offline MBTiles tile overlay from downloaded regions.
+    ///
+    /// Only added when map style is "Trails" or "Cycling" — offline tiles are layered
+    /// on top of the online overlay to provide seamless coverage in areas with downloads.
+    /// In "Roads" mode, Apple Maps is used without any tile overlay.
+    private func addOfflineTileOverlay(to mapView: MKMapView, coordinator: Coordinator) {
+        // Only overlay offline tiles when using a tile-based style
+        guard mapStyle.tileURLTemplate != nil else { return }
+
         let regions = regionStorage.regions
         guard !regions.isEmpty else { return }
 
         let overlay = NavigationTileOverlay(regions: regions)
+        overlay.canReplaceMapContent = false
         mapView.addOverlay(overlay, level: .aboveLabels)
+        coordinator.offlineTileOverlay = overlay
     }
 
-    /// Refreshes the tile overlay when regions change.
-    private func updateTileOverlay(on mapView: MKMapView, coordinator: Coordinator) {
+    /// Refreshes the offline tile overlay when downloaded regions change.
+    private func updateOfflineTileOverlay(on mapView: MKMapView, coordinator: Coordinator) {
         let currentCount = regionStorage.regions.count
         guard currentCount != coordinator.lastRegionCount else { return }
         coordinator.lastRegionCount = currentCount
 
-        // Remove existing tile overlays
-        for overlay in mapView.overlays where overlay is NavigationTileOverlay {
-            mapView.removeOverlay(overlay)
+        // Remove existing offline overlay
+        if let existing = coordinator.offlineTileOverlay {
+            mapView.removeOverlay(existing)
+            coordinator.offlineTileOverlay = nil
         }
 
-        // Add updated tile overlay
-        addTileOverlay(to: mapView)
+        // Add updated offline overlay
+        addOfflineTileOverlay(to: mapView, coordinator: coordinator)
     }
 
     /// Updates the route polyline overlay for the active planned route.
@@ -585,6 +688,15 @@ struct NavigationMapView: UIViewRepresentable {
         /// The current recorded track polyline overlay.
         var trackOverlay: MKPolyline?
 
+        /// The online tile overlay (OpenTopoMap or CyclOSM), or `nil` for Apple Maps.
+        var onlineTileOverlay: MKTileOverlay?
+
+        /// The offline MBTiles tile overlay from downloaded regions.
+        var offlineTileOverlay: NavigationTileOverlay?
+
+        /// The last applied map style, used to detect style changes.
+        var lastMapStyle: MapViewStyle = .standard
+
         /// Tracks the last known region count to detect changes.
         var lastRegionCount: Int = 0
 
@@ -597,7 +709,7 @@ struct NavigationMapView: UIViewRepresentable {
 
         /// Provides renderers for map overlays.
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tileOverlay = overlay as? NavigationTileOverlay {
+            if let tileOverlay = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(overlay: tileOverlay)
             }
 
