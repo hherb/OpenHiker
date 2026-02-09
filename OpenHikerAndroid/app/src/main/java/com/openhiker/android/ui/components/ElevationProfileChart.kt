@@ -223,6 +223,11 @@ fun ElevationProfileChart(
     val paddingTop = 16f
     val paddingRight = 16f
 
+    // Pre-resolve @Composable theme colours outside the Canvas DrawScope.
+    val labelBackgroundColor = MaterialTheme.colorScheme.surface
+        .copy(alpha = LABEL_BACKGROUND_ALPHA)
+    val tooltipBackgroundColor = MaterialTheme.colorScheme.surfaceVariant
+
     Box(modifier = modifier) {
         Canvas(
             modifier = Modifier
@@ -320,8 +325,7 @@ fun ElevationProfileChart(
                 dataBounds = dataBounds,
                 textMeasurer = textMeasurer,
                 labelStyle = minMaxLabelStyle,
-                backgroundColor = MaterialTheme.colorScheme.surface
-                    .copy(alpha = LABEL_BACKGROUND_ALPHA)
+                backgroundColor = labelBackgroundColor
             )
 
             // Draw the current-position indicator if navigating.
@@ -350,7 +354,7 @@ fun ElevationProfileChart(
                     tooltipCornerRadiusPx = tooltipCornerRadiusPx,
                     textMeasurer = textMeasurer,
                     tooltipTextStyle = tooltipTextStyle,
-                    tooltipBackgroundColor = MaterialTheme.colorScheme.surfaceVariant
+                    tooltipBackgroundColor = tooltipBackgroundColor
                 )
             }
 

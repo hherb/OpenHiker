@@ -827,5 +827,8 @@ class PDFExporter @Inject constructor(
 
         /** Default file name when the route name is empty or invalid. */
         private const val DEFAULT_EXPORT_NAME = "openhiker_route"
+
+        /** MIME type for PDF files. */
+        private const val PDF_MIME_TYPE = "application/pdf"
     }
 }

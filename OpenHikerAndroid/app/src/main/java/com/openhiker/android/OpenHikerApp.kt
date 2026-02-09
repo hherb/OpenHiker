@@ -79,14 +79,17 @@ class OpenHikerApp : Application(), Configuration.Provider {
         try {
             MapLibre.getInstance(this)
             OfflineManager.getInstance(this).setMaximumAmbientCacheSize(
-                MAP_CACHE_SIZE_BYTES
-            ) { error ->
-                if (error != null) {
-                    Log.w(TAG, "Failed to set MapLibre cache size: ${error.message}")
-                } else {
-                    Log.d(TAG, "MapLibre initialized with ${MAP_CACHE_SIZE_BYTES / BYTES_PER_MB}MB cache")
+                MAP_CACHE_SIZE_BYTES,
+                object : OfflineManager.FileSourceCallback {
+                    override fun onSuccess() {
+                        Log.d(TAG, "MapLibre initialized with ${MAP_CACHE_SIZE_BYTES / BYTES_PER_MB}MB cache")
+                    }
+
+                    override fun onError(message: String) {
+                        Log.w(TAG, "Failed to set MapLibre cache size: $message")
+                    }
                 }
-            }
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MapLibre", e)
         }
