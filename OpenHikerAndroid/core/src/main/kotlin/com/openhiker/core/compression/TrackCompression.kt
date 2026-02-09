@@ -18,6 +18,7 @@
 
 package com.openhiker.core.compression
 
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.DataFormatException
@@ -65,8 +66,8 @@ object TrackCompression {
     /** Extra bytes added to the compression output buffer as safety margin. */
     private const val COMPRESSION_BUFFER_MARGIN = 64
 
-    /** Multiplier for estimating decompression buffer size from compressed size. */
-    private const val DECOMPRESSION_BUFFER_MULTIPLIER = 10
+    /** Initial chunk size for streaming decompression reads. */
+    private const val DECOMPRESSION_CHUNK_SIZE = 4096
 
     /**
      * Encodes a list of track points to compressed binary format.
@@ -165,7 +166,11 @@ object TrackCompression {
     }
 
     /**
-     * Decompresses zlib-compressed data.
+     * Decompresses zlib-compressed data using streaming inflation.
+     *
+     * Reads chunks into a growing [ByteArrayOutputStream] so that
+     * highly compressible data (e.g. many identical track points)
+     * is fully decompressed regardless of compression ratio.
      *
      * @param input Compressed data.
      * @return Decompressed data.
@@ -175,9 +180,14 @@ object TrackCompression {
         val inflater = Inflater()
         try {
             inflater.setInput(input)
-            val output = ByteArray(input.size * DECOMPRESSION_BUFFER_MULTIPLIER)
-            val decompressedSize = inflater.inflate(output)
-            return output.copyOf(decompressedSize)
+            val output = ByteArrayOutputStream(input.size * 4)
+            val chunk = ByteArray(DECOMPRESSION_CHUNK_SIZE)
+            while (!inflater.finished()) {
+                val count = inflater.inflate(chunk)
+                if (count == 0 && inflater.needsInput()) break
+                output.write(chunk, 0, count)
+            }
+            return output.toByteArray()
         } finally {
             inflater.end()
         }

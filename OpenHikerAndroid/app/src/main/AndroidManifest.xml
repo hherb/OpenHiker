@@ -55,6 +55,17 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Foreground service for background GPS tracking during hikes.
+            The service implementation will be added in a later phase;
+            the declaration is required here because FOREGROUND_SERVICE
+            and FOREGROUND_SERVICE_LOCATION permissions are declared.
+        -->
+        <service
+            android:name=".service.location.HikeTrackingService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
     </application>
 
 </manifest>

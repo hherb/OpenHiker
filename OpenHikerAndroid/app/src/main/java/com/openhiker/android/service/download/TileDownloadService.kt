@@ -35,10 +35,16 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -204,6 +210,10 @@ class TileDownloadService @Inject constructor(
     /**
      * Downloads a single tile with exponential backoff retry.
      *
+     * Uses OkHttp's async [Call.enqueue] wrapped in [suspendCancellableCoroutine]
+     * so the coroutine doesn't block an IO dispatcher thread while waiting for the
+     * network response. The OkHttp call is cancelled if the coroutine is cancelled.
+     *
      * Attempts the download up to [MAX_RETRY_ATTEMPTS] times with
      * increasing delays (2s, 4s, 8s, 16s) between retries.
      *
@@ -223,11 +233,12 @@ class TileDownloadService @Inject constructor(
                     .url(url)
                     .build()
 
-                val response = httpClient.newCall(request).execute()
-                if (response.isSuccessful) {
-                    return response.body?.bytes()
+                val response = executeAsync(httpClient.newCall(request))
+                response.use {
+                    if (it.isSuccessful) {
+                        return it.body?.bytes()
+                    }
                 }
-                response.close()
             } catch (_: IOException) {
                 // Will retry
             }
@@ -239,6 +250,24 @@ class TileDownloadService @Inject constructor(
         }
         return null
     }
+
+    /**
+     * Executes an OkHttp [Call] asynchronously, suspending the coroutine
+     * instead of blocking a thread. Cancels the HTTP call if the coroutine
+     * is cancelled.
+     */
+    private suspend fun executeAsync(call: Call): Response =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onResponse(call: Call, response: Response) {
+                    continuation.resume(response)
+                }
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWithException(e)
+                }
+            })
+        }
 
     companion object {
         /** Delay between tile requests in milliseconds (OSM policy compliance). */
