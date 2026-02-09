@@ -28,6 +28,14 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OpenHiker needs your location to show your position on the map and record hiking tracks.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>OpenHiker needs continuous location access to record your hiking track in the background.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

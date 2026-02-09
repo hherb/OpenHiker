@@ -680,7 +680,7 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
     ///   - regionId: The UUID of the region to rename.
     ///   - newName: The new name for the region.
     func renameRegion(_ regionId: UUID, to newName: String) {
-        var allMetadata = loadAllRegionMetadata()
+        let allMetadata = loadAllRegionMetadata()
         guard let index = allMetadata.firstIndex(where: { $0.id == regionId }) else { return }
         var updated = allMetadata[index]
         updated.name = newName
