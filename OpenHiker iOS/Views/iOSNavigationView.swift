@@ -62,6 +62,9 @@ struct iOSNavigationView: View {
     /// Whether the GPS mode picker is showing.
     @State private var showingGPSModePicker = false
 
+    /// Whether the map orientation is heads-up (follow heading) or north-up.
+    @State private var isHeadingUp = true
+
     /// Whether a save error alert is showing.
     @State private var showingSaveError = false
 
@@ -126,6 +129,7 @@ struct iOSNavigationView: View {
                     routeGuidance: routeGuidance,
                     regionStorage: regionStorage,
                     mapStyle: mapViewStyle,
+                    isHeadingUp: $isHeadingUp,
                     recenterPublisher: recenterSubject.eraseToAnyPublisher(),
                     visibleRegion: $visibleMapRegion
                 )
@@ -190,6 +194,14 @@ struct iOSNavigationView: View {
                                 mapButton(icon: "arrow.down.circle", color: .green) {
                                     prepareDownload()
                                 }
+                            }
+
+                            // Compass toggle: heads-up (follow heading) vs north-up
+                            mapButton(
+                                icon: isHeadingUp ? "location.north.line.fill" : "location.north.line",
+                                color: isHeadingUp ? .orange : .secondary
+                            ) {
+                                isHeadingUp.toggle()
                             }
 
                             // Recenter button
@@ -808,6 +820,9 @@ struct NavigationMapView: UIViewRepresentable {
     /// The current map display style (Roads / Trails / Cycling).
     let mapStyle: MapViewStyle
 
+    /// Whether the map should follow the user's heading (heads-up) or stay north-up.
+    @Binding var isHeadingUp: Bool
+
     /// Publisher that emits when the user taps the recenter button.
     let recenterPublisher: AnyPublisher<Void, Never>
 
@@ -819,8 +834,9 @@ struct NavigationMapView: UIViewRepresentable {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
-        mapView.userTrackingMode = .followWithHeading
-        mapView.showsCompass = true
+        mapView.userTrackingMode = isHeadingUp ? .followWithHeading : .follow
+        // Show MapKit compass only in heads-up mode (it indicates current heading)
+        mapView.showsCompass = isHeadingUp
         mapView.showsScale = true
 
         // Add tile overlays based on current style
@@ -830,18 +846,27 @@ struct NavigationMapView: UIViewRepresentable {
         context.coordinator.recenterCancellable = recenterPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak mapView] in
-                mapView?.setUserTrackingMode(.followWithHeading, animated: true)
+                guard let mapView = mapView else { return }
+                let mode: MKUserTrackingMode = self.isHeadingUp ? .followWithHeading : .follow
+                mapView.setUserTrackingMode(mode, animated: true)
             }
 
         return mapView
     }
 
-    /// Updates the map overlays when state changes.
+    /// Updates the map overlays and tracking mode when state changes.
     func updateUIView(_ mapView: MKMapView, context: Context) {
         updateMapStyleIfNeeded(on: mapView, coordinator: context.coordinator)
         updateRouteOverlay(on: mapView, coordinator: context.coordinator)
         updateTrackOverlay(on: mapView, coordinator: context.coordinator)
         updateOfflineTileOverlay(on: mapView, coordinator: context.coordinator)
+
+        // Sync heading mode and compass visibility with toggle state
+        let desiredMode: MKUserTrackingMode = isHeadingUp ? .followWithHeading : .follow
+        if mapView.userTrackingMode != desiredMode {
+            mapView.setUserTrackingMode(desiredMode, animated: true)
+        }
+        mapView.showsCompass = isHeadingUp
     }
 
     func makeCoordinator() -> Coordinator {

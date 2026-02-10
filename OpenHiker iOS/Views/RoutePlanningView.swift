@@ -43,14 +43,11 @@ struct RoutePlanningView: View {
     /// The routing mode: hiking or cycling.
     @State private var routingMode: RoutingMode = .hiking
 
-    /// The start coordinate set by the user's first tap.
-    @State private var startCoordinate: CLLocationCoordinate2D?
+    /// Ordered waypoints placed by the user. First = start, last = end (or loop back).
+    @State private var waypoints: [CLLocationCoordinate2D] = []
 
-    /// The end coordinate set by the user's second tap.
-    @State private var endCoordinate: CLLocationCoordinate2D?
-
-    /// Ordered via-points added by the user after start and end.
-    @State private var viaPoints: [CLLocationCoordinate2D] = []
+    /// Whether the last computed route is a loop (returns to start).
+    @State private var isLoopRoute = false
 
     /// The computed route result from the routing engine.
     @State private var computedRoute: ComputedRoute?
@@ -79,47 +76,38 @@ struct RoutePlanningView: View {
     /// The annotation currently being repositioned via long-press, or `nil` if not active.
     @State private var repositioningAnnotation: RouteAnnotation?
 
-    /// Map annotations (start, end, via-points).
+    /// Map annotations derived from the ordered waypoints list.
+    ///
+    /// First waypoint is green (start), last is red (end), middle ones are blue (via).
+    /// When only one waypoint exists, it is shown as start (green).
     private var annotations: [RouteAnnotation] {
-        var result: [RouteAnnotation] = []
-
-        if let start = startCoordinate {
-            result.append(RouteAnnotation(
-                coordinate: start,
-                type: .start,
-                index: 0
-            ))
-        }
-
-        for (index, via) in viaPoints.enumerated() {
-            result.append(RouteAnnotation(
-                coordinate: via,
-                type: .via,
+        waypoints.enumerated().map { index, coordinate in
+            let type: RouteAnnotation.AnnotationType
+            if index == 0 {
+                type = .start
+            } else if index == waypoints.count - 1 {
+                type = .end
+            } else {
+                type = .via
+            }
+            return RouteAnnotation(
+                coordinate: coordinate,
+                type: type,
                 index: index
-            ))
+            )
         }
-
-        if let end = endCoordinate {
-            result.append(RouteAnnotation(
-                coordinate: end,
-                type: .end,
-                index: 0
-            ))
-        }
-
-        return result
     }
 
     /// Instruction text shown below the map guiding the user's next action.
     private var instructionText: String {
         if let annotation = repositioningAnnotation {
             return "Tap the map to reposition \(annotation.label)"
-        } else if startCoordinate == nil {
-            return "Tap the map to set a start point"
-        } else if endCoordinate == nil {
-            return "Tap the map to set your destination"
+        } else if waypoints.isEmpty {
+            return "Tap the map to place waypoints"
+        } else if waypoints.count == 1 {
+            return "Tap to add more waypoints (need at least 2)"
         } else {
-            return "Tap to add via-points, or save your route"
+            return "Tap to add waypoints, or compute your route"
         }
     }
 
@@ -147,8 +135,9 @@ struct RoutePlanningView: View {
                 }
                 .padding(.vertical, 4)
 
-                // Mode toggle
+                // Mode toggle + route computation buttons
                 modeToggle
+                routeActionButtons
 
                 // Stats & Directions
                 if computedRoute != nil {
@@ -229,7 +218,7 @@ struct RoutePlanningView: View {
 
     // MARK: - Mode Toggle
 
-    /// Hiking / Cycling mode picker that re-computes the route when changed.
+    /// Hiking / Cycling mode picker.
     private var modeToggle: some View {
         Picker("Mode", selection: $routingMode) {
             Label("Hiking", systemImage: "figure.hiking")
@@ -240,9 +229,36 @@ struct RoutePlanningView: View {
         .pickerStyle(.segmented)
         .padding(.horizontal)
         .padding(.vertical, 4)
-        .onChange(of: routingMode) { _, _ in
-            computeRouteIfReady()
+    }
+
+    /// Buttons for computing the route from the placed waypoints.
+    ///
+    /// - "Start → End": routes through waypoints in order (1→2→3→4→5)
+    /// - "Back to Start": routes through all waypoints and returns to the first (1→2→3→4→5→1)
+    private var routeActionButtons: some View {
+        HStack(spacing: 12) {
+            Button {
+                computeRouteFromWaypoints(loop: false)
+            } label: {
+                Label("Start → End", systemImage: "arrow.right")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(waypoints.count < 2 || isComputing)
+
+            Button {
+                computeRouteFromWaypoints(loop: true)
+            } label: {
+                Label("Back to Start", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(waypoints.count < 2 || isComputing)
         }
+        .padding(.horizontal)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Stats Section
@@ -315,11 +331,10 @@ struct RoutePlanningView: View {
 
     // MARK: - Actions
 
-    /// Handles a tap on the map by placing the next pin or repositioning a selected pin.
+    /// Handles a tap on the map by placing the next waypoint or repositioning a selected pin.
     ///
     /// If a pin is selected for repositioning (via long-press), the tap moves that pin
-    /// to the new coordinate and re-computes the route. Otherwise, taps place pins in
-    /// sequence: first tap = start, second = end, subsequent = via-points.
+    /// to the new coordinate. Otherwise, taps append waypoints sequentially.
     ///
     /// - Parameter coordinate: The tapped geographic coordinate.
     private func handleMapTap(_ coordinate: CLLocationCoordinate2D) {
@@ -330,73 +345,66 @@ struct RoutePlanningView: View {
             return
         }
 
-        // Normal pin placement
-        if startCoordinate == nil {
-            startCoordinate = coordinate
-        } else if endCoordinate == nil {
-            endCoordinate = coordinate
-            computeRouteIfReady()
-        } else {
-            viaPoints.append(coordinate)
-            computeRouteIfReady()
-        }
+        // Append new waypoint
+        waypoints.append(coordinate)
+        // Clear any previously computed route since waypoints changed
+        computedRoute = nil
+        turnInstructions = []
     }
 
-    /// Moves an existing annotation to a new coordinate and re-computes the route.
+    /// Moves an existing annotation to a new coordinate.
     ///
     /// - Parameters:
     ///   - annotation: The annotation to reposition.
     ///   - coordinate: The new geographic coordinate.
     private func repositionAnnotation(_ annotation: RouteAnnotation, to coordinate: CLLocationCoordinate2D) {
-        switch annotation.type {
-        case .start:
-            startCoordinate = coordinate
-        case .end:
-            endCoordinate = coordinate
-        case .via:
-            if annotation.index < viaPoints.count {
-                viaPoints[annotation.index] = coordinate
-            }
+        if annotation.index < waypoints.count {
+            waypoints[annotation.index] = coordinate
         }
-        computeRouteIfReady()
+        // Clear route since waypoints changed
+        computedRoute = nil
+        turnInstructions = []
     }
 
-    /// Removes an annotation (start, end, or via-point) and re-computes the route.
+    /// Removes a waypoint and clears the computed route.
     ///
     /// - Parameter annotation: The annotation to remove.
     private func removeAnnotation(_ annotation: RouteAnnotation) {
-        switch annotation.type {
-        case .start:
-            startCoordinate = nil
-            computedRoute = nil
-            turnInstructions = []
-        case .end:
-            endCoordinate = nil
-            computedRoute = nil
-            turnInstructions = []
-        case .via:
-            if annotation.index < viaPoints.count {
-                viaPoints.remove(at: annotation.index)
-                computeRouteIfReady()
-            }
+        if annotation.index < waypoints.count {
+            waypoints.remove(at: annotation.index)
         }
+        computedRoute = nil
+        turnInstructions = []
     }
 
-    /// Computes the route if both start and end coordinates are set.
+    /// Computes a route through all waypoints in order.
     ///
-    /// Opens the region's routing database, runs the A* routing engine, generates
-    /// turn instructions, and updates the view state. All errors are surfaced via
-    /// the error alert.
-    private func computeRouteIfReady() {
-        guard let start = startCoordinate, let end = endCoordinate else { return }
+    /// Uses the first waypoint as start and last as end, with all intermediate
+    /// waypoints as via-points. If `loop` is true, the route returns to the start.
+    ///
+    /// - Parameter loop: If true, routes back to the first waypoint (round-trip).
+    private func computeRouteFromWaypoints(loop: Bool) {
+        guard waypoints.count >= 2 else { return }
 
+        let start = waypoints[0]
+        let end = loop ? waypoints[0] : waypoints[waypoints.count - 1]
+        let via: [CLLocationCoordinate2D]
+        if loop {
+            // Loop: 1→2→3→4→5→1, via = waypoints[1..<count]
+            via = Array(waypoints.dropFirst())
+        } else {
+            // One-way: 1→2→3→4→5, via = waypoints[1..<count-1]
+            via = waypoints.count > 2 ? Array(waypoints[1..<waypoints.count - 1]) : []
+        }
+
+        isLoopRoute = loop
         isComputing = true
         computedRoute = nil
         turnInstructions = []
 
         Task.detached(priority: .userInitiated) {
             do {
-                let route = try await computeRoute(from: start, to: end, via: viaPoints, mode: routingMode)
+                let route = try await computeRoute(from: start, to: end, via: via, mode: routingMode)
                 let instructions = TurnInstructionGenerator.generate(from: route)
 
                 await MainActor.run {
@@ -421,8 +429,8 @@ struct RoutePlanningView: View {
     /// - Parameters:
     ///   - from: Start coordinate.
     ///   - to: End coordinate.
-    ///   - via: Via-points.
-    ///   - mode: Routing mode.
+    ///   - via: Ordered via-points between start and end.
+    ///   - mode: Routing mode (hiking or cycling).
     /// - Returns: A ``ComputedRoute``.
     /// - Throws: ``RoutingError`` on failure.
     private func computeRoute(
@@ -529,12 +537,12 @@ struct RouteAnnotation: Identifiable {
         }
     }
 
-    /// The display label for this annotation type.
+    /// The display label showing the waypoint number.
     var label: String {
         switch type {
-        case .start: return "Start"
-        case .end:   return "End"
-        case .via:   return "Via \(index + 1)"
+        case .start: return "WP 1"
+        case .end:   return "WP \(index + 1)"
+        case .via:   return "WP \(index + 1)"
         }
     }
 }
