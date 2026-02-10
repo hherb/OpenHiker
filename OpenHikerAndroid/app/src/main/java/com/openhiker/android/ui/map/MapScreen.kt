@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.ExploreOff
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Public
@@ -119,6 +121,9 @@ fun MapScreen(
 
     // Track whether we need to request location permission
     var shouldRequestPermission by remember { mutableStateOf(false) }
+
+    // Whether the map follows the user's compass heading (heads-up) or stays north-up
+    var isHeadingUp by remember { mutableStateOf(false) }
 
     // Track the MapLibreMap instance for programmatic control
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -289,6 +294,30 @@ fun MapScreen(
                     onClick = { viewModel.showDownloadSheet() }
                 ) {
                     Icon(Icons.Default.Download, contentDescription = "Download visible region")
+                }
+            }
+
+            // Compass toggle: heads-up (follow heading) vs north-up
+            if (locationGranted) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        isHeadingUp = !isHeadingUp
+                        mapLibreMap?.let { map ->
+                            val component = map.locationComponent
+                            if (component.isLocationComponentActivated) {
+                                component.cameraMode = if (isHeadingUp) {
+                                    CameraMode.TRACKING_COMPASS
+                                } else {
+                                    CameraMode.NONE
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isHeadingUp) Icons.Default.Explore else Icons.Default.ExploreOff,
+                        contentDescription = if (isHeadingUp) "Switch to north-up" else "Switch to heads-up"
+                    )
                 }
             }
 

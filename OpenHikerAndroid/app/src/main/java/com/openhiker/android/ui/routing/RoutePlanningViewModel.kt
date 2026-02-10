@@ -18,7 +18,6 @@
 
 package com.openhiker.android.ui.routing
 
-import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,7 +33,6 @@ import com.openhiker.core.routing.ComputedRoute
 import com.openhiker.core.routing.RoutingError
 import com.openhiker.core.routing.TurnDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +40,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
@@ -50,10 +47,9 @@ import javax.inject.Inject
  * UI state for the route planning screen.
  *
  * @property selectedRegionId Currently selected region for routing.
- * @property startPoint Start coordinate (green marker), or null.
- * @property endPoint End coordinate (red marker), or null.
- * @property viaPoints Ordered intermediate waypoints (blue markers).
+ * @property waypoints Ordered waypoints placed by the user. First = start, last = end.
  * @property routingMode Hiking or cycling.
+ * @property isLoopRoute Whether the last computed route is a loop (returns to start).
  * @property computedRoute The computed route result, or null.
  * @property instructions Turn-by-turn instructions for the route.
  * @property isComputing True while route computation is in progress.
@@ -62,10 +58,9 @@ import javax.inject.Inject
  */
 data class RoutePlanningUiState(
     val selectedRegionId: String? = null,
-    val startPoint: Coordinate? = null,
-    val endPoint: Coordinate? = null,
-    val viaPoints: List<Coordinate> = emptyList(),
+    val waypoints: List<Coordinate> = emptyList(),
     val routingMode: RoutingMode = RoutingMode.HIKING,
+    val isLoopRoute: Boolean = false,
     val computedRoute: ComputedRoute? = null,
     val instructions: List<TurnInstruction> = emptyList(),
     val isComputing: Boolean = false,
@@ -76,16 +71,14 @@ data class RoutePlanningUiState(
 /**
  * ViewModel for the route planning screen.
  *
- * Manages start/end/via-point state, triggers A* route computation,
- * generates turn instructions, and persists planned routes.
+ * Users place sequential waypoints on the map, then choose "Start → End" (one-way)
+ * or "Back to Start" (loop) to compute a route through all waypoints in order.
  *
- * @param context Application context for file paths.
- * @param regionRepository Access to downloaded region metadata.
+ * @param regionRepository Access to downloaded region metadata and file paths.
  * @param plannedRouteRepository Persistence for planned routes.
  */
 @HiltViewModel
 class RoutePlanningViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val regionRepository: RegionRepository,
     private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
@@ -112,9 +105,7 @@ class RoutePlanningViewModel @Inject constructor(
     fun selectRegion(regionId: String) {
         _uiState.value = _uiState.value.copy(
             selectedRegionId = regionId,
-            startPoint = null,
-            endPoint = null,
-            viaPoints = emptyList(),
+            waypoints = emptyList(),
             computedRoute = null,
             instructions = emptyList(),
             errorMessage = null
@@ -123,10 +114,7 @@ class RoutePlanningViewModel @Inject constructor(
         // Open the routing database for this region
         viewModelScope.launch(Dispatchers.IO) {
             routingStore?.close()
-            val dbPath = File(
-                context.filesDir,
-                "regions/$regionId/$regionId.routing.db"
-            ).absolutePath
+            val dbPath = regionRepository.routingDbPath(regionId)
 
             try {
                 val store = RoutingStore(dbPath)
@@ -141,13 +129,15 @@ class RoutePlanningViewModel @Inject constructor(
     }
 
     /**
-     * Sets the start point.
+     * Adds a waypoint at the given coordinate.
      *
-     * @param coordinate The start coordinate (from map tap).
+     * Waypoints are ordered sequentially. Clears any previously computed route.
+     *
+     * @param coordinate The waypoint coordinate (from map tap).
      */
-    fun setStartPoint(coordinate: Coordinate) {
+    fun addWaypoint(coordinate: Coordinate) {
         _uiState.value = _uiState.value.copy(
-            startPoint = coordinate,
+            waypoints = _uiState.value.waypoints + coordinate,
             computedRoute = null,
             instructions = emptyList(),
             errorMessage = null
@@ -155,43 +145,34 @@ class RoutePlanningViewModel @Inject constructor(
     }
 
     /**
-     * Sets the end point.
+     * Moves an existing waypoint to a new coordinate.
      *
-     * @param coordinate The end coordinate (from map tap).
+     * @param index The waypoint index to move.
+     * @param coordinate The new coordinate.
      */
-    fun setEndPoint(coordinate: Coordinate) {
-        _uiState.value = _uiState.value.copy(
-            endPoint = coordinate,
-            computedRoute = null,
-            instructions = emptyList(),
-            errorMessage = null
-        )
+    fun moveWaypoint(index: Int, coordinate: Coordinate) {
+        val updated = _uiState.value.waypoints.toMutableList()
+        if (index in updated.indices) {
+            updated[index] = coordinate
+            _uiState.value = _uiState.value.copy(
+                waypoints = updated,
+                computedRoute = null,
+                instructions = emptyList()
+            )
+        }
     }
 
     /**
-     * Adds a via-point.
+     * Removes a waypoint by index.
      *
-     * @param coordinate The via-point coordinate (from long-press).
+     * @param index The waypoint index to remove.
      */
-    fun addViaPoint(coordinate: Coordinate) {
-        _uiState.value = _uiState.value.copy(
-            viaPoints = _uiState.value.viaPoints + coordinate,
-            computedRoute = null,
-            instructions = emptyList()
-        )
-    }
-
-    /**
-     * Removes a via-point by index.
-     *
-     * @param index The index to remove.
-     */
-    fun removeViaPoint(index: Int) {
-        val updated = _uiState.value.viaPoints.toMutableList()
+    fun removeWaypoint(index: Int) {
+        val updated = _uiState.value.waypoints.toMutableList()
         if (index in updated.indices) {
             updated.removeAt(index)
             _uiState.value = _uiState.value.copy(
-                viaPoints = updated,
+                waypoints = updated,
                 computedRoute = null,
                 instructions = emptyList()
             )
@@ -217,9 +198,7 @@ class RoutePlanningViewModel @Inject constructor(
     fun clearRoute() {
         computeJob?.cancel()
         _uiState.value = _uiState.value.copy(
-            startPoint = null,
-            endPoint = null,
-            viaPoints = emptyList(),
+            waypoints = emptyList(),
             computedRoute = null,
             instructions = emptyList(),
             errorMessage = null,
@@ -228,22 +207,41 @@ class RoutePlanningViewModel @Inject constructor(
     }
 
     /**
-     * Computes the route from start to end via all via-points.
+     * Computes a route through all waypoints in order.
      *
-     * Runs the A* router on the IO dispatcher and updates the UI
-     * state with the result or error message.
+     * Uses the first waypoint as start and last as end, with all intermediate
+     * waypoints as via-points. If [loop] is true, the route returns to the start.
+     *
+     * @param loop If true, routes back to the first waypoint (round-trip).
      */
-    fun computeRoute() {
+    fun computeRoute(loop: Boolean) {
         val state = _uiState.value
-        val start = state.startPoint ?: return
-        val end = state.endPoint ?: return
+        val waypoints = state.waypoints
+        if (waypoints.size < 2) return
+
         val store = routingStore ?: run {
             _uiState.value = state.copy(errorMessage = "No routing data loaded")
             return
         }
 
+        val start = waypoints.first()
+        val end = if (loop) waypoints.first() else waypoints.last()
+        val via = if (loop) {
+            // Loop: 1→2→3→4→5→1, via = waypoints[1..<count]
+            waypoints.drop(1)
+        } else {
+            // One-way: 1→2→3→4→5, via = waypoints[1..<count-1]
+            if (waypoints.size > 2) waypoints.subList(1, waypoints.size - 1) else emptyList()
+        }
+
         computeJob?.cancel()
-        _uiState.value = state.copy(isComputing = true, errorMessage = null)
+        _uiState.value = state.copy(
+            isComputing = true,
+            isLoopRoute = loop,
+            errorMessage = null,
+            computedRoute = null,
+            instructions = emptyList()
+        )
 
         computeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -251,7 +249,7 @@ class RoutePlanningViewModel @Inject constructor(
                 val route = router.findRoute(
                     from = start,
                     to = end,
-                    via = state.viaPoints,
+                    via = via,
                     mode = state.routingMode
                 )
 
@@ -306,14 +304,16 @@ class RoutePlanningViewModel @Inject constructor(
     fun saveRoute(name: String) {
         val state = _uiState.value
         val route = state.computedRoute ?: return
+        val waypoints = state.waypoints
+        if (waypoints.size < 2) return
 
         viewModelScope.launch(Dispatchers.IO) {
             val plannedRoute = PlannedRoute(
                 id = UUID.randomUUID().toString(),
                 name = name,
                 mode = state.routingMode,
-                startCoordinate = state.startPoint!!,
-                endCoordinate = state.endPoint!!,
+                startCoordinate = waypoints.first(),
+                endCoordinate = if (state.isLoopRoute) waypoints.first() else waypoints.last(),
                 viaPoints = route.viaPoints,
                 coordinates = route.coordinates,
                 turnInstructions = state.instructions,

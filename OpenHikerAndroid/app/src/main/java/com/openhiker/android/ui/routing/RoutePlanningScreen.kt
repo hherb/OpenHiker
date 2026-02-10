@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,6 +50,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,12 +71,10 @@ import com.openhiker.core.model.TurnInstruction
 /**
  * Route planning screen.
  *
- * Allows users to plan hiking/cycling routes on offline maps by
- * selecting a region, setting start/end points, adding via-points,
- * computing an A* route, and saving the result.
- *
- * Phase 2 implementation replaces the placeholder with full
- * route planning functionality.
+ * Users select a region, then place sequential waypoints on the map.
+ * Two route computation modes are available:
+ * - "Start → End": routes through waypoints in order (1→2→3→4→5)
+ * - "Back to Start": routes through all waypoints and returns to the first (1→2→3→4→5→1)
  *
  * @param onStartNavigation Callback to navigate to the navigation screen.
  */
@@ -127,33 +128,63 @@ fun RoutePlanningScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Action buttons
+        // Route computation buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Button(
-                onClick = viewModel::computeRoute,
-                enabled = uiState.startPoint != null &&
-                    uiState.endPoint != null &&
+            // Start → End button
+            OutlinedButton(
+                onClick = { viewModel.computeRoute(loop = false) },
+                enabled = uiState.waypoints.size >= 2 &&
                     !uiState.isComputing &&
                     uiState.selectedRegionId != null,
                 modifier = Modifier.weight(1f)
             ) {
-                if (uiState.isComputing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .height(20.dp)
-                            .width(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                Text(if (uiState.isComputing) "Computing..." else "Compute Route")
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.height(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Start \u2192 End")
             }
+
+            // Back to Start button
+            OutlinedButton(
+                onClick = { viewModel.computeRoute(loop = true) },
+                enabled = uiState.waypoints.size >= 2 &&
+                    !uiState.isComputing &&
+                    uiState.selectedRegionId != null,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.Loop,
+                    contentDescription = null,
+                    modifier = Modifier.height(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Back to Start")
+            }
+
+            // Clear button
             IconButton(onClick = viewModel::clearRoute) {
                 Icon(Icons.Default.Clear, contentDescription = "Clear")
+            }
+        }
+
+        // Computing indicator
+        if (uiState.isComputing) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.height(20.dp).width(20.dp),
+                    strokeWidth = 2.dp
+                )
+                Text("Computing route\u2026", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -183,7 +214,7 @@ fun RoutePlanningScreen(
             )
         }
 
-        // Placeholder for map integration
+        // Instruction text when no route computed
         if (uiState.selectedRegionId != null && uiState.computedRoute == null && !uiState.isComputing) {
             Spacer(modifier = Modifier.height(16.dp))
             Box(
@@ -192,8 +223,13 @@ fun RoutePlanningScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
+                val hint = when {
+                    uiState.waypoints.isEmpty() -> "Tap on the map to place waypoints"
+                    uiState.waypoints.size == 1 -> "Tap to add more waypoints (need at least 2)"
+                    else -> "Tap to add waypoints, or compute your route"
+                }
                 Text(
-                    text = "Tap on the map to set start and end points",
+                    text = hint,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -262,24 +298,34 @@ private fun RegionSelector(
 }
 
 /**
- * Shows current start, end, and via-point coordinates.
+ * Shows the current waypoint count and instruction hint.
  */
 @Composable
 private fun WaypointInfo(uiState: RoutePlanningUiState) {
     Column {
-        Text(
-            text = "Start: ${uiState.startPoint?.formatted() ?: "Not set (tap map)"}",
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            text = "End: ${uiState.endPoint?.formatted() ?: "Not set (tap map)"}",
-            style = MaterialTheme.typography.bodySmall
-        )
-        if (uiState.viaPoints.isNotEmpty()) {
+        if (uiState.waypoints.isEmpty()) {
             Text(
-                text = "Via-points: ${uiState.viaPoints.size}",
+                text = "No waypoints placed",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                text = "${uiState.waypoints.size} waypoint${if (uiState.waypoints.size != 1) "s" else ""} placed",
                 style = MaterialTheme.typography.bodySmall
             )
+            uiState.waypoints.forEachIndexed { index, coordinate ->
+                val label = when {
+                    index == 0 -> "WP 1 (start)"
+                    index == uiState.waypoints.size - 1 -> "WP ${index + 1} (end)"
+                    else -> "WP ${index + 1}"
+                }
+                Text(
+                    text = "$label: ${coordinate.formatted()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
