@@ -9,7 +9,7 @@ OpenHiker is a multi-platform app for offline hiking navigation on iOS, Apple Wa
 **License:** AGPL-3.0
 
 ## Implementatiomn guidelines:
-when a featire gets implemented on one platform, aim at feature equivalnce on all aother platforms where applicable. When implementing a new feature on one platform, check whether such feature woudl be meaningful on the other platforms, and if so, write a TODO_<feature>.md in docs/<platform>/ for each applicable platform when beigbning implementation, ad amend it accordingly once the implementation is complete
+when a feature gets implemented on one platform, aim at feature equivalnce on all aother platforms where applicable. When implementing a new feature on one platform, check whether such feature woudl be meaningful on the other platforms, and if so, write a <feature>.md in docs/TODO/<platform>/ for each applicable platform when beigbning implementation, ad amend it accordingly once the implementation is complete
 
 
 ## Build Commands
