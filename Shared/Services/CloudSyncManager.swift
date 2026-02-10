@@ -17,6 +17,7 @@
 
 import Foundation
 import Combine
+import os
 
 /// Notification posted when a cloud sync completes (success or failure).
 ///
@@ -57,6 +58,12 @@ extension Notification.Name {
 actor CloudSyncManager {
 
     // MARK: - Constants
+
+    /// Logger for sync operations (debug-level for routine events).
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.openhiker",
+        category: "CloudSyncManager"
+    )
 
     /// Interval between periodic background syncs in seconds (15 minutes).
     static let periodicSyncInterval: TimeInterval = 900
@@ -105,7 +112,7 @@ actor CloudSyncManager {
         do {
             isAvailable = try await cloudStore.isAccountAvailable()
             guard isAvailable else {
-                print("CloudSyncManager: iCloud account not available, skipping sync")
+                Self.logger.info("iCloud account not available, skipping sync")
                 return
             }
 
@@ -119,11 +126,11 @@ actor CloudSyncManager {
             // Retry subscriptions if they failed due to missing record types.
             // After the sync above, record types should now exist.
             if await !cloudStore.subscriptionsReady {
-                print("CloudSyncManager: Retrying subscriptions after initial sync")
+                Self.logger.debug("Retrying subscriptions after initial sync")
                 try await cloudStore.setupSubscriptions()
             }
         } catch {
-            print("CloudSyncManager: Launch sync error: \(error.localizedDescription)")
+            Self.logger.error("Launch sync error: \(error.localizedDescription)")
         }
     }
 
@@ -134,7 +141,7 @@ actor CloudSyncManager {
     func performSync() async {
         guard isAvailable else { return }
         guard !isSyncing else {
-            print("CloudSyncManager: Sync already in progress, skipping")
+            Self.logger.debug("Sync already in progress, skipping")
             return
         }
 
@@ -147,7 +154,7 @@ actor CloudSyncManager {
             // local records so the record types get auto-created server-side.
             let forceAll = await !cloudStore.subscriptionsReady
             if forceAll {
-                print("CloudSyncManager: Schema not ready, force-pushing all local records")
+                Self.logger.debug("Schema not ready, force-pushing all local records")
             }
 
             // Push local changes to CloudKit
@@ -170,9 +177,9 @@ actor CloudSyncManager {
                 )
             }
 
-            print("CloudSyncManager: Sync completed successfully")
+            Self.logger.info("Sync completed successfully")
         } catch {
-            print("CloudSyncManager: Sync error: \(error.localizedDescription)")
+            Self.logger.error("Sync error: \(error.localizedDescription)")
 
             await MainActor.run {
                 NotificationCenter.default.post(
@@ -200,7 +207,7 @@ actor CloudSyncManager {
             try await pullPlannedRoutes()
             lastSyncDate = Date()
         } catch {
-            print("CloudSyncManager: Remote notification sync error: \(error.localizedDescription)")
+            Self.logger.error("Remote notification sync error: \(error.localizedDescription)")
         }
     }
 
@@ -432,7 +439,7 @@ actor CloudSyncManager {
             } catch {
                 lastError = error
                 let delay = Self.baseRetryDelay * pow(2.0, Double(attempt))
-                print("CloudSyncManager: Retry \(attempt + 1)/\(Self.maxRetryAttempts) after \(delay)s: \(error.localizedDescription)")
+                Self.logger.debug("Retry \(attempt + 1)/\(Self.maxRetryAttempts) after \(delay)s: \(error.localizedDescription)")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
         }

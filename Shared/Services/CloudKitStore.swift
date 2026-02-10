@@ -17,6 +17,7 @@
 
 import Foundation
 import CloudKit
+import os
 
 /// Low-level CloudKit CRUD operations for OpenHiker data types.
 ///
@@ -40,6 +41,12 @@ import CloudKit
 actor CloudKitStore {
 
     // MARK: - Constants
+
+    /// Logger for CloudKit operations (debug-level for expected conditions).
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.openhiker",
+        category: "CloudKitStore"
+    )
 
     /// The CloudKit container identifier.
     static let containerIdentifier = "iCloud.com.openhiker.ios"
@@ -178,7 +185,7 @@ actor CloudKitStore {
                 }
             }
         } catch where Self.isSchemaNotReadyError(error) {
-            print("CloudKitStore: Record type \(Self.savedRouteRecordType) not found in schema, returning empty")
+            Self.logger.debug("Record type \(Self.savedRouteRecordType) not in schema yet (expected on first launch)")
             return []
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
@@ -253,7 +260,7 @@ actor CloudKitStore {
                 }
             }
         } catch where Self.isSchemaNotReadyError(error) {
-            print("CloudKitStore: Record type \(Self.waypointRecordType) not found in schema, returning empty")
+            Self.logger.debug("Record type \(Self.waypointRecordType) not in schema yet (expected on first launch)")
             return []
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
@@ -334,7 +341,7 @@ actor CloudKitStore {
                 }
             }
         } catch where Self.isSchemaNotReadyError(error) {
-            print("CloudKitStore: Record type \(Self.plannedRouteRecordType) not found in schema, returning empty")
+            Self.logger.debug("Record type \(Self.plannedRouteRecordType) not in schema yet (expected on first launch)")
             return []
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
@@ -399,8 +406,7 @@ actor CloudKitStore {
                 // expected on first launch before any records have been pushed.
                 // The types are auto-created on first save, and subscriptions will
                 // succeed on the next sync cycle.
-                print("CloudKitStore: Skipping subscription for \(recordType) " +
-                      "(will retry after first sync): \(error.localizedDescription)")
+                Self.logger.debug("Skipping subscription for \(recordType) (will retry after first sync): \(error.localizedDescription)")
                 allSucceeded = false
             }
         }
@@ -523,7 +529,7 @@ actor CloudKitStore {
             route.modifiedAt = record.modificationDate
             return route
         } catch {
-            print("CloudKitStore: Failed to decode PlannedRoute: \(error.localizedDescription)")
+            Self.logger.error("Failed to decode PlannedRoute: \(error.localizedDescription)")
             return nil
         }
     }
