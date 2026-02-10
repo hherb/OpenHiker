@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OpenHiker is a dual-platform iOS/watchOS app for offline hiking navigation on Apple Watch using free OpenTopoMap tiles. The iOS companion app downloads map regions and transfers them to the watch via WatchConnectivity. The watch app renders maps offline using SpriteKit with GPS tracking.
+OpenHiker is a multi-platform app for offline hiking navigation on iOS, Apple Watch, macOS, Android using free OpenTopoMap tiles. The iOS companion app downloads map regions and transfers them to the watch via WatchConnectivity. The watch app renders maps offline using SpriteKit with GPS tracking.
 
 **License:** AGPL-3.0
+
+## Implementatiomn guidelines:
+when a featire gets implemented on one platform, aim at feature equivalnce on all aother platforms where applicable. When implementing a new feature on one platform, check whether such feature woudl be meaningful on the other platforms, and if so, write a TODO_<feature>.md in docs/<platform>/ for each applicable platform when beigbning implementation, ad amend it accordingly once the implementation is complete
+
 
 ## Build Commands
 
