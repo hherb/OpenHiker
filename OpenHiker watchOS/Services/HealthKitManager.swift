@@ -729,12 +729,30 @@ extension HealthKitManager: HKLiveWorkoutBuilderDelegate {
 
     /// Called when the workout builder receives new sample data.
     ///
-    /// Currently a no-op; heart rate and SpO2 are handled by dedicated anchored queries.
+    /// Extracts heart rate from the builder's statistics as a supplement to the
+    /// anchored queries. During an active `HKWorkoutSession`, the builder's
+    /// `HKLiveWorkoutDataSource` may exclusively capture heart rate samples,
+    /// preventing the anchored query from receiving them.
     func workoutBuilder(
         _ workoutBuilder: HKLiveWorkoutBuilder,
         didCollectDataOf collectedTypes: Set<HKSampleType>
     ) {
-        // Sample collection handled by anchored queries
+        for type in collectedTypes {
+            guard let quantityType = type as? HKQuantityType else { continue }
+
+            if quantityType.identifier == HKQuantityTypeIdentifier.heartRate.rawValue {
+                let statistics = workoutBuilder.statistics(for: quantityType)
+                if let mostRecent = statistics?.mostRecentQuantity() {
+                    let bpm = mostRecent.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                    samplesQueue.sync {
+                        heartRateSamples.append(bpm)
+                    }
+                    DispatchQueue.main.async {
+                        self.currentHeartRate = bpm
+                    }
+                }
+            }
+        }
     }
 }
 

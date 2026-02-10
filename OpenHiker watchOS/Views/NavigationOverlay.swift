@@ -46,9 +46,12 @@ struct NavigationOverlay: View {
     var body: some View {
         if guidance.isNavigating {
             VStack(spacing: 0) {
-                // Compact instruction strip pinned to top
+                // Compact instruction capsule pinned to top
                 instructionBar
                     .background(instructionBarBackground)
+                    .clipShape(Capsule())
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
 
                 Spacer()
 
@@ -120,9 +123,9 @@ struct NavigationOverlay: View {
     private var instructionBarBackground: some View {
         Group {
             if guidance.isOffRoute {
-                Color.red.opacity(0.7)
+                Color.red.opacity(0.6)
             } else {
-                Color.purple.opacity(0.7)
+                Color.purple.opacity(0.5)
             }
         }
     }

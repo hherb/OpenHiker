@@ -80,6 +80,16 @@ struct MapView: View {
     /// Whether the save hike sheet is currently displayed after stopping tracking.
     @State private var showingSaveHike = false
 
+    /// Timer that auto-recenters the map on the user after a pan gesture during tracking.
+    ///
+    /// When the user pans the map while tracking or navigating, this timer fires after
+    /// ``autoRecenterDelaySec`` seconds to re-enable auto-centering, so the map doesn't
+    /// stay panned away from the user's position indefinitely.
+    @State private var autoRecenterTimer: Timer?
+
+    /// Seconds before the map auto-recenters after a pan gesture during tracking.
+    private static let autoRecenterDelaySec: TimeInterval = 10.0
+
     /// Timer for periodic auto-save of track state during active recording.
     ///
     /// Stored as a reference rather than `@State` to avoid SwiftUI lifecycle issues.
@@ -148,6 +158,8 @@ struct MapView: View {
         }
         .onDisappear {
             stopAutoSaveTimer()
+            autoRecenterTimer?.invalidate()
+            autoRecenterTimer = nil
         }
         .onChange(of: mapRenderer.currentZoom) { _, _ in
             mapScene?.updateVisibleTiles()
@@ -335,6 +347,9 @@ struct MapView: View {
     // MARK: - Gestures
 
     /// A drag gesture that disables auto-centering and heading-up when the user pans the map.
+    ///
+    /// During active tracking or navigation, schedules an auto-recenter timer so the map
+    /// returns to following the user after ``autoRecenterDelaySec`` seconds of inactivity.
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
@@ -343,6 +358,9 @@ struct MapView: View {
                 mapScene?.isHeadingUpMode = false
                 // Pan the map
                 // This would require implementing pan logic in MapRenderer
+            }
+            .onEnded { _ in
+                scheduleAutoRecenter()
             }
     }
 
@@ -418,10 +436,33 @@ struct MapView: View {
         uvIndexManager.updateUVIndex(for: location)
     }
 
+    /// Schedules auto-recentering on the user's position after a pan gesture.
+    ///
+    /// Only activates during active tracking or navigation so that casual map
+    /// browsing is not interrupted. Cancels any previous pending recenter.
+    private func scheduleAutoRecenter() {
+        autoRecenterTimer?.invalidate()
+        autoRecenterTimer = nil
+
+        guard locationManager.isTracking || routeGuidance.isNavigating else { return }
+
+        autoRecenterTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.autoRecenterDelaySec,
+            repeats: false
+        ) { _ in
+            DispatchQueue.main.async {
+                centerOnUser()
+            }
+        }
+    }
+
     /// Centers the map on the user's current GPS position and enables heading-up mode.
     ///
     /// If no location is available yet, requests a single location update.
     private func centerOnUser() {
+        autoRecenterTimer?.invalidate()
+        autoRecenterTimer = nil
+
         guard let location = locationManager.currentLocation else {
             locationManager.requestSingleLocation()
             return
