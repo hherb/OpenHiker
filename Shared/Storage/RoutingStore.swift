@@ -309,6 +309,208 @@ final class RoutingStore: @unchecked Sendable {
         try scalarInt("SELECT COUNT(*) FROM routing_edges")
     }
 
+    // MARK: - Edge-Aware Nearest Point
+
+    /// Result of snapping a coordinate to the nearest point on any trail edge.
+    struct TrailSnapResult {
+        /// The routing node to use for A* (the closer endpoint of the matched edge).
+        let node: RoutingNode
+        /// Distance in metres from the query coordinate to the closest point on the edge polyline.
+        let distanceToTrail: Double
+        /// The matched edge.
+        let edge: RoutingEdge
+    }
+
+    /// Find the nearest point on any trail edge to a geographic coordinate.
+    ///
+    /// Unlike ``nearestNode(to:maxRadiusMetres:)`` which only considers junction nodes,
+    /// this method checks the full polyline of every edge within range — including
+    /// intermediate geometry points between junctions. This prevents snapping to a
+    /// distant junction when the user taps midway along a trail segment.
+    ///
+    /// The method returns the closer endpoint node of the best-matching edge,
+    /// which A* can then use as its start/end point.
+    ///
+    /// - Parameters:
+    ///   - coordinate: The geographic coordinate to snap.
+    ///   - maxRadiusMetres: Search radius (default from ``RoutingCostConfig``).
+    /// - Returns: A ``TrailSnapResult`` with the best node, or `nil` if no trail is within range.
+    /// - Throws: ``RoutingError/databaseError(_:)`` on SQLite failure.
+    func nearestTrailPoint(
+        to coordinate: CLLocationCoordinate2D,
+        maxRadiusMetres: Double = RoutingCostConfig.nearestNodeSearchRadiusMetres
+    ) throws -> TrailSnapResult? {
+        try queue.sync {
+            guard let db = db else { throw RoutingError.noRoutingData }
+
+            let bbox = BoundingBox(center: coordinate, radiusMeters: maxRadiusMetres)
+
+            // Find edges whose endpoint nodes fall within the bounding box.
+            // We check both from_node and to_node so we catch edges that cross the area.
+            let sql = """
+                SELECT e.id, e.from_node, e.to_node, e.distance, e.elevation_gain, e.elevation_loss,
+                       e.surface, e.highway_type, e.sac_scale, e.trail_visibility, e.name,
+                       e.osm_way_id, e.cost, e.reverse_cost, e.is_oneway, e.geometry,
+                       fn.latitude, fn.longitude, fn.elevation,
+                       tn.latitude, tn.longitude, tn.elevation
+                FROM routing_edges e
+                JOIN routing_nodes fn ON fn.id = e.from_node
+                JOIN routing_nodes tn ON tn.id = e.to_node
+                WHERE (fn.latitude BETWEEN ? AND ? AND fn.longitude BETWEEN ? AND ?)
+                   OR (tn.latitude BETWEEN ? AND ? AND tn.longitude BETWEEN ? AND ?)
+                """
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw RoutingError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            // Bind bounding box for from_node
+            sqlite3_bind_double(stmt, 1, bbox.south)
+            sqlite3_bind_double(stmt, 2, bbox.north)
+            sqlite3_bind_double(stmt, 3, bbox.west)
+            sqlite3_bind_double(stmt, 4, bbox.east)
+            // Bind bounding box for to_node
+            sqlite3_bind_double(stmt, 5, bbox.south)
+            sqlite3_bind_double(stmt, 6, bbox.north)
+            sqlite3_bind_double(stmt, 7, bbox.west)
+            sqlite3_bind_double(stmt, 8, bbox.east)
+
+            var bestResult: TrailSnapResult?
+            var bestDistance = Double.infinity
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let edge = edgeFromStatement(stmt)
+
+                // Parse from_node and to_node coordinates (columns 16-21)
+                let fromLat = sqlite3_column_double(stmt, 16)
+                let fromLon = sqlite3_column_double(stmt, 17)
+                let fromElev: Double? = sqlite3_column_type(stmt, 18) == SQLITE_NULL
+                    ? nil : sqlite3_column_double(stmt, 18)
+                let toLat = sqlite3_column_double(stmt, 19)
+                let toLon = sqlite3_column_double(stmt, 20)
+                let toElev: Double? = sqlite3_column_type(stmt, 21) == SQLITE_NULL
+                    ? nil : sqlite3_column_double(stmt, 21)
+
+                let fromNode = RoutingNode(id: edge.fromNode, latitude: fromLat, longitude: fromLon, elevation: fromElev)
+                let toNode = RoutingNode(id: edge.toNode, latitude: toLat, longitude: toLon, elevation: toElev)
+
+                // Build the full polyline: fromNode + intermediate geometry + toNode
+                var polyline: [CLLocationCoordinate2D] = [fromNode.coordinate]
+                polyline.append(contentsOf: EdgeGeometry.unpack(edge.geometry))
+                polyline.append(toNode.coordinate)
+
+                // Find the closest point on this edge's polyline
+                let closestDist = closestDistanceToPolyline(
+                    from: coordinate, polyline: polyline
+                )
+
+                if closestDist < bestDistance {
+                    bestDistance = closestDist
+
+                    // Snap to whichever endpoint is closer to the query coordinate
+                    let distToFrom = haversineDistance(
+                        lat1: coordinate.latitude, lon1: coordinate.longitude,
+                        lat2: fromLat, lon2: fromLon
+                    )
+                    let distToTo = haversineDistance(
+                        lat1: coordinate.latitude, lon1: coordinate.longitude,
+                        lat2: toLat, lon2: toLon
+                    )
+                    let snapNode = distToFrom <= distToTo ? fromNode : toNode
+
+                    bestResult = TrailSnapResult(
+                        node: snapNode,
+                        distanceToTrail: closestDist,
+                        edge: edge
+                    )
+                }
+            }
+
+            return bestResult
+        }
+    }
+
+    /// Compute the minimum distance from a point to any segment of a polyline.
+    ///
+    /// Uses a simplified planar projection (sufficient at hiking scales) to find
+    /// the perpendicular distance from the point to each line segment.
+    ///
+    /// - Parameters:
+    ///   - from: The query coordinate.
+    ///   - polyline: Ordered array of coordinates forming the polyline.
+    /// - Returns: Minimum distance in metres.
+    private func closestDistanceToPolyline(
+        from point: CLLocationCoordinate2D,
+        polyline: [CLLocationCoordinate2D]
+    ) -> Double {
+        guard polyline.count >= 2 else {
+            if let only = polyline.first {
+                return haversineDistance(
+                    lat1: point.latitude, lon1: point.longitude,
+                    lat2: only.latitude, lon2: only.longitude
+                )
+            }
+            return .infinity
+        }
+
+        var minDist = Double.infinity
+        for i in 0..<(polyline.count - 1) {
+            let dist = distanceToLineSegment(
+                point: point, segA: polyline[i], segB: polyline[i + 1]
+            )
+            minDist = min(minDist, dist)
+        }
+        return minDist
+    }
+
+    /// Compute the distance from a point to a line segment using planar approximation.
+    ///
+    /// Projects coordinates to a local flat plane using cos(latitude) scaling,
+    /// then finds the closest point on the segment (clamped to endpoints).
+    ///
+    /// - Parameters:
+    ///   - point: The query coordinate.
+    ///   - segA: Start of the line segment.
+    ///   - segB: End of the line segment.
+    /// - Returns: Distance in metres.
+    private func distanceToLineSegment(
+        point: CLLocationCoordinate2D,
+        segA: CLLocationCoordinate2D,
+        segB: CLLocationCoordinate2D
+    ) -> Double {
+        // Convert to local metres using equirectangular projection
+        let metersPerDegreeLat = 111_320.0
+        let cosLat = cos(point.latitude * .pi / 180.0)
+        let metersPerDegreeLon = 111_320.0 * cosLat
+
+        let px = (point.longitude - segA.longitude) * metersPerDegreeLon
+        let py = (point.latitude - segA.latitude) * metersPerDegreeLat
+        let ax: Double = 0
+        let ay: Double = 0
+        let bx = (segB.longitude - segA.longitude) * metersPerDegreeLon
+        let by = (segB.latitude - segA.latitude) * metersPerDegreeLat
+
+        let dx = bx - ax
+        let dy = by - ay
+        let lenSq = dx * dx + dy * dy
+
+        // Degenerate segment (both endpoints identical)
+        if lenSq < 1e-10 {
+            return sqrt(px * px + py * py)
+        }
+
+        // Project point onto the line, clamped to [0, 1]
+        let t = max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq))
+        let projX = ax + t * dx
+        let projY = ay + t * dy
+
+        let diffX = px - projX
+        let diffY = py - projY
+        return sqrt(diffX * diffX + diffY * diffY)
+    }
+
     // MARK: - Private Helpers
 
     /// The SELECT column list shared by all edge queries.

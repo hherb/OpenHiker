@@ -91,18 +91,39 @@ final class RoutingEngine {
         waypoints.append(contentsOf: via)
         waypoints.append(to)
 
-        // Snap every waypoint to its nearest routing node
+        // Snap every waypoint to its nearest routing node.
+        // Uses edge-aware snapping: checks the full polyline of nearby edges
+        // (including intermediate geometry between junctions) to find the closest
+        // trail, then snaps to the nearer endpoint of that edge. Falls back to
+        // plain nearest-node if no edges are nearby.
         var snappedNodes: [RoutingNode] = []
         for (index, coord) in waypoints.enumerated() {
-            guard let node = try store.nearestNode(to: coord) else {
-                if index == 0 {
-                    throw RoutingError.noNearbyNode(coord)
-                } else if index == waypoints.count - 1 {
+            let node: RoutingNode
+
+            // Try edge-aware snap first (checks intermediate trail geometry)
+            if let trailSnap = try store.nearestTrailPoint(to: coord) {
+                node = trailSnap.node
+                let snapDist = haversineDistance(
+                    lat1: coord.latitude, lon1: coord.longitude,
+                    lat2: node.latitude, lon2: node.longitude
+                )
+                print("[RoutingEngine] WP\(index): (\(coord.latitude), \(coord.longitude)) → node \(node.id) at (\(node.latitude), \(node.longitude)), snap dist: \(Int(snapDist))m (trail dist: \(Int(trailSnap.distanceToTrail))m)")
+            } else if let fallbackNode = try store.nearestNode(to: coord) {
+                // Fallback to junction-only snap
+                node = fallbackNode
+                let snapDist = haversineDistance(
+                    lat1: coord.latitude, lon1: coord.longitude,
+                    lat2: node.latitude, lon2: node.longitude
+                )
+                print("[RoutingEngine] WP\(index): (\(coord.latitude), \(coord.longitude)) → node \(node.id) at (\(node.latitude), \(node.longitude)), snap dist: \(Int(snapDist))m (fallback)")
+            } else {
+                if index == 0 || index == waypoints.count - 1 {
                     throw RoutingError.noNearbyNode(coord)
                 } else {
                     throw RoutingError.viaPointNotReachable(index: index - 1, coordinate: coord)
                 }
             }
+
             snappedNodes.append(node)
         }
 
@@ -121,6 +142,7 @@ final class RoutingEngine {
 
             // Short-circuit if start == end
             if startNode.id == endNode.id {
+                print("[RoutingEngine] Segment \(i): node \(startNode.id) == node \(endNode.id), skipping")
                 if allNodes.isEmpty {
                     allNodes.append(startNode)
                     allCoordinates.append(startNode.coordinate)
@@ -128,7 +150,9 @@ final class RoutingEngine {
                 continue
             }
 
+            print("[RoutingEngine] Segment \(i): routing node \(startNode.id) → node \(endNode.id)")
             let segment = try astar(from: startNode, to: endNode, mode: mode)
+            print("[RoutingEngine] Segment \(i): \(Int(segment.totalDistance))m, \(segment.nodes.count) nodes, \(segment.coordinates.count) coords")
 
             // Merge: skip the first node of each segment after the first
             // to avoid duplication at junctions.

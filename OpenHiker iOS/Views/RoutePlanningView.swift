@@ -401,6 +401,17 @@ struct RoutePlanningView: View {
             via = waypoints.count > 2 ? Array(waypoints[1..<waypoints.count - 1]) : []
         }
 
+        // Debug: log waypoints and assembled routing arguments
+        print("[RoutePlanning] Computing route: loop=\(loop), \(waypoints.count) waypoints")
+        for (i, wp) in waypoints.enumerated() {
+            print("[RoutePlanning]   WP\(i+1): (\(wp.latitude), \(wp.longitude))")
+        }
+        print("[RoutePlanning]   start: (\(start.latitude), \(start.longitude))")
+        print("[RoutePlanning]   end: (\(end.latitude), \(end.longitude))")
+        for (i, v) in via.enumerated() {
+            print("[RoutePlanning]   via[\(i)]: (\(v.latitude), \(v.longitude))")
+        }
+
         isLoopRoute = loop
         isComputing = true
         computedRoute = nil
