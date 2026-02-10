@@ -309,6 +309,96 @@ final class RoutingStore: @unchecked Sendable {
         try scalarInt("SELECT COUNT(*) FROM routing_edges")
     }
 
+    // MARK: - Trail Overlay Data
+
+    /// Lightweight edge data for rendering trail overlays on the map.
+    ///
+    /// Contains only the fields needed to draw a trail polyline:
+    /// the highway type (for color selection) and the full coordinate
+    /// sequence (fromNode + intermediate geometry + toNode).
+    struct TrailEdgeData {
+        /// OSM highway type (e.g., "path", "footway", "track").
+        let highwayType: String
+        /// Full polyline: fromNode coordinate + unpacked geometry + toNode coordinate.
+        let coordinates: [CLLocationCoordinate2D]
+    }
+
+    /// Fetch all trail edges whose endpoints fall within a geographic bounding box.
+    ///
+    /// Queries edges where at least one endpoint node (from_node or to_node)
+    /// is inside the bounding box, then reconstructs the full polyline for
+    /// each edge. Used for rendering trail overlays on the map.
+    ///
+    /// Edges with a `NULL` highway_type are excluded since they provide no
+    /// useful trail classification for rendering.
+    ///
+    /// - Parameter bbox: The geographic viewport bounding box.
+    /// - Returns: An array of ``TrailEdgeData`` for rendering.
+    /// - Throws: ``RoutingError/databaseError(_:)`` on SQLite failure.
+    func getEdgesInBoundingBox(_ bbox: BoundingBox) throws -> [TrailEdgeData] {
+        try queue.sync {
+            guard let db = db else { throw RoutingError.noRoutingData }
+
+            let sql = """
+                SELECT DISTINCT e.id, e.highway_type, e.geometry,
+                       fn.latitude, fn.longitude,
+                       tn.latitude, tn.longitude
+                FROM routing_edges e
+                JOIN routing_nodes fn ON fn.id = e.from_node
+                JOIN routing_nodes tn ON tn.id = e.to_node
+                WHERE e.highway_type IS NOT NULL
+                  AND ((fn.latitude BETWEEN ? AND ? AND fn.longitude BETWEEN ? AND ?)
+                    OR (tn.latitude BETWEEN ? AND ? AND tn.longitude BETWEEN ? AND ?))
+                """
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw RoutingError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            // Bind bounding box for from_node
+            sqlite3_bind_double(stmt, 1, bbox.south)
+            sqlite3_bind_double(stmt, 2, bbox.north)
+            sqlite3_bind_double(stmt, 3, bbox.west)
+            sqlite3_bind_double(stmt, 4, bbox.east)
+            // Bind bounding box for to_node
+            sqlite3_bind_double(stmt, 5, bbox.south)
+            sqlite3_bind_double(stmt, 6, bbox.north)
+            sqlite3_bind_double(stmt, 7, bbox.west)
+            sqlite3_bind_double(stmt, 8, bbox.east)
+
+            var results: [TrailEdgeData] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                // Column 0: e.id (used for DISTINCT, not needed in result)
+                guard let typePtr = sqlite3_column_text(stmt, 1) else { continue }
+                let highwayType = String(cString: typePtr)
+
+                // Parse geometry blob (column 2)
+                var geometry: Data?
+                if sqlite3_column_type(stmt, 2) != SQLITE_NULL,
+                   let blob = sqlite3_column_blob(stmt, 2) {
+                    let size = Int(sqlite3_column_bytes(stmt, 2))
+                    geometry = Data(bytes: blob, count: size)
+                }
+
+                // Build full polyline: fromNode + intermediate + toNode
+                let fromLat = sqlite3_column_double(stmt, 3)
+                let fromLon = sqlite3_column_double(stmt, 4)
+                let toLat = sqlite3_column_double(stmt, 5)
+                let toLon = sqlite3_column_double(stmt, 6)
+
+                var coordinates: [CLLocationCoordinate2D] = []
+                coordinates.append(CLLocationCoordinate2D(latitude: fromLat, longitude: fromLon))
+                coordinates.append(contentsOf: EdgeGeometry.unpack(geometry))
+                coordinates.append(CLLocationCoordinate2D(latitude: toLat, longitude: toLon))
+
+                results.append(TrailEdgeData(highwayType: highwayType, coordinates: coordinates))
+            }
+            return results
+        }
+    }
+
     // MARK: - Edge-Aware Nearest Point
 
     /// Result of snapping a coordinate to the nearest point on any trail edge.

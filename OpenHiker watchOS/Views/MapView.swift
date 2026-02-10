@@ -168,6 +168,7 @@ struct MapView: View {
                 mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
             }
             refreshRouteLine()
+            refreshTrailOverlays()
         }
         .onChange(of: locationManager.currentLocation) { _, newLocation in
             updateUserPosition(newLocation)
@@ -182,6 +183,7 @@ struct MapView: View {
                     }
                     refreshWaypointMarkers()
                     refreshRouteLine()
+                    refreshTrailOverlays()
                 }
             }
         }
@@ -387,6 +389,7 @@ struct MapView: View {
             scene.isHeadingUpMode = isHeadingUp
             mapScene = scene
             refreshWaypointMarkers()
+            refreshTrailOverlays()
         } catch {
             errorMessage = "Failed to load map region: \(error.localizedDescription)"
             showError = true
@@ -424,6 +427,7 @@ struct MapView: View {
         // Refresh overlays when centered (tiles already updated by setCenter)
         if isCenteredOnUser {
             refreshWaypointMarkers()
+            refreshTrailOverlays()
         }
 
         // Feed location to route guidance if active navigation
@@ -509,6 +513,28 @@ struct MapView: View {
             mapScene?.updateRouteLine(coordinates: route.coordinates)
         } else {
             mapScene?.clearRouteLine()
+        }
+    }
+
+    /// Updates trail overlay polylines based on the current map viewport.
+    ///
+    /// Queries the routing database for trail edges visible on screen and
+    /// renders them as colored polylines grouped by highway type. Uses
+    /// internal caching to avoid redundant database queries when the
+    /// viewport hasn't changed significantly.
+    private func refreshTrailOverlays() {
+        guard let scene = mapScene, selectedRegion?.hasRoutingData == true else { return }
+
+        let bbox = mapRenderer.viewportBoundingBox(sceneSize: scene.size, isHeadingUp: isHeadingUp)
+
+        if let bbox = bbox, scene.shouldRequeryTrails(currentBbox: bbox, currentZoom: mapRenderer.currentZoom) {
+            // Viewport changed significantly — re-query database
+            let edges = mapRenderer.getTrailEdgesInViewport(sceneSize: scene.size, isHeadingUp: isHeadingUp)
+            scene.recordTrailQuery(bbox: bbox, zoom: mapRenderer.currentZoom)
+            scene.updateTrailOverlays(edges: edges)
+        } else {
+            // Viewport similar — just re-project cached edges (coordinates changed due to pan)
+            scene.updateTrailOverlays(edges: nil)
         }
     }
 

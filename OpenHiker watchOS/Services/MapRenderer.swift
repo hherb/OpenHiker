@@ -53,6 +53,9 @@ final class MapRenderer: ObservableObject {
     /// The currently open tile store for reading tile data.
     private var tileStore: TileStore?
 
+    /// The routing store for reading trail geometry (optional, only if region has routing data).
+    private var routingStore: RoutingStore?
+
     /// The active SpriteKit scene, held weakly to avoid retain cycles.
     private var mapScene: MapScene?
 
@@ -110,13 +113,30 @@ final class MapRenderer: ObservableObject {
         // Set initial center to region center
         self.centerCoordinate = metadata.boundingBox.center
 
+        // Open routing database for trail overlays if available
+        if metadata.hasRoutingData {
+            let routingPath = documentsDir
+                .appendingPathComponent("regions")
+                .appendingPathComponent("\(metadata.id.uuidString).routing.db")
+                .path
+            let rStore = RoutingStore(path: routingPath)
+            do {
+                try rStore.open()
+                self.routingStore = rStore
+            } catch {
+                print("Warning: Could not open routing database for trail overlays: \(error.localizedDescription)")
+            }
+        }
+
         isLoading = false
     }
 
-    /// Unloads the current region and releases the tile store connection.
+    /// Unloads the current region and releases the tile store and routing store connections.
     func unloadRegion() {
         tileStore?.close()
         tileStore = nil
+        routingStore?.close()
+        routingStore = nil
         regionMetadata = nil
         centerCoordinate = nil
     }
@@ -185,6 +205,66 @@ final class MapRenderer: ObservableObject {
     func isCoordinateInRegion(_ coordinate: CLLocationCoordinate2D) -> Bool {
         regionMetadata?.contains(coordinate: coordinate) ?? false
     }
+
+    // MARK: - Trail Overlay Support
+
+    /// Computes the geographic bounding box of the currently visible viewport.
+    ///
+    /// Uses the scene size, current zoom level, and center coordinate to calculate
+    /// how many degrees of latitude/longitude are visible. The result is expanded
+    /// by a buffer factor to preload edges slightly outside the visible area and
+    /// to account for map rotation in heading-up mode.
+    ///
+    /// - Parameters:
+    ///   - sceneSize: The SpriteKit scene size in points.
+    ///   - isHeadingUp: Whether heading-up mode is active (expands bbox for rotation).
+    /// - Returns: The visible ``BoundingBox``, or `nil` if no region is loaded.
+    func viewportBoundingBox(sceneSize: CGSize, isHeadingUp: Bool) -> BoundingBox? {
+        guard let center = centerCoordinate else { return nil }
+
+        let totalPixels = Double(1 << currentZoom) * Double(MapRenderer.tileSize)
+        let degreesPerPixelLon = 360.0 / totalPixels
+
+        let latRad = center.latitude * .pi / 180.0
+        let mercatorScale = cos(latRad)
+        let degreesPerPixelLat = mercatorScale > 0.01
+            ? degreesPerPixelLon / mercatorScale
+            : degreesPerPixelLon
+
+        let halfWidthDeg = Double(sceneSize.width / 2) * degreesPerPixelLon
+        let halfHeightDeg = Double(sceneSize.height / 2) * degreesPerPixelLat
+
+        // Expand: sqrt(2) for rotation in heading-up mode, plus 10% buffer
+        let expansion = isHeadingUp ? 1.556 : 1.1
+
+        return BoundingBox(
+            north: min(center.latitude + halfHeightDeg * expansion, 85.05),
+            south: max(center.latitude - halfHeightDeg * expansion, -85.05),
+            east: center.longitude + halfWidthDeg * expansion,
+            west: center.longitude - halfWidthDeg * expansion
+        )
+    }
+
+    /// Fetches trail edges visible in the current viewport from the routing database.
+    ///
+    /// Returns an empty array if no routing data is loaded or if the query fails.
+    ///
+    /// - Parameters:
+    ///   - sceneSize: The SpriteKit scene size in points.
+    ///   - isHeadingUp: Whether heading-up mode is active.
+    /// - Returns: Array of ``RoutingStore/TrailEdgeData`` for the visible area.
+    func getTrailEdgesInViewport(sceneSize: CGSize, isHeadingUp: Bool) -> [RoutingStore.TrailEdgeData] {
+        guard let store = routingStore,
+              let bbox = viewportBoundingBox(sceneSize: sceneSize, isHeadingUp: isHeadingUp) else {
+            return []
+        }
+        do {
+            return try store.getEdgesInBoundingBox(bbox)
+        } catch {
+            print("Warning: Trail overlay query failed: \(error.localizedDescription)")
+            return []
+        }
+    }
 }
 
 // MARK: - SpriteKit Map Scene
@@ -209,6 +289,7 @@ final class MapRenderer: ObservableObject {
 ///   ├── mapContentNode   ← Rotates for heading-up display
 ///   │     ├── tilesNode        ← Contains tile sprites (z=0)
 ///   │     └── rotatingOverlaysNode ← Overlays that rotate with map
+///   │           ├── trailOverlays (z=22-32) ← Hiking trail polylines by type
 ///   │           ├── routeNode (z=40) ← Planned route polyline (purple)
 ///   │           ├── trackNode (z=50) ← Recorded track trail (orange)
 ///   │           └── waypointMarkers (z=75)
@@ -243,6 +324,19 @@ final class MapScene: SKScene {
 
     /// A polyline shape node showing the planned route for active navigation.
     private var routeNode: SKShapeNode?
+
+    /// Trail overlay shape nodes keyed by highway type (e.g., "path", "track").
+    /// Each node contains a single CGPath with all edges of that type.
+    private var trailOverlayNodes: [String: SKShapeNode] = [:]
+
+    /// Cached trail edge data from the last query, used to re-project without re-querying.
+    private var cachedTrailEdges: [RoutingStore.TrailEdgeData] = []
+
+    /// Bounding box used for the last trail overlay database query.
+    private var lastTrailQueryBbox: BoundingBox?
+
+    /// Zoom level used for the last trail overlay database query.
+    private var lastTrailQueryZoom: Int?
 
     /// In-memory cache of tile textures to avoid re-creating them from PNG data.
     private var textureCache: [TileCoordinate: SKTexture] = [:]
@@ -849,6 +943,151 @@ final class MapScene: SKScene {
     func clearRouteLine() {
         routeNode?.removeFromParent()
         routeNode = nil
+    }
+
+    // MARK: - Trail Overlays
+
+    /// Color and z-position configuration for each highway type.
+    ///
+    /// Returns a tuple of (UIColor, z-position) for the given OSM highway type.
+    /// Hiking-relevant types (path, footway, steps) use warm/high-visibility colors.
+    /// All colors use 0.7 alpha to avoid overpowering the topo map base layer.
+    private static func trailStyle(for highwayType: String) -> (color: UIColor, zPosition: CGFloat) {
+        switch highwayType {
+        case "path":
+            return (UIColor(red: 0.88, green: 0.38, blue: 0.25, alpha: 0.7), 30) // Red-orange
+        case "footway":
+            return (UIColor(red: 1.0, green: 0.55, blue: 0.0, alpha: 0.7), 30)   // Orange
+        case "track":
+            return (UIColor(red: 0.55, green: 0.41, blue: 0.08, alpha: 0.7), 28)  // Brown
+        case "steps":
+            return (UIColor(red: 0.8, green: 0.2, blue: 0.6, alpha: 0.7), 32)     // Magenta
+        case "cycleway":
+            return (UIColor(red: 0.0, green: 0.55, blue: 0.55, alpha: 0.7), 26)   // Dark cyan
+        case "bridleway":
+            return (UIColor(red: 0.42, green: 0.56, blue: 0.14, alpha: 0.7), 24)  // Olive
+        default:
+            return (UIColor(red: 0.53, green: 0.53, blue: 0.53, alpha: 0.5), 22)  // Gray
+        }
+    }
+
+    /// Renders hiking trail overlays on the map from routing edge data.
+    ///
+    /// Groups edges by highway type and builds one ``SKShapeNode`` per type
+    /// (fewer nodes = better SpriteKit performance). Each edge's coordinates
+    /// are projected to screen space using ``projectToMapLocal(_:)``.
+    ///
+    /// The method has two operating modes:
+    /// - **Full update**: When `edges` is non-nil, caches the edges and re-renders.
+    /// - **Re-project only**: When `edges` is nil, re-renders from the cache
+    ///   (used when the map center moves but the viewport edges haven't changed).
+    ///
+    /// - Parameter edges: New trail edge data from a database query, or `nil`
+    ///   to re-project the cached data.
+    func updateTrailOverlays(edges: [RoutingStore.TrailEdgeData]?) {
+        // Remove existing trail overlay nodes
+        for (_, node) in trailOverlayNodes {
+            node.removeFromParent()
+        }
+        trailOverlayNodes.removeAll()
+
+        // Use new edges or fall back to cache
+        if let edges = edges {
+            cachedTrailEdges = edges
+        }
+
+        guard !cachedTrailEdges.isEmpty else { return }
+
+        // Group edge coordinate arrays by highway type
+        var grouped: [String: [[CLLocationCoordinate2D]]] = [:]
+        for edge in cachedTrailEdges {
+            grouped[edge.highwayType, default: []].append(edge.coordinates)
+        }
+
+        // Build one SKShapeNode per highway type
+        for (highwayType, edgeCoordinates) in grouped {
+            let path = CGMutablePath()
+            var hasSegments = false
+
+            for coords in edgeCoordinates {
+                guard coords.count >= 2 else { continue }
+                var started = false
+
+                for coord in coords {
+                    guard let screenPos = projectToMapLocal(coord) else { continue }
+                    if !started {
+                        path.move(to: screenPos)
+                        started = true
+                    } else {
+                        path.addLine(to: screenPos)
+                    }
+                }
+                if started { hasSegments = true }
+            }
+
+            guard hasSegments else { continue }
+
+            let (color, zPos) = MapScene.trailStyle(for: highwayType)
+
+            let shapeNode = SKShapeNode(path: path)
+            shapeNode.strokeColor = color
+            shapeNode.lineWidth = 2
+            shapeNode.lineCap = .round
+            shapeNode.lineJoin = .round
+            shapeNode.zPosition = zPos
+            shapeNode.isAntialiased = true
+            shapeNode.name = "trail-\(highwayType)"
+
+            trailOverlayNodes[highwayType] = shapeNode
+            rotatingOverlaysNode.addChild(shapeNode)
+        }
+    }
+
+    /// Removes all trail overlay polylines from the map and clears the cache.
+    func clearTrailOverlays() {
+        for (_, node) in trailOverlayNodes {
+            node.removeFromParent()
+        }
+        trailOverlayNodes.removeAll()
+        cachedTrailEdges.removeAll()
+        lastTrailQueryBbox = nil
+        lastTrailQueryZoom = nil
+    }
+
+    /// Determines whether trail overlays need a fresh database query.
+    ///
+    /// Returns `true` if the zoom level changed or if the viewport has shifted
+    /// more than 25% of its width/height since the last query.
+    ///
+    /// - Parameters:
+    ///   - currentBbox: The current viewport bounding box.
+    ///   - currentZoom: The current zoom level.
+    /// - Returns: `true` if a new database query is needed.
+    func shouldRequeryTrails(currentBbox: BoundingBox, currentZoom: Int) -> Bool {
+        guard let lastBbox = lastTrailQueryBbox, let lastZoom = lastTrailQueryZoom else {
+            return true
+        }
+
+        // Always re-query on zoom change
+        if currentZoom != lastZoom { return true }
+
+        // Re-query when viewport center has shifted more than 25% of its dimensions
+        let lastWidth = lastBbox.east - lastBbox.west
+        let lastHeight = lastBbox.north - lastBbox.south
+        let centerDeltaLon = abs((currentBbox.east + currentBbox.west) / 2 - (lastBbox.east + lastBbox.west) / 2)
+        let centerDeltaLat = abs((currentBbox.north + currentBbox.south) / 2 - (lastBbox.north + lastBbox.south) / 2)
+
+        return centerDeltaLon > lastWidth * 0.25 || centerDeltaLat > lastHeight * 0.25
+    }
+
+    /// Records the bounding box and zoom level of the most recent trail query.
+    ///
+    /// - Parameters:
+    ///   - bbox: The bounding box used for the query.
+    ///   - zoom: The zoom level at query time.
+    func recordTrailQuery(bbox: BoundingBox, zoom: Int) {
+        lastTrailQueryBbox = bbox
+        lastTrailQueryZoom = zoom
     }
 
     // MARK: - Waypoint Markers
