@@ -111,6 +111,7 @@ struct MapView: View {
                     SpriteView(scene: scene)
                         .ignoresSafeArea()
                         .gesture(dragGesture)
+                        .allowsHitTesting(true)
                         .focusable()
                         .digitalCrownRotation(
                             detent: $mapRenderer.currentZoom,
@@ -127,9 +128,11 @@ struct MapView: View {
 
                 // Hike stats overlay (distance, elevation, time, vitals)
                 HikeStatsOverlay()
+                    .allowsHitTesting(false)
 
                 // UV index overlay (WeatherKit-based)
                 UVIndexOverlay()
+                    .allowsHitTesting(false)
 
                 // Navigation overlay for route guidance
                 NavigationOverlay(guidance: routeGuidance)
@@ -137,16 +140,12 @@ struct MapView: View {
                 // Overlays
                 VStack {
                     // Top bar with info
-                    if selectedRegion != nil {
-                        topInfoBar
-                    }
+                    topInfoBar
 
                     Spacer()
 
-                    // Bottom controls
-                    if selectedRegion != nil {
-                        bottomControls
-                    }
+                    // Bottom controls — always visible so recording works without a loaded map
+                    bottomControls
                 }
             }
         }
@@ -238,6 +237,9 @@ struct MapView: View {
     /// - A progress indicator if a file transfer is in progress
     /// - A "Select Region" button if local regions are available
     /// - An instruction to download from iPhone otherwise
+    ///
+    /// Also shows the current tracking status if recording is active without a map,
+    /// so the user knows their trail is being recorded.
     private var noMapView: some View {
         VStack(spacing: 12) {
             Image(systemName: "map")
@@ -246,6 +248,12 @@ struct MapView: View {
 
             Text("No Map Loaded")
                 .font(.headline)
+
+            if locationManager.isTracking {
+                Label("Recording trail...", systemImage: "location.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
 
             if connectivityManager.isReceivingFile {
                 ProgressView("Receiving map...")
@@ -274,14 +282,19 @@ struct MapView: View {
     }
 
     /// The top overlay bar showing the current zoom level and GPS tracking status.
+    ///
+    /// Zoom level is only shown when a map region is loaded. The GPS status
+    /// indicator is always visible.
     private var topInfoBar: some View {
         HStack {
-            // Zoom level
-            Text("z\(mapRenderer.currentZoom)")
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.ultraThinMaterial, in: Capsule())
+            // Zoom level (only meaningful when a map is loaded)
+            if selectedRegion != nil {
+                Text("z\(mapRenderer.currentZoom)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
 
             Spacer()
 
@@ -292,25 +305,34 @@ struct MapView: View {
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)
+        .allowsHitTesting(false)
     }
 
     /// The bottom control bar with center-on-user, pin, tracking toggle, and region picker buttons.
+    ///
+    /// Recording and waypoint buttons are always visible so that trail recording
+    /// works even when no map region is loaded. The center-on-user button is only
+    /// shown when a map scene is available.
     private var bottomControls: some View {
         HStack(spacing: 12) {
-            // Center on user / heading-up button
-            Button {
-                centerOnUser()
-            } label: {
-                Image(systemName: isCenteredOnUser && isHeadingUp ? "location.north.line.fill" : isCenteredOnUser ? "location.fill" : "location")
-                    .font(.title3)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(isCenteredOnUser ? .blue : .primary)
+            // Center on user / heading-up button (only useful when a map is loaded)
+            if selectedRegion != nil {
+                Button {
+                    centerOnUser()
+                    WKInterfaceDevice.current().play(.click)
+                } label: {
+                    Image(systemName: isCenteredOnUser && isHeadingUp ? "location.north.line.fill" : isCenteredOnUser ? "location.fill" : "location")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isCenteredOnUser ? .blue : .primary)
 
-            Spacer()
+                Spacer()
+            }
 
             // Drop waypoint pin button
             Button {
+                WKInterfaceDevice.current().play(.click)
                 showingAddWaypoint = true
             } label: {
                 Image(systemName: "mappin.and.ellipse")
@@ -323,6 +345,7 @@ struct MapView: View {
 
             // Start/Stop tracking
             Button {
+                WKInterfaceDevice.current().play(.click)
                 toggleTracking()
             } label: {
                 Image(systemName: locationManager.isTracking ? "stop.fill" : "play.fill")
@@ -335,6 +358,7 @@ struct MapView: View {
 
             // Region picker
             Button {
+                WKInterfaceDevice.current().play(.click)
                 showingRegionPicker = true
             } label: {
                 Image(systemName: "map")
@@ -350,10 +374,12 @@ struct MapView: View {
 
     /// A drag gesture that disables auto-centering and heading-up when the user pans the map.
     ///
-    /// During active tracking or navigation, schedules an auto-recenter timer so the map
-    /// returns to following the user after ``autoRecenterDelaySec`` seconds of inactivity.
+    /// Uses a minimum drag distance of 8 points to avoid intercepting tap gestures
+    /// intended for the overlay buttons. During active tracking or navigation,
+    /// schedules an auto-recenter timer so the map returns to following the user
+    /// after ``autoRecenterDelaySec`` seconds of inactivity.
     private var dragGesture: some Gesture {
-        DragGesture()
+        DragGesture(minimumDistance: 8)
             .onChanged { value in
                 isCenteredOnUser = false
                 isHeadingUp = false
@@ -587,7 +613,9 @@ struct MapView: View {
     /// Starts the periodic auto-save timer for track state recovery.
     ///
     /// Fires every ``TrackRecoveryManager/autoSaveIntervalSec`` (5 minutes) to
-    /// save the current track points and statistics to disk.
+    /// save the current track points and statistics to disk. The file I/O is
+    /// dispatched to a background queue to avoid blocking the main thread and
+    /// causing button unresponsiveness during active recording.
     private func startAutoSaveTimer() {
         // Defensive: invalidate any existing timer before creating a new one
         stopAutoSaveTimer()
@@ -599,13 +627,20 @@ struct MapView: View {
             repeats: true
         ) { _ in
             guard locManager.isTracking, !locManager.trackPoints.isEmpty else { return }
-            TrackRecoveryManager.saveState(
-                trackPoints: locManager.trackPoints,
-                totalDistance: locManager.totalDistance,
-                elevationGain: locManager.elevationGain,
-                elevationLoss: locManager.elevationLoss,
-                regionId: regionId
-            )
+            // Snapshot the data on the main thread, then save on a background queue
+            let points = locManager.trackPoints
+            let distance = locManager.totalDistance
+            let gain = locManager.elevationGain
+            let loss = locManager.elevationLoss
+            DispatchQueue.global(qos: .utility).async {
+                TrackRecoveryManager.saveState(
+                    trackPoints: points,
+                    totalDistance: distance,
+                    elevationGain: gain,
+                    elevationLoss: loss,
+                    regionId: regionId
+                )
+            }
         }
     }
 

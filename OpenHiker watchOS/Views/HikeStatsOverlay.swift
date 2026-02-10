@@ -67,9 +67,7 @@ struct HikeStatsOverlay: View {
             }
             .padding(.horizontal, 8)
             .padding(.top, 24)
-            .onTapGesture {
-                resetAutoHideTimer()
-            }
+            .allowsHitTesting(false)
             .onChange(of: locationManager.currentLocation) { _, _ in
                 showAndResetTimer()
             }
@@ -83,17 +81,14 @@ struct HikeStatsOverlay: View {
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.3), value: isVisible)
         } else if locationManager.isTracking && !isVisible {
-            // Small invisible tap target at the top to bring the overlay back.
-            // Must NOT cover the full screen — that blocks the bottom toolbar buttons.
-            VStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        showAndResetTimer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: 40)
-                Spacer()
-            }
+            // The overlay auto-shows on location updates; no tap target needed.
+            // Keeping the view present so .onChange still fires to bring it back.
+            Color.clear
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+                .onChange(of: locationManager.currentLocation) { _, _ in
+                    showAndResetTimer()
+                }
         }
     }
 
