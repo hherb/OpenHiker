@@ -54,7 +54,7 @@ struct iOSHikeStatsBar: View {
 
     // MARK: - Hike Stats Row
 
-    /// Distance, duration, and elevation gain badges.
+    /// Distance, duration, elevation gain, and GPS signal quality badges.
     private var hikeStatsRow: some View {
         HStack(spacing: 12) {
             statBadge(
@@ -82,7 +82,43 @@ struct iOSHikeStatsBar: View {
                 ),
                 iconColor: .green
             )
+
+            // GPS signal quality indicator — warns when accuracy degrades
+            gpsSignalBadge
         }
+    }
+
+    /// A compact GPS signal quality badge.
+    ///
+    /// Shows a colored icon that changes based on ``iOSLocationManager/gpsSignalQuality``:
+    /// - Green: good signal (< 10m accuracy)
+    /// - Yellow: fair signal (10–50m)
+    /// - Red pulsing: poor or no signal (> 50m)
+    private var gpsSignalBadge: some View {
+        let quality = locationManager.gpsSignalQuality
+        let icon: String
+        let color: Color
+
+        switch quality {
+        case .good:
+            icon = "location.fill"
+            color = .green
+        case .fair:
+            icon = "location.fill"
+            color = .yellow
+        case .poor:
+            icon = "location.slash.fill"
+            color = .red
+        case .none, .unknown:
+            icon = "location.slash.fill"
+            color = .red
+        }
+
+        return Image(systemName: icon)
+            .font(.system(size: 12))
+            .foregroundStyle(color)
+            .opacity(quality == .poor || quality == .none || quality == .unknown ? 1.0 : 0.8)
+            .symbolEffect(.pulse, isActive: quality == .poor || quality == .none)
     }
 
     // MARK: - Watch Health Data Row

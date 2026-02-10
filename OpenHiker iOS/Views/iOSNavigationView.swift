@@ -785,13 +785,16 @@ final class NavigationTileOverlay: MKTileOverlay {
     ///
     /// Searches all open tile stores for a matching tile and returns the first
     /// result found. If no tile is available, returns an error.
+    ///
+    /// MapKit provides tile coordinates in standard XYZ (slippy map) convention.
+    /// ``TileStore/getTile(_:)`` handles the TMS y-flip internally, so we pass
+    /// the XYZ coordinates through unchanged.
     override func loadTile(
         at path: MKTileOverlayPath,
         result: @escaping (Data?, Error?) -> Void
     ) {
-        // MBTiles uses TMS y-coordinate (inverted)
-        let tmsY = (1 << path.z) - 1 - path.y
-        let coordinate = TileCoordinate(x: path.x, y: tmsY, z: path.z)
+        // Pass XYZ coordinates directly — TileStore.getTile() handles TMS conversion
+        let coordinate = TileCoordinate(x: path.x, y: path.y, z: path.z)
 
         for store in tileStores {
             if let data = try? store.getTile(coordinate) {

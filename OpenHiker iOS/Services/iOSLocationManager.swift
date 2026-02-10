@@ -84,6 +84,12 @@ final class iOSLocationManager: NSObject, ObservableObject {
     /// Total cumulative elevation loss in meters (incrementally updated, positive value).
     @Published private(set) var elevationLoss: Double = 0
 
+    /// The current GPS signal quality based on horizontal accuracy.
+    ///
+    /// Updated with every location update. Views can observe this to show a
+    /// warning when accuracy degrades (e.g., in dense forest or canyons).
+    @Published private(set) var gpsSignalQuality: GPSSignalQuality = .unknown
+
     /// The current GPS accuracy mode.
     @Published var gpsMode: GPSMode = .highAccuracy {
         didSet {
@@ -135,12 +141,67 @@ final class iOSLocationManager: NSObject, ObservableObject {
         }
     }
 
+    /// Describes the current GPS signal quality derived from horizontal accuracy.
+    ///
+    /// Used by the navigation UI to show a warning indicator when the GPS signal
+    /// degrades below usable thresholds.
+    enum GPSSignalQuality: String {
+        /// No location data received yet.
+        case unknown = "Unknown"
+
+        /// Horizontal accuracy <= 10m — excellent for trail navigation.
+        case good = "Good"
+
+        /// Horizontal accuracy 10–50m — acceptable but reduced precision.
+        case fair = "Fair"
+
+        /// Horizontal accuracy 50–200m — degraded signal, points still recorded
+        /// but may be inaccurate. Common in dense forest or canyons.
+        case poor = "Poor"
+
+        /// Horizontal accuracy > 200m or negative — essentially no usable signal.
+        case none = "No Signal"
+
+        /// Classifies a horizontal accuracy value into a signal quality level.
+        ///
+        /// - Parameter accuracy: The `CLLocation.horizontalAccuracy` value.
+        /// - Returns: The corresponding signal quality.
+        static func from(accuracy: CLLocationAccuracy) -> GPSSignalQuality {
+            if accuracy < 0 { return .none }
+            if accuracy <= 10 { return .good }
+            if accuracy <= 50 { return .fair }
+            if accuracy <= 200 { return .poor }
+            return .none
+        }
+    }
+
+    // MARK: - Tracking State Persistence
+
+    /// UserDefaults key for the persisted tracking state flag.
+    private static let isTrackingKey = "iOSLocationManager.isTracking"
+
+    /// File URL for persisted track points (JSON array of lat/lon/alt/timestamp).
+    private static var trackPointsFileURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("active_track_points.json")
+    }
+
+    /// File URL for persisted tracking statistics.
+    private static var trackStatsFileURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("active_track_stats.json")
+    }
+
     // MARK: - Initialization
 
     /// Initializes the location manager and configures it for hiking use.
+    ///
+    /// If a tracking session was active when the app was previously terminated,
+    /// the track points and statistics are restored and tracking resumes automatically.
     override init() {
         super.init()
         setupLocationManager()
+        restoreTrackingStateIfNeeded()
     }
 
     /// Configures the underlying CLLocationManager with hiking-optimized settings.
@@ -174,11 +235,22 @@ final class iOSLocationManager: NSObject, ObservableObject {
     /// Starts recording a hike track.
     ///
     /// Clears any previous track points, begins location and heading updates,
-    /// and sets ``isTracking`` to `true`.
+    /// and sets ``isTracking`` to `true`. The tracking state is persisted to disk
+    /// so it can be restored if the app is terminated by iOS.
+    ///
+    /// If "Always" authorization hasn't been granted yet, it's requested here.
+    /// "Always" ensures iOS delivers location updates reliably even when the app
+    /// is backgrounded or suspended during a long hike.
     func startTracking() {
         guard authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else {
             requestPermission()
             return
+        }
+
+        // Upgrade to "Always" if still on "When In Use" — needed for reliable
+        // background tracking during long hikes where the app may be backgrounded
+        if authorizationStatus == .authorizedWhenInUse {
+            requestAlwaysPermission()
         }
 
         trackPoints.removeAll()
@@ -190,6 +262,7 @@ final class iOSLocationManager: NSObject, ObservableObject {
 
         locationManager.startUpdatingLocation()
         locationManager.startUpdatingHeading()
+        persistTrackingState()
 
         print("Started iOS GPS tracking in \(gpsMode.rawValue) mode")
     }
@@ -197,10 +270,12 @@ final class iOSLocationManager: NSObject, ObservableObject {
     /// Stops recording the current hike track.
     ///
     /// The recorded ``trackPoints`` remain available for saving.
+    /// Clears persisted tracking state since the session is intentionally ended.
     func stopTracking() {
         isTracking = false
         locationManager.stopUpdatingLocation()
         locationManager.stopUpdatingHeading()
+        clearPersistedTrackingState()
 
         print("Stopped iOS GPS tracking. Recorded \(trackPoints.count) points")
     }
@@ -254,6 +329,98 @@ final class iOSLocationManager: NSObject, ObservableObject {
             elevationLoss -= elevationDiff
         }
     }
+
+    // MARK: - State Persistence
+
+    /// Persists the current tracking state (flag + stats) to disk.
+    ///
+    /// Called when tracking starts and periodically as new points are recorded.
+    /// Track points are saved to a JSON file so the session can be recovered
+    /// if iOS terminates the app in the background.
+    private func persistTrackingState() {
+        UserDefaults.standard.set(isTracking, forKey: Self.isTrackingKey)
+
+        // Persist stats
+        let stats: [String: Double] = [
+            "totalDistance": totalDistance,
+            "elevationGain": elevationGain,
+            "elevationLoss": elevationLoss
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: stats) {
+            try? data.write(to: Self.trackStatsFileURL, options: .atomic)
+        }
+    }
+
+    /// Persists the current track points to disk.
+    ///
+    /// Called periodically (every 10 points) to avoid excessive I/O while still
+    /// ensuring most of the track survives app termination.
+    private func persistTrackPoints() {
+        let points = trackPoints.map { location -> [String: Double] in
+            [
+                "lat": location.coordinate.latitude,
+                "lon": location.coordinate.longitude,
+                "alt": location.altitude,
+                "ts": location.timestamp.timeIntervalSince1970,
+                "hacc": location.horizontalAccuracy,
+                "vacc": location.verticalAccuracy
+            ]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: points) else { return }
+        try? data.write(to: Self.trackPointsFileURL, options: .atomic)
+
+        // Also update stats
+        persistTrackingState()
+    }
+
+    /// Restores tracking state after app relaunch if a session was active.
+    ///
+    /// Reads the persisted flag, track points, and statistics from disk,
+    /// then resumes location updates so recording continues seamlessly.
+    private func restoreTrackingStateIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: Self.isTrackingKey) else { return }
+
+        // Restore track points
+        if let data = try? Data(contentsOf: Self.trackPointsFileURL),
+           let points = try? JSONSerialization.jsonObject(with: data) as? [[String: Double]] {
+            trackPoints = points.compactMap { dict in
+                guard let lat = dict["lat"], let lon = dict["lon"],
+                      let alt = dict["alt"], let ts = dict["ts"],
+                      let hacc = dict["hacc"], let vacc = dict["vacc"] else { return nil }
+                return CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                    altitude: alt,
+                    horizontalAccuracy: hacc,
+                    verticalAccuracy: vacc,
+                    timestamp: Date(timeIntervalSince1970: ts)
+                )
+            }
+        }
+
+        // Restore stats
+        if let data = try? Data(contentsOf: Self.trackStatsFileURL),
+           let stats = try? JSONSerialization.jsonObject(with: data) as? [String: Double] {
+            totalDistance = stats["totalDistance"] ?? 0
+            elevationGain = stats["elevationGain"] ?? 0
+            elevationLoss = stats["elevationLoss"] ?? 0
+        }
+
+        // Resume tracking
+        isTracking = true
+        locationManager.startUpdatingLocation()
+        locationManager.startUpdatingHeading()
+
+        print("Restored iOS tracking session with \(trackPoints.count) points")
+    }
+
+    /// Removes all persisted tracking state files from disk.
+    ///
+    /// Called when the user intentionally stops tracking.
+    private func clearPersistedTrackingState() {
+        UserDefaults.standard.set(false, forKey: Self.isTrackingKey)
+        try? FileManager.default.removeItem(at: Self.trackPointsFileURL)
+        try? FileManager.default.removeItem(at: Self.trackStatsFileURL)
+    }
 }
 
 // MARK: - CLLocationManagerDelegate
@@ -278,23 +445,43 @@ extension iOSLocationManager: CLLocationManagerDelegate {
 
     /// Called when new locations are available from Core Location.
     ///
-    /// Filters out readings with horizontal accuracy >= 100m or negative accuracy.
-    /// When tracking, only appends points that exceed the GPS mode's distance filter.
+    /// Updates ``gpsSignalQuality`` on every update so the UI can warn the user
+    /// about degraded GPS. Only truly invalid readings (negative accuracy) are
+    /// discarded. Low-accuracy points (> 100m) are still recorded during tracking
+    /// so that gaps don't appear in the track — the slightly inaccurate path is
+    /// preferable to a missing segment. Elevation stats are skipped for low-accuracy
+    /// points to avoid altitude noise.
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
 
-        guard location.horizontalAccuracy >= 0 && location.horizontalAccuracy < 100 else {
-            return
-        }
+        // Update signal quality for every update (including poor ones)
+        gpsSignalQuality = GPSSignalQuality.from(accuracy: location.horizontalAccuracy)
+
+        // Discard only truly invalid readings (negative accuracy = no fix at all)
+        guard location.horizontalAccuracy >= 0 else { return }
 
         currentLocation = location
 
         if isTracking {
+            let isHighAccuracy = location.horizontalAccuracy < 100
+
             if let lastPoint = trackPoints.last {
                 let distance = location.distance(from: lastPoint)
                 if distance >= gpsMode.distanceFilter {
-                    updateCachedStats(from: lastPoint, to: location)
+                    // Only update elevation stats for high-accuracy points to avoid
+                    // barometric altitude noise from degraded GPS readings
+                    if isHighAccuracy {
+                        updateCachedStats(from: lastPoint, to: location)
+                    } else {
+                        // Still count distance even for low-accuracy points
+                        totalDistance += distance
+                    }
                     trackPoints.append(location)
+
+                    // Persist track to disk every 10 points for crash recovery
+                    if trackPoints.count % 10 == 0 {
+                        persistTrackPoints()
+                    }
                 }
             } else {
                 trackPoints.append(location)
