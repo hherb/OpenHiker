@@ -125,6 +125,10 @@ class MapViewModel @Inject constructor(
     /** Whether fine location permission is currently granted. */
     val locationPermissionGranted: StateFlow<Boolean> = _locationPermissionGranted.asStateFlow()
 
+    private val _hasSavedPosition = MutableStateFlow(false)
+    /** True if a camera position was previously saved (not a first launch). */
+    val hasSavedPosition: StateFlow<Boolean> = _hasSavedPosition.asStateFlow()
+
     /** Observable list of all downloaded regions for boundary overlays. */
     val regions: StateFlow<List<RegionMetadata>> = regionRepository.regions
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -419,10 +423,13 @@ class MapViewModel @Inject constructor(
      */
     private suspend fun restoreCameraPosition() {
         val prefs = dataStore.data.first()
-        val latitude = prefs[KEY_LATITUDE] ?: CameraState.DEFAULT_LATITUDE
-        val longitude = prefs[KEY_LONGITUDE] ?: CameraState.DEFAULT_LONGITUDE
+        val savedLat = prefs[KEY_LATITUDE]
+        val savedLon = prefs[KEY_LONGITUDE]
+        val latitude = savedLat ?: CameraState.DEFAULT_LATITUDE
+        val longitude = savedLon ?: CameraState.DEFAULT_LONGITUDE
         val zoom = prefs[KEY_ZOOM] ?: CameraState.DEFAULT_ZOOM
         _cameraState.value = CameraState(latitude, longitude, zoom)
+        _hasSavedPosition.value = savedLat != null && savedLon != null
 
         val tileSourceId = prefs[KEY_TILE_SOURCE]
         if (tileSourceId != null) {
