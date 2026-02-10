@@ -31,12 +31,13 @@ import SwiftUI
 /// ## Layout
 /// ```
 /// ┌──────────────────────────────┐
-/// │  ↰  In 120m, turn left      │  ← Instruction bar
-/// │     onto Blue Ridge Trail    │
+/// │ ↰ 120m Turn left onto trail  │  ← Thin instruction strip
 /// ├──────────────────────────────┤
+/// │                              │
 /// │         [Map View]           │
+/// │                              │
 /// ├──────────────────────────────┤
-/// │  2.4 km remaining            │  ← Progress bar
+/// │ ━━━━━━━━━  2.4km rem.  62%  │  ← Thin progress bar
 /// └──────────────────────────────┘
 /// ```
 struct NavigationOverlay: View {
@@ -45,128 +46,118 @@ struct NavigationOverlay: View {
     var body: some View {
         if guidance.isNavigating {
             VStack(spacing: 0) {
-                // Top instruction bar
+                // Compact instruction strip pinned to top
                 instructionBar
                     .background(instructionBarBackground)
 
                 Spacer()
 
-                // Bottom progress bar
+                // Thin progress bar pinned to bottom (above toolbar)
                 progressBar
                     .background(.ultraThinMaterial)
             }
+            .allowsHitTesting(false)
         }
     }
 
     // MARK: - Instruction Bar
 
-    /// The top bar showing the upcoming turn direction and instruction text.
+    /// Compact top strip showing turn direction and instruction in a single line.
     private var instructionBar: some View {
-        HStack(spacing: 8) {
-            // Turn direction icon (SF Symbols already indicate direction)
+        HStack(spacing: 4) {
+            // Turn direction icon
             if let instruction = guidance.currentInstruction {
                 Image(systemName: instruction.direction.sfSymbolName)
-                    .font(.title3)
+                    .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundStyle(guidance.isOffRoute ? .red : .white)
+                    .foregroundStyle(guidance.isOffRoute ? .white : .white)
             }
 
-            // Instruction text
-            VStack(alignment: .leading, spacing: 2) {
-                if guidance.isOffRoute {
-                    offRouteText
-                } else {
-                    instructionText
-                }
+            // Instruction text — single line, compact
+            if guidance.isOffRoute {
+                offRouteText
+            } else {
+                instructionText
             }
-            .lineLimit(2)
-            .minimumScaleFactor(0.7)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
     }
 
-    /// Text displayed when navigation is on-route.
+    /// Single-line text displayed when navigation is on-route.
     private var instructionText: some View {
-        Group {
+        HStack(spacing: 4) {
             if let distance = guidance.distanceToNextTurn {
-                Text("In \(formatShortDistance(distance))")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
+                Text(formatShortDistance(distance))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
             }
             if let instruction = guidance.currentInstruction {
                 Text(instruction.description)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.system(size: 11))
                     .foregroundStyle(.white)
             }
         }
     }
 
-    /// Text displayed when the user is off-route.
+    /// Single-line compact text displayed when the user is off-route.
     private var offRouteText: some View {
-        Group {
+        HStack(spacing: 4) {
             Text("OFF ROUTE")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundStyle(.red)
-
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
             Text("Return to trail")
-                .font(.caption2)
+                .font(.system(size: 10))
                 .foregroundStyle(.white.opacity(0.8))
         }
     }
 
-    /// Background color for the instruction bar: purple (normal) or red (off-route).
+    /// Background color for the instruction bar: red (off-route) or purple (normal), semi-transparent.
     private var instructionBarBackground: some View {
         Group {
             if guidance.isOffRoute {
-                Color.red.opacity(0.85)
+                Color.red.opacity(0.7)
             } else {
-                Color.purple.opacity(0.85)
+                Color.purple.opacity(0.7)
             }
         }
     }
 
     // MARK: - Progress Bar
 
-    /// The bottom bar showing remaining distance and progress.
+    /// Thin bottom bar showing remaining distance and progress.
     private var progressBar: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             // Progress bar
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    // Background track
                     Capsule()
                         .fill(.white.opacity(0.2))
-                        .frame(height: 4)
-
-                    // Progress fill
+                        .frame(height: 3)
                     Capsule()
                         .fill(.purple)
-                        .frame(width: max(4, geometry.size.width * guidance.progress), height: 4)
+                        .frame(width: max(3, geometry.size.width * guidance.progress), height: 3)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 3)
 
-            // Remaining distance text
+            // Remaining distance — single compact line
             HStack {
-                Text(formatShortDistance(guidance.remainingDistance))
-                    .font(.caption2)
+                Text("\(formatShortDistance(guidance.remainingDistance)) remaining")
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                Text("remaining")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
                 Spacer()
                 Text("\(Int(guidance.progress * 100))%")
-                    .font(.caption2)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
     }
 
     // MARK: - Helpers
