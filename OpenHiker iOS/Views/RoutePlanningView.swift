@@ -241,24 +241,28 @@ struct RoutePlanningView: View {
                 computeRouteFromWaypoints(loop: false)
             } label: {
                 Label("Start → End", systemImage: "arrow.right")
-                    .font(.subheadline.weight(.medium))
+                    .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
             .disabled(waypoints.count < 2 || isComputing)
 
             Button {
                 computeRouteFromWaypoints(loop: true)
             } label: {
                 Label("Back to Start", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.subheadline.weight(.medium))
+                    .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
             .disabled(waypoints.count < 2 || isComputing)
         }
         .padding(.horizontal)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Stats Section

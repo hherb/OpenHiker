@@ -241,7 +241,8 @@ struct RoutePlanningMapView: UIViewRepresentable {
                 color: rpAnnotation.routeAnnotation.uiColor,
                 diameter: diameter,
                 borderWidth: isRepositioning ? Self.repositionBorderWidth : Self.pinBorderWidth,
-                borderColor: isRepositioning ? .systemYellow : .white
+                borderColor: isRepositioning ? .systemYellow : .white,
+                label: "\(rpAnnotation.routeAnnotation.index + 1)"
             )
             view.centerOffset = CGPoint(x: 0, y: -diameter / 2)
         }
@@ -261,7 +262,8 @@ struct RoutePlanningMapView: UIViewRepresentable {
         color: UIColor,
         diameter: CGFloat,
         borderWidth: CGFloat,
-        borderColor: UIColor
+        borderColor: UIColor,
+        label: String? = nil
     ) -> UIImage {
         let size = CGSize(width: diameter, height: diameter)
         let renderer = UIGraphicsImageRenderer(size: size)
@@ -272,6 +274,23 @@ struct RoutePlanningMapView: UIViewRepresentable {
             ctx.cgContext.setStrokeColor(borderColor.cgColor)
             ctx.cgContext.setLineWidth(borderWidth)
             ctx.cgContext.strokeEllipse(in: rect)
+
+            // Draw waypoint number label centered on the pin
+            if let label = label {
+                let fontSize = diameter * 0.45
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.boldSystemFont(ofSize: fontSize),
+                    .foregroundColor: UIColor.white
+                ]
+                let textSize = (label as NSString).size(withAttributes: attributes)
+                let textRect = CGRect(
+                    x: (diameter - textSize.width) / 2,
+                    y: (diameter - textSize.height) / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                (label as NSString).draw(in: textRect, withAttributes: attributes)
+            }
         }
     }
 
@@ -338,7 +357,8 @@ struct RoutePlanningMapView: UIViewRepresentable {
                 borderWidth: isRepositioning
                     ? RoutePlanningMapView.repositionBorderWidth
                     : RoutePlanningMapView.pinBorderWidth,
-                borderColor: isRepositioning ? .systemYellow : .white
+                borderColor: isRepositioning ? .systemYellow : .white,
+                label: "\(routePoint.routeAnnotation.index + 1)"
             )
             view.centerOffset = CGPoint(x: 0, y: -diameter / 2)
 
