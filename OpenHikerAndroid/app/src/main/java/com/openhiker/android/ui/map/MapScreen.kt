@@ -19,15 +19,21 @@
 package com.openhiker.android.ui.map
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +54,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.openhiker.android.ui.components.RequestLocationPermission
 import com.openhiker.android.ui.components.TileSourceSelector
 import com.openhiker.android.ui.components.hasLocationPermission
+import com.openhiker.core.geo.BoundingBox
 import com.openhiker.core.model.TileServer
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -87,6 +94,7 @@ private const val BOUNDARY_LINE_LAYER_ID = "region-boundaries-line"
  * proper lifecycle management. Camera position changes are debounced
  * and persisted to DataStore.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     viewModel: MapViewModel = hiltViewModel()
@@ -98,6 +106,16 @@ fun MapScreen(
     val mapMode by viewModel.mapMode.collectAsState()
     val locationGranted by viewModel.locationPermissionGranted.collectAsState()
     val regions by viewModel.regions.collectAsState()
+
+    // Download state
+    val showDownloadSheet by viewModel.showDownloadSheet.collectAsState()
+    val downloadRegionName by viewModel.downloadRegionName.collectAsState()
+    val downloadMinZoom by viewModel.downloadMinZoom.collectAsState()
+    val downloadMaxZoom by viewModel.downloadMaxZoom.collectAsState()
+    val downloadTileServer by viewModel.downloadTileServer.collectAsState()
+    val visibleBounds by viewModel.visibleBounds.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val isDownloading by viewModel.isDownloading.collectAsState()
 
     // Track whether we need to request location permission
     var shouldRequestPermission by remember { mutableStateOf(false) }
@@ -178,7 +196,7 @@ fun MapScreen(
                 .zoom(cameraState.zoom)
                 .build()
 
-            // Listen for camera changes to persist position
+            // Listen for camera changes to persist position and capture visible bounds
             map.addOnCameraIdleListener {
                 val target = map.cameraPosition.target
                 if (target != null) {
@@ -186,6 +204,17 @@ fun MapScreen(
                         latitude = target.latitude,
                         longitude = target.longitude,
                         zoom = map.cameraPosition.zoom
+                    )
+
+                    // Capture visible bounds for region download
+                    val bounds = map.projection.visibleRegion.latLngBounds
+                    viewModel.updateVisibleBounds(
+                        BoundingBox(
+                            north = bounds.latitudeNorth,
+                            south = bounds.latitudeSouth,
+                            east = bounds.longitudeEast,
+                            west = bounds.longitudeWest
+                        )
                     )
                 }
             }
@@ -247,29 +276,71 @@ fun MapScreen(
             }
         }
 
-        // My Location FAB (bottom-right)
-        if (locationGranted) {
-            FloatingActionButton(
-                onClick = {
-                    mapLibreMap?.let { map ->
-                        val locationComponent = map.locationComponent
-                        val lastLocation = locationComponent.lastKnownLocation
-                        if (lastLocation != null) {
-                            map.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(
-                                    LatLng(lastLocation.latitude, lastLocation.longitude),
-                                    15.0
+        // FABs column (bottom-right): download + my location
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Download visible region FAB (hidden during active download)
+            if (!isDownloading) {
+                SmallFloatingActionButton(
+                    onClick = { viewModel.showDownloadSheet() }
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = "Download visible region")
+                }
+            }
+
+            // My Location FAB
+            if (locationGranted) {
+                FloatingActionButton(
+                    onClick = {
+                        mapLibreMap?.let { map ->
+                            val locationComponent = map.locationComponent
+                            val lastLocation = locationComponent.lastKnownLocation
+                            if (lastLocation != null) {
+                                map.animateCamera(
+                                    CameraUpdateFactory.newLatLngZoom(
+                                        LatLng(lastLocation.latitude, lastLocation.longitude),
+                                        15.0
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-            ) {
-                Icon(Icons.Default.MyLocation, contentDescription = "My location")
+                ) {
+                    Icon(Icons.Default.MyLocation, contentDescription = "My location")
+                }
             }
+        }
+    }
+
+    // Download configuration bottom sheet
+    if (showDownloadSheet || isDownloading) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isDownloading) {
+                    viewModel.dismissDownloadSheet()
+                }
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            MapDownloadSheet(
+                regionName = downloadRegionName,
+                minZoom = downloadMinZoom,
+                maxZoom = downloadMaxZoom,
+                tileServer = downloadTileServer,
+                visibleBounds = visibleBounds,
+                downloadProgress = downloadProgress,
+                isDownloading = isDownloading,
+                onNameChanged = { viewModel.updateDownloadRegionName(it) },
+                onZoomRangeChanged = { min, max -> viewModel.updateDownloadZoomRange(min, max) },
+                onTileServerSelected = { viewModel.updateDownloadTileServer(it) },
+                onDownloadClicked = { viewModel.startDownload() },
+                onCancelDownload = { viewModel.cancelDownload() },
+                onDismiss = { viewModel.dismissDownloadSheet() }
+            )
         }
     }
 }

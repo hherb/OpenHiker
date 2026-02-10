@@ -29,11 +29,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.RegionRepository
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.service.download.TileDownloadService
 import com.openhiker.android.service.map.OfflineStyleGenerator
+import com.openhiker.core.geo.BoundingBox
+import com.openhiker.core.geo.TileRange
+import com.openhiker.core.model.RegionDownloadProgress
 import com.openhiker.core.model.RegionMetadata
 import com.openhiker.core.model.TileServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -102,7 +107,8 @@ sealed class MapMode {
 class MapViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val regionRepository: RegionRepository,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val downloadService: TileDownloadService
 ) : ViewModel() {
 
     private val dataStore = context.mapDataStore
@@ -254,6 +260,150 @@ class MapViewModel @Inject constructor(
         )
     }
 
+    // MARK: - Region Download
+
+    private val _showDownloadSheet = MutableStateFlow(false)
+    /** Whether the download configuration sheet is showing. */
+    val showDownloadSheet: StateFlow<Boolean> = _showDownloadSheet.asStateFlow()
+
+    private val _downloadRegionName = MutableStateFlow("")
+    /** User-entered name for the region to download. */
+    val downloadRegionName: StateFlow<String> = _downloadRegionName.asStateFlow()
+
+    private val _downloadMinZoom = MutableStateFlow(DEFAULT_DOWNLOAD_MIN_ZOOM)
+    /** Minimum zoom level for download. */
+    val downloadMinZoom: StateFlow<Int> = _downloadMinZoom.asStateFlow()
+
+    private val _downloadMaxZoom = MutableStateFlow(DEFAULT_DOWNLOAD_MAX_ZOOM)
+    /** Maximum zoom level for download. */
+    val downloadMaxZoom: StateFlow<Int> = _downloadMaxZoom.asStateFlow()
+
+    private val _downloadTileServer = MutableStateFlow(TileServer.OPEN_TOPO_MAP)
+    /** Tile server for download. */
+    val downloadTileServer: StateFlow<TileServer> = _downloadTileServer.asStateFlow()
+
+    private val _visibleBounds = MutableStateFlow<BoundingBox?>(null)
+    /** The currently visible map bounds, updated on camera idle. */
+    val visibleBounds: StateFlow<BoundingBox?> = _visibleBounds.asStateFlow()
+
+    /** Download progress from the tile download service. */
+    val downloadProgress: StateFlow<RegionDownloadProgress?> = downloadService.progress
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), null)
+
+    /** Whether a download is currently in progress. */
+    val isDownloading: StateFlow<Boolean> = downloadService.isDownloading
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), false)
+
+    private var downloadJob: Job? = null
+
+    /**
+     * Updates the currently visible map bounds.
+     *
+     * Called from MapScreen when the camera stops moving.
+     *
+     * @param bounds The visible geographic bounds.
+     */
+    fun updateVisibleBounds(bounds: BoundingBox) {
+        _visibleBounds.value = bounds
+    }
+
+    /**
+     * Opens the download configuration sheet with default values.
+     *
+     * Resets the region name, zoom levels, and tile server to defaults.
+     * The tile server defaults to the current online tile source.
+     */
+    fun showDownloadSheet() {
+        _downloadRegionName.value = ""
+        _downloadMinZoom.value = DEFAULT_DOWNLOAD_MIN_ZOOM
+        _downloadMaxZoom.value = DEFAULT_DOWNLOAD_MAX_ZOOM
+        _downloadTileServer.value = when (val mode = _mapMode.value) {
+            is MapMode.Online -> mode.tileServer
+            is MapMode.Offline -> TileServer.OPEN_TOPO_MAP
+        }
+        _showDownloadSheet.value = true
+    }
+
+    /**
+     * Dismisses the download configuration sheet.
+     */
+    fun dismissDownloadSheet() {
+        _showDownloadSheet.value = false
+    }
+
+    /**
+     * Updates the user-entered region name for download.
+     *
+     * @param name The new region name.
+     */
+    fun updateDownloadRegionName(name: String) {
+        _downloadRegionName.value = name
+    }
+
+    /**
+     * Updates the zoom level range for download.
+     *
+     * @param minZoom New minimum zoom level.
+     * @param maxZoom New maximum zoom level.
+     */
+    fun updateDownloadZoomRange(minZoom: Int, maxZoom: Int) {
+        _downloadMinZoom.value = minZoom
+        _downloadMaxZoom.value = maxZoom
+    }
+
+    /**
+     * Updates the tile server for download.
+     *
+     * @param server The tile server to use.
+     */
+    fun updateDownloadTileServer(server: TileServer) {
+        _downloadTileServer.value = server
+    }
+
+    /**
+     * Calculates the estimated tile count for the current download configuration.
+     *
+     * @return The estimated number of tiles, or 0 if no bounds are selected.
+     */
+    fun getEstimatedTileCount(): Int {
+        val bounds = _visibleBounds.value ?: return 0
+        return TileRange.estimateTileCount(
+            bounds,
+            _downloadMinZoom.value.._downloadMaxZoom.value
+        )
+    }
+
+    /**
+     * Starts downloading the currently visible map region.
+     *
+     * Delegates to [TileDownloadService] which handles rate limiting,
+     * retry logic, and progress reporting.
+     */
+    fun startDownload() {
+        val bounds = _visibleBounds.value ?: return
+        val name = _downloadRegionName.value.ifBlank { "Region" }
+
+        _showDownloadSheet.value = false
+
+        downloadJob = viewModelScope.launch {
+            downloadService.downloadRegion(
+                name = name,
+                boundingBox = bounds,
+                minZoom = _downloadMinZoom.value,
+                maxZoom = _downloadMaxZoom.value,
+                tileServer = _downloadTileServer.value
+            )
+        }
+    }
+
+    /**
+     * Cancels the current download.
+     */
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+    }
+
     /**
      * Restores camera position and tile source from DataStore.
      */
@@ -278,5 +428,10 @@ class MapViewModel @Inject constructor(
         private val KEY_LONGITUDE = doublePreferencesKey("lastLongitude")
         private val KEY_ZOOM = doublePreferencesKey("lastZoom")
         private val KEY_TILE_SOURCE = stringPreferencesKey("tileSourceId")
+
+        /** Default minimum zoom level for region downloads. */
+        private const val DEFAULT_DOWNLOAD_MIN_ZOOM = 12
+        /** Default maximum zoom level for region downloads. */
+        private const val DEFAULT_DOWNLOAD_MAX_ZOOM = 16
     }
 }

@@ -71,6 +71,42 @@ struct iOSNavigationView: View {
     /// The selected route for navigation (triggers route picker dismissal).
     @State private var selectedRoute: PlannedRoute?
 
+    /// The currently visible map region, captured from `NavigationMapView`.
+    @State private var visibleMapRegion: MKCoordinateRegion?
+
+    /// Whether the download config sheet is showing.
+    @State private var showingDownloadSheet = false
+
+    /// Region name for download configuration.
+    @State private var downloadRegionName = ""
+
+    /// Minimum zoom level for download.
+    @State private var downloadMinZoom: Int = 12
+
+    /// Maximum zoom level for download.
+    @State private var downloadMaxZoom: Int = 16
+
+    /// Tile server for download, derived from current map style.
+    @State private var downloadTileServer: TileDownloader.TileServer = .osmTopo
+
+    /// Whether a tile download is currently in progress.
+    @State private var isDownloadingRegion = false
+
+    /// Current download progress.
+    @State private var downloadProgress: RegionDownloadProgress?
+
+    /// Any download error to display.
+    @State private var downloadError: Error?
+
+    /// Whether the download error alert is showing.
+    @State private var showingDownloadError = false
+
+    /// The tile downloader actor for downloading map regions.
+    private let tileDownloader = TileDownloader()
+
+    /// Active download task, kept for cancellation support.
+    @State private var downloadTask: Task<Void, Never>?
+
     /// Subject for communicating recenter requests to the map view.
     private let recenterSubject = PassthroughSubject<Void, Never>()
 
@@ -86,7 +122,8 @@ struct iOSNavigationView: View {
                     routeGuidance: routeGuidance,
                     regionStorage: regionStorage,
                     mapStyle: mapViewStyle,
-                    recenterPublisher: recenterSubject.eraseToAnyPublisher()
+                    recenterPublisher: recenterSubject.eraseToAnyPublisher(),
+                    visibleRegion: $visibleMapRegion
                 )
                 .ignoresSafeArea(edges: .top)
 
@@ -105,6 +142,32 @@ struct iOSNavigationView: View {
                     )
                 }
 
+                // Download progress overlay (shown during active download)
+                if isDownloadingRegion, let progress = downloadProgress {
+                    VStack {
+                        HStack(spacing: 8) {
+                            ProgressView(value: progress.progress)
+                                .frame(width: 120)
+                            Text("\(Int(progress.progress * 100))%")
+                                .font(.caption.monospacedDigit())
+                            Button {
+                                downloadTask?.cancel()
+                                downloadTask = nil
+                                isDownloadingRegion = false
+                                downloadProgress = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.top, 60)
+                        Spacer()
+                    }
+                }
+
                 // Floating action buttons
                 VStack {
                     Spacer()
@@ -113,6 +176,13 @@ struct iOSNavigationView: View {
                         Spacer()
 
                         VStack(spacing: 12) {
+                            // Download visible region button (hidden during navigation/tracking/download)
+                            if !locationManager.isTracking && !routeGuidance.isNavigating && !isDownloadingRegion {
+                                mapButton(icon: "arrow.down.circle", color: .green) {
+                                    prepareDownload()
+                                }
+                            }
+
                             // Recenter button
                             mapButton(icon: "location.fill", color: .blue) {
                                 recenterSubject.send()
@@ -187,6 +257,22 @@ struct iOSNavigationView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(saveErrorMessage)
+            }
+            .sheet(isPresented: $showingDownloadSheet) {
+                DownloadConfigSheet(
+                    region: visibleMapRegion ?? MKCoordinateRegion(),
+                    regionName: $downloadRegionName,
+                    minZoom: $downloadMinZoom,
+                    maxZoom: $downloadMaxZoom,
+                    selectedServer: $downloadTileServer,
+                    onDownload: startMapDownload
+                )
+                .presentationDetents([.medium, .large])
+            }
+            .alert("Download Failed", isPresented: $showingDownloadError) {
+                Button("OK", role: .cancel) { downloadError = nil }
+            } message: {
+                Text(downloadError?.localizedDescription ?? "Unknown error occurred.")
             }
             .onAppear {
                 locationManager.requestPermission()
@@ -384,6 +470,92 @@ struct iOSNavigationView: View {
         print("Discarded navigation track")
     }
 
+    // MARK: - Map Region Download
+
+    /// Prepares and shows the download config sheet for the currently visible map region.
+    ///
+    /// Sets default values for region name, zoom levels, and tile server based on the
+    /// current map style. The tile server defaults to the one matching the active map style.
+    private func prepareDownload() {
+        guard visibleMapRegion != nil else { return }
+        downloadRegionName = ""
+        downloadMinZoom = 12
+        downloadMaxZoom = 16
+        downloadTileServer = mapViewStyle.defaultDownloadServer
+        showingDownloadSheet = true
+    }
+
+    /// Downloads the currently visible map region using the configured settings.
+    ///
+    /// Creates a ``RegionSelectionRequest`` from the visible map region and the
+    /// download configuration, then delegates to ``TileDownloader`` for the actual download.
+    /// On success, the region is saved to ``RegionStorage`` and auto-transferred to the
+    /// paired Apple Watch if connected.
+    private func startMapDownload() {
+        guard let region = visibleMapRegion else { return }
+
+        let boundingBox = BoundingBox(
+            north: region.center.latitude + region.span.latitudeDelta / 2,
+            south: region.center.latitude - region.span.latitudeDelta / 2,
+            east: region.center.longitude + region.span.longitudeDelta / 2,
+            west: region.center.longitude - region.span.longitudeDelta / 2
+        )
+
+        let request = RegionSelectionRequest(
+            name: downloadRegionName.isEmpty
+                ? "Region \(Date().formatted(date: .abbreviated, time: .omitted))"
+                : downloadRegionName,
+            boundingBox: boundingBox,
+            zoomLevels: downloadMinZoom...downloadMaxZoom
+        )
+
+        showingDownloadSheet = false
+        isDownloadingRegion = true
+
+        downloadTask = Task {
+            do {
+                var totalTiles = 0
+                let mbtilesURL = try await tileDownloader.downloadRegion(
+                    request, server: downloadTileServer
+                ) { progress in
+                    totalTiles = progress.totalTiles
+                    Task { @MainActor in
+                        self.downloadProgress = progress
+                    }
+                }
+
+                await MainActor.run {
+                    let savedRegion = regionStorage.createRegion(
+                        from: request,
+                        mbtilesURL: mbtilesURL,
+                        tileCount: totalTiles
+                    )
+                    regionStorage.saveRegion(savedRegion)
+
+                    // Transfer to watch if connected
+                    if watchConnectivity.isPaired {
+                        let metadata = regionStorage.metadata(for: savedRegion)
+                        watchConnectivity.transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+                    }
+
+                    isDownloadingRegion = false
+                    downloadProgress = nil
+                    downloadTask = nil
+                }
+            } catch {
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        isDownloadingRegion = false
+                        downloadProgress = nil
+                        downloadError = error
+                        showingDownloadError = true
+                        downloadTask = nil
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Map Style Auto-Selection
 
     /// Checks if the user's current location is within any downloaded region.
@@ -529,6 +701,9 @@ struct NavigationMapView: UIViewRepresentable {
 
     /// Publisher that emits when the user taps the recenter button.
     let recenterPublisher: AnyPublisher<Void, Never>
+
+    /// The currently visible map region, updated when the user pans or zooms.
+    @Binding var visibleRegion: MKCoordinateRegion?
 
     /// Creates and configures the MKMapView.
     func makeUIView(context: Context) -> MKMapView {
@@ -705,6 +880,11 @@ struct NavigationMapView: UIViewRepresentable {
 
         init(parent: NavigationMapView) {
             self.parent = parent
+        }
+
+        /// Captures the visible map region when the user finishes panning or zooming.
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            parent.visibleRegion = mapView.region
         }
 
         /// Provides renderers for map overlays.
