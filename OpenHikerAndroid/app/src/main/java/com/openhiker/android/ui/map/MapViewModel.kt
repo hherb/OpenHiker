@@ -377,7 +377,9 @@ class MapViewModel @Inject constructor(
      * Starts downloading the currently visible map region.
      *
      * Delegates to [TileDownloadService] which handles rate limiting,
-     * retry logic, and progress reporting.
+     * retry logic, progress reporting, and routing graph building.
+     * After a successful download, switches to offline mode so the
+     * downloaded tiles are displayed immediately.
      */
     fun startDownload() {
         val bounds = _visibleBounds.value ?: return
@@ -386,13 +388,21 @@ class MapViewModel @Inject constructor(
         _showDownloadSheet.value = false
 
         downloadJob = viewModelScope.launch {
-            downloadService.downloadRegion(
+            val regionId = downloadService.downloadRegion(
                 name = name,
                 boundingBox = bounds,
                 minZoom = _downloadMinZoom.value,
                 maxZoom = _downloadMaxZoom.value,
                 tileServer = _downloadTileServer.value
             )
+
+            // Switch to offline mode for the newly downloaded region
+            if (regionId != null) {
+                val metadata = regions.value.find { it.id == regionId }
+                if (metadata != null) {
+                    selectOfflineRegion(metadata)
+                }
+            }
         }
     }
 

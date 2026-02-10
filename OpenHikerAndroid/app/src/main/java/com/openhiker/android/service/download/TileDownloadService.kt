@@ -18,9 +18,12 @@
 
 package com.openhiker.android.service.download
 
+import android.util.Log
 import com.openhiker.android.data.db.tiles.WritableTileStore
 import com.openhiker.android.data.repository.RegionRepository
 import com.openhiker.android.di.TileDownloadClient
+import com.openhiker.android.service.osm.OSMDataDownloader
+import com.openhiker.android.service.routing.RoutingGraphBuilder
 import com.openhiker.core.geo.BoundingBox
 import com.openhiker.core.geo.TileCoordinate
 import com.openhiker.core.geo.TileRange
@@ -42,6 +45,7 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.File
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -65,7 +69,9 @@ import javax.inject.Singleton
 @Singleton
 class TileDownloadService @Inject constructor(
     @TileDownloadClient private val httpClient: OkHttpClient,
-    private val regionRepository: RegionRepository
+    private val regionRepository: RegionRepository,
+    private val osmDataDownloader: OSMDataDownloader,
+    private val routingGraphBuilder: RoutingGraphBuilder
 ) {
 
     private val _progress = MutableStateFlow<RegionDownloadProgress?>(null)
@@ -159,6 +165,16 @@ class TileDownloadService @Inject constructor(
                 store.commitTransaction()
             }
 
+            store.close()
+
+            // Build routing graph (OSM trail data + elevation + routing database)
+            val routingDataBuilt = buildRoutingGraph(
+                regionId = regionId,
+                boundingBox = boundingBox,
+                totalTiles = totalTiles,
+                downloadedTiles = downloadedCount
+            )
+
             // Save region metadata
             val metadata = RegionMetadata(
                 id = regionId,
@@ -166,7 +182,8 @@ class TileDownloadService @Inject constructor(
                 boundingBox = boundingBox,
                 minZoom = minZoom,
                 maxZoom = maxZoom,
-                tileCount = downloadedCount
+                tileCount = downloadedCount,
+                hasRoutingData = routingDataBuilt
             )
             regionRepository.save(metadata)
 
@@ -185,13 +202,15 @@ class TileDownloadService @Inject constructor(
                 store.rollbackTransaction()
             } catch (_: Exception) { }
             store.close()
-            java.io.File(mbtilesPath).delete()
+            File(mbtilesPath).delete()
+            File(regionRepository.routingDbPath(regionId)).delete()
             _progress.value = null
             throw e
         } catch (e: Exception) {
             try {
                 store.rollbackTransaction()
             } catch (_: Exception) { }
+            store.close()
 
             _progress.value = RegionDownloadProgress(
                 regionId = regionId,
@@ -202,7 +221,6 @@ class TileDownloadService @Inject constructor(
             )
             null
         } finally {
-            store.close()
             _isDownloading.value = false
         }
     }
@@ -252,6 +270,67 @@ class TileDownloadService @Inject constructor(
     }
 
     /**
+     * Downloads OSM trail data and builds a routing graph for the region.
+     *
+     * Called after tile download completes. Downloads trail data from the
+     * Overpass API, then builds the routing graph (with elevation lookup).
+     * If routing build fails, the error is logged but the download is not
+     * considered failed — the user still gets their map tiles.
+     *
+     * @param regionId The UUID of the region being downloaded.
+     * @param boundingBox The geographic area for trail data and routing.
+     * @param totalTiles Total tile count for progress reporting.
+     * @param downloadedTiles Downloaded tile count for progress reporting.
+     * @return `true` if the routing graph was built successfully, `false` otherwise.
+     */
+    private suspend fun buildRoutingGraph(
+        regionId: String,
+        boundingBox: BoundingBox,
+        totalTiles: Int,
+        downloadedTiles: Int
+    ): Boolean {
+        val routingDbPath = regionRepository.routingDbPath(regionId)
+
+        try {
+            // Step 1: Download and parse OSM trail data
+            _progress.value = RegionDownloadProgress(
+                regionId = regionId,
+                totalTiles = totalTiles,
+                downloadedTiles = downloadedTiles,
+                currentZoom = 0,
+                status = DownloadStatus.DOWNLOADING_TRAIL_DATA
+            )
+
+            val osmData = osmDataDownloader.download(boundingBox, regionId)
+
+            // Step 2: Build routing graph (elevation is fetched internally by the builder)
+            _progress.value = RegionDownloadProgress(
+                regionId = regionId,
+                totalTiles = totalTiles,
+                downloadedTiles = downloadedTiles,
+                currentZoom = 0,
+                status = DownloadStatus.BUILDING_ROUTING_GRAPH
+            )
+
+            routingGraphBuilder.buildGraph(
+                osmData = osmData,
+                outputPath = routingDbPath,
+                regionId = regionId
+            )
+
+            Log.d(TAG, "Routing graph built successfully for region $regionId")
+            return true
+        } catch (e: CancellationException) {
+            File(routingDbPath).delete()
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Routing graph build failed (non-fatal): ${e.message}")
+            File(routingDbPath).delete()
+            return false
+        }
+    }
+
+    /**
      * Executes an OkHttp [Call] asynchronously, suspending the coroutine
      * instead of blocking a thread. Cancels the HTTP call if the coroutine
      * is cancelled.
@@ -270,6 +349,8 @@ class TileDownloadService @Inject constructor(
         }
 
     companion object {
+        private const val TAG = "TileDownloadService"
+
         /** Delay between tile requests in milliseconds (OSM policy compliance). */
         private const val RATE_LIMIT_DELAY_MS = 50L
 

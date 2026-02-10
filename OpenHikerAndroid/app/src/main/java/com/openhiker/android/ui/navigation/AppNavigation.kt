@@ -203,7 +203,11 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
                             IconButton(
                                 onClick = {
                                     navController.navigate(Routes.SETTINGS) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
+                                        restoreState = true
                                     }
                                 },
                                 modifier = Modifier.semantics {
@@ -236,7 +240,11 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
                             IconButton(
                                 onClick = {
                                     navController.navigate(Routes.SETTINGS) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
+                                        restoreState = true
                                     }
                                 },
                                 modifier = Modifier.semantics {
@@ -310,7 +318,11 @@ private fun AdaptiveNavigationRail(
             IconButton(
                 onClick = {
                     navController.navigate(Routes.SETTINGS) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 modifier = Modifier.semantics {

@@ -169,23 +169,43 @@ fun MapDownloadSheet(
         // Download progress or download button
         if (isDownloading && downloadProgress != null) {
             Column {
-                LinearProgressIndicator(
-                    progress = { downloadProgress.progress.toFloat() },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                val statusText = when (downloadProgress.status) {
+                    DownloadStatus.DOWNLOADING ->
+                        "${downloadProgress.downloadedTiles}/${downloadProgress.totalTiles} tiles (z${downloadProgress.currentZoom})"
+                    DownloadStatus.DOWNLOADING_TRAIL_DATA ->
+                        "Downloading trail data\u2026"
+                    DownloadStatus.DOWNLOADING_ELEVATION ->
+                        "Downloading elevation data\u2026"
+                    DownloadStatus.BUILDING_ROUTING_GRAPH ->
+                        "Building routing graph\u2026"
+                    else ->
+                        "${downloadProgress.downloadedTiles}/${downloadProgress.totalTiles} tiles"
+                }
+
+                val showTileProgress = downloadProgress.status == DownloadStatus.DOWNLOADING
+                if (showTileProgress) {
+                    LinearProgressIndicator(
+                        progress = { downloadProgress.progress.toFloat() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "${downloadProgress.downloadedTiles}/${downloadProgress.totalTiles} tiles (z${downloadProgress.currentZoom})",
+                        text = statusText,
                         style = MaterialTheme.typography.bodySmall
                     )
-                    Text(
-                        text = "${(downloadProgress.progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    if (showTileProgress) {
+                        Text(
+                            text = "${(downloadProgress.progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
