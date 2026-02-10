@@ -104,6 +104,10 @@ struct iOSNavigationView: View {
     /// The tile downloader actor for downloading map regions.
     private let tileDownloader = TileDownloader()
 
+    /// Shared elevation data manager for routing graph construction.
+    /// Its memory cache is cleared after building the routing graph.
+    private let sharedElevationManager = ElevationDataManager()
+
     /// Active download task, kept for cancellation support.
     @State private var downloadTask: Task<Void, Never>?
 
@@ -145,20 +149,25 @@ struct iOSNavigationView: View {
                 // Download progress overlay (shown during active download)
                 if isDownloadingRegion, let progress = downloadProgress {
                     VStack {
-                        HStack(spacing: 8) {
-                            ProgressView(value: progress.progress)
-                                .frame(width: 120)
-                            Text("\(Int(progress.progress * 100))%")
-                                .font(.caption.monospacedDigit())
-                            Button {
-                                downloadTask?.cancel()
-                                downloadTask = nil
-                                isDownloadingRegion = false
-                                downloadProgress = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
+                        VStack(spacing: 4) {
+                            HStack(spacing: 8) {
+                                ProgressView(value: progress.progress)
+                                    .frame(width: 120)
+                                Text("\(Int(progress.progress * 100))%")
+                                    .font(.caption.monospacedDigit())
+                                Button {
+                                    downloadTask?.cancel()
+                                    downloadTask = nil
+                                    isDownloadingRegion = false
+                                    downloadProgress = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                            Text(progress.status.description)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -485,12 +494,14 @@ struct iOSNavigationView: View {
         showingDownloadSheet = true
     }
 
-    /// Downloads the currently visible map region using the configured settings.
+    /// Downloads the currently visible map region with tiles and routing data.
     ///
     /// Creates a ``RegionSelectionRequest`` from the visible map region and the
-    /// download configuration, then delegates to ``TileDownloader`` for the actual download.
-    /// On success, the region is saved to ``RegionStorage`` and auto-transferred to the
-    /// paired Apple Watch if connected.
+    /// download configuration, then delegates to ``TileDownloader`` for tile download.
+    /// After tiles are downloaded, builds a routing graph (OSM trail data + elevation)
+    /// using the same process as ``RegionSelectorView``. On success, the region is saved
+    /// to ``RegionStorage`` and auto-transferred to the paired Apple Watch if connected.
+    /// The map style is switched to "Trails" so the downloaded offline tiles are used.
     private func startMapDownload() {
         guard let region = visibleMapRegion else { return }
 
@@ -524,11 +535,22 @@ struct iOSNavigationView: View {
                     }
                 }
 
+                // Build routing graph if requested (default: true)
+                var routingDataBuilt = false
+                if request.includeRoutingData {
+                    routingDataBuilt = await buildRoutingGraph(
+                        boundingBox: boundingBox,
+                        mbtilesURL: mbtilesURL,
+                        totalTiles: totalTiles
+                    )
+                }
+
                 await MainActor.run {
                     let savedRegion = regionStorage.createRegion(
                         from: request,
                         mbtilesURL: mbtilesURL,
-                        tileCount: totalTiles
+                        tileCount: totalTiles,
+                        hasRoutingData: routingDataBuilt
                     )
                     regionStorage.saveRegion(savedRegion)
 
@@ -536,6 +558,11 @@ struct iOSNavigationView: View {
                     if watchConnectivity.isPaired {
                         let metadata = regionStorage.metadata(for: savedRegion)
                         watchConnectivity.transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+                    }
+
+                    // Switch to Trails style so downloaded offline tiles are used
+                    if mapViewStyle == .standard {
+                        mapViewStyle = .hiking
                     }
 
                     isDownloadingRegion = false
@@ -553,6 +580,88 @@ struct iOSNavigationView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Downloads OSM trail data, elevation data, and builds a routing graph for the region.
+    ///
+    /// Called after tile download completes when `includeRoutingData` is enabled.
+    /// If the routing build fails, the error is logged but the download is not considered
+    /// failed — the user still gets their map tiles, just without route planning.
+    ///
+    /// - Parameters:
+    ///   - boundingBox: The geographic area for trail data and routing.
+    ///   - mbtilesURL: The downloaded MBTiles file URL (used to derive the region UUID).
+    ///   - totalTiles: Total tile count for progress reporting.
+    /// - Returns: `true` if the routing graph was built successfully, `false` otherwise.
+    private func buildRoutingGraph(
+        boundingBox: BoundingBox,
+        mbtilesURL: URL,
+        totalTiles: Int
+    ) async -> Bool {
+        let regionIdString = mbtilesURL.deletingPathExtension().lastPathComponent
+        let regionId = UUID(uuidString: regionIdString) ?? UUID()
+        let routingDbURL = regionStorage.routingDbURL(
+            for: Region(
+                id: regionId,
+                name: "",
+                boundingBox: boundingBox,
+                zoomLevels: 0...0,
+                tileCount: 0,
+                fileSizeBytes: 0
+            )
+        )
+
+        do {
+            // Step 1: Download and parse OSM trail data.
+            await MainActor.run {
+                self.downloadProgress = RegionDownloadProgress(
+                    regionId: regionId,
+                    totalTiles: totalTiles,
+                    downloadedTiles: totalTiles,
+                    currentZoom: 0,
+                    status: .downloadingTrailData
+                )
+            }
+
+            let nodes: [Int64: PBFParser.OSMNode]
+            let ways: [PBFParser.OSMWay]
+            do {
+                let osmDownloader = OSMDataDownloader()
+                (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
+                    boundingBox: boundingBox
+                ) { _, _ in }
+            }
+
+            // Step 2: Build routing graph (elevation is fetched internally by the builder).
+            await MainActor.run {
+                self.downloadProgress = RegionDownloadProgress(
+                    regionId: regionId,
+                    totalTiles: totalTiles,
+                    downloadedTiles: totalTiles,
+                    currentZoom: 0,
+                    status: .buildingRoutingGraph
+                )
+            }
+
+            let graphBuilder = RoutingGraphBuilder()
+            try await graphBuilder.buildGraph(
+                ways: ways,
+                nodes: nodes,
+                elevationManager: sharedElevationManager,
+                outputPath: routingDbURL.path,
+                boundingBox: boundingBox
+            ) { _, _ in }
+
+            // Release elevation tile memory cache now that graph is built
+            await sharedElevationManager.clearMemoryCache()
+
+            print("Routing graph built successfully: \(routingDbURL.path)")
+            return true
+        } catch {
+            print("Routing graph build failed (non-fatal): \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: routingDbURL)
+            return false
         }
     }
 
