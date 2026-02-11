@@ -65,6 +65,12 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     /// The active WatchConnectivity session, or `nil` if not supported.
     private var session: WCSession?
 
+    /// Shared elevation manager for on-demand routing data builds.
+    ///
+    /// Owned by this manager so SRTM elevation tile caches persist across
+    /// multiple on-demand watch requests, avoiding redundant downloads.
+    private let elevationManager = ElevationDataManager()
+
     /// Private initializer enforcing singleton pattern. Sets up and activates the WCSession.
     private override init() {
         super.init()
@@ -606,9 +612,13 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     /// Handles a tile download request from the watch.
     ///
-    /// Downloads map tiles for the given GPS location at zoom levels 12-15,
-    /// packages them as an MBTiles file, creates a region, and transfers it
-    /// to the watch via the standard region transfer mechanism.
+    /// First checks whether an existing region already covers the requested
+    /// coordinate. If so, transfers it (with routing data) instead of
+    /// re-downloading. Otherwise downloads map tiles for the given GPS location
+    /// at zoom levels 12-15, packages them as an MBTiles file, creates a
+    /// region, and transfers it to the watch. After tiles are transferred,
+    /// kicks off a background task to build routing data and transfer it
+    /// separately.
     ///
     /// - Parameter message: The message dictionary containing `lat`, `lon`, and `radiusKm`.
     private func handleTileRequest(_ message: [String: Any]) {
@@ -616,6 +626,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
               let lon = message["lon"] as? Double else {
             print("Invalid tile request: missing lat/lon")
             return
+        }
+
+        // Check whether an existing region already covers this coordinate
+        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        let storage = RegionStorage.shared
+        storage.loadRegions()
+
+        let matchingRegions = storage.regions.filter { $0.boundingBox.contains(coordinate) }
+        if let bestRegion = matchingRegions.max(by: { $0.boundingBox.areaKm2 < $1.boundingBox.areaKm2 }) {
+            let mbtilesURL = storage.mbtilesURL(for: bestRegion)
+            if FileManager.default.fileExists(atPath: mbtilesURL.path) {
+                print("Found existing region '\(bestRegion.name)' covering (\(lat), \(lon)), transferring instead of downloading")
+                transferRegionWithRoutes(bestRegion, storage: storage)
+                return
+            }
         }
 
         let radiusKm = min(message["radiusKm"] as? Double ?? 5.0, 10.0)
@@ -648,7 +673,6 @@ extension WatchConnectivityManager: WCSessionDelegate {
                     print("Watch tile request: \(progress.downloadedTiles)/\(progress.totalTiles) tiles")
                 }
 
-                let storage = RegionStorage.shared
                 let region = storage.createRegion(
                     from: request,
                     mbtilesURL: mbtilesURL,
@@ -656,13 +680,101 @@ extension WatchConnectivityManager: WCSessionDelegate {
                 )
                 storage.saveRegion(region)
 
+                // Transfer tiles immediately so the watch gets a usable map ASAP
                 let metadata = storage.metadata(for: region)
                 transferMBTilesFile(at: mbtilesURL, metadata: metadata)
 
                 print("Watch tile request complete: \(region.name) transferred to watch")
+
+                // Build and transfer routing data in background
+                Task {
+                    await self.buildAndTransferRoutingData(
+                        boundingBox: bbox,
+                        region: region
+                    )
+                }
             } catch {
                 print("Watch tile request failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    // MARK: - On-Demand Routing Data Build
+
+    /// Builds routing data for an on-demand region and transfers it to the watch.
+    ///
+    /// Runs after tiles have already been transferred. Downloads OSM trail data,
+    /// builds the routing graph with elevation data, updates the region metadata,
+    /// and sends the routing database to the watch.
+    ///
+    /// If the build fails, the error is logged but the region remains functional
+    /// with map tiles only (non-fatal). This matches the error-handling convention
+    /// used in ``iOSNavigationView`` and ``RegionSelectorView``.
+    ///
+    /// - Parameters:
+    ///   - boundingBox: The geographic area for trail data and routing.
+    ///   - region: The region saved earlier (with `hasRoutingData == false`).
+    private func buildAndTransferRoutingData(
+        boundingBox: BoundingBox,
+        region: Region
+    ) async {
+        let storage = RegionStorage.shared
+        let routingDbURL = storage.routingDbURL(for: region)
+
+        do {
+            print("Building routing data for \(region.name)...")
+
+            // Step 1: Download and parse OSM trail data
+            let osmDownloader = OSMDataDownloader()
+            let (nodes, ways) = try await osmDownloader.downloadAndParseTrailData(
+                boundingBox: boundingBox
+            ) { description, progress in
+                print("  OSM download: \(description) (\(Int(progress * 100))%)")
+            }
+
+            print("  Downloaded \(nodes.count) nodes and \(ways.count) trails")
+
+            // Step 2: Build routing graph with elevation data
+            let graphBuilder = RoutingGraphBuilder()
+            try await graphBuilder.buildGraph(
+                ways: ways,
+                nodes: nodes,
+                elevationManager: elevationManager,
+                outputPath: routingDbURL.path,
+                boundingBox: boundingBox
+            ) { description, progress in
+                print("  Routing graph: \(description) (\(Int(progress * 100))%)")
+            }
+
+            // Release elevation tile memory cache now that graph is built
+            await elevationManager.clearMemoryCache()
+
+            print("Routing graph built successfully: \(routingDbURL.path)")
+
+            // Step 3: Update region metadata to reflect routing data availability
+            let updatedRegion = Region(
+                id: region.id,
+                name: region.name,
+                boundingBox: region.boundingBox,
+                zoomLevels: region.zoomLevels,
+                createdAt: region.createdAt,
+                tileCount: region.tileCount,
+                fileSizeBytes: region.fileSizeBytes,
+                hasRoutingData: true
+            )
+            storage.saveRegion(updatedRegion)
+
+            // Step 4: Transfer routing database to watch
+            let metadata = storage.metadata(for: updatedRegion)
+            transferRoutingDatabase(at: routingDbURL, metadata: metadata)
+
+            // Step 5: Update watch application context with updated region info
+            sendAvailableRegions()
+
+            print("Routing data for \(region.name) transferred to watch")
+        } catch {
+            print("Routing data build failed for \(region.name) (non-fatal): \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: routingDbURL)
         }
     }
 
