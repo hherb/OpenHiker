@@ -19,6 +19,8 @@
 package com.openhiker.android.ui.map
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.location.LocationManager
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,8 +113,6 @@ fun MapScreen(
     val mapMode by viewModel.mapMode.collectAsState()
     val locationGranted by viewModel.locationPermissionGranted.collectAsState()
     val regions by viewModel.regions.collectAsState()
-    val hasSavedPosition by viewModel.hasSavedPosition.collectAsState()
-
     // Download state
     val showDownloadSheet by viewModel.showDownloadSheet.collectAsState()
     val downloadRegionName by viewModel.downloadRegionName.collectAsState()
@@ -189,6 +189,13 @@ fun MapScreen(
         mapView.getMapAsync { map ->
             mapLibreMap = map
 
+            // Set initial camera position BEFORE loading style so it doesn't
+            // override the async GPS centering triggered in the style callback.
+            map.cameraPosition = CameraPosition.Builder()
+                .target(LatLng(cameraState.latitude, cameraState.longitude))
+                .zoom(cameraState.zoom)
+                .build()
+
             // Determine style loading method
             val isOfflineJson = mapMode is MapMode.Offline
             val styleBuilder = if (isOfflineJson) {
@@ -203,7 +210,7 @@ fun MapScreen(
                     enableLocationComponent(map, style, context)
                     locationComponentActive = true
                     // On first launch, center on user's GPS position
-                    centerOnUserIfFirstLaunch(map, hasSavedPosition, hasCenteredOnUser) {
+                    centerOnUserAtStartup(map, context, hasCenteredOnUser) {
                         hasCenteredOnUser = true
                     }
                 }
@@ -211,12 +218,6 @@ fun MapScreen(
                 // Add region boundary overlays
                 addBoundaryOverlays(style, viewModel.getRegionBoundariesGeoJson())
             }
-
-            // Set initial camera position
-            map.cameraPosition = CameraPosition.Builder()
-                .target(LatLng(cameraState.latitude, cameraState.longitude))
-                .zoom(cameraState.zoom)
-                .build()
 
             // Listen for camera changes to persist position and capture visible bounds
             map.addOnCameraIdleListener {
@@ -251,7 +252,7 @@ fun MapScreen(
                     enableLocationComponent(map, style, context)
                     locationComponentActive = true
                     // On first launch, center on user's GPS position
-                    centerOnUserIfFirstLaunch(map, hasSavedPosition, hasCenteredOnUser) {
+                    centerOnUserAtStartup(map, context, hasCenteredOnUser) {
                         hasCenteredOnUser = true
                     }
                 }
@@ -348,7 +349,7 @@ fun MapScreen(
                 FloatingActionButton(
                     onClick = {
                         mapLibreMap?.let { map ->
-                            centerOnUserLocation(map)
+                            centerOnUserLocation(map, context)
                         }
                     }
                 ) {
@@ -425,83 +426,144 @@ private fun enableLocationComponent(
 private const val USER_LOCATION_ZOOM = 14.0
 
 /**
- * Centers the map on the user's GPS position on first launch.
+ * Centers the map on the user's GPS position once per app session.
  *
- * On a fresh install (no saved camera position), the map defaults to
- * Innsbruck, Austria. This function requests the device's last known
- * location from the location engine and animates the camera there.
+ * Called when the map style is loaded and location permission is granted.
+ * Skips centering if we have already centered this session. Uses the
+ * same multi-tier fallback as [centerOnUserLocation]: MapLibre cache →
+ * MapLibre engine → system LocationManager cache → active GPS request.
  *
- * @param map The MapLibre map instance with an active location component.
- * @param hasSavedPosition True if a camera position was previously persisted.
+ * @param map The MapLibre map instance.
+ * @param context Android context for accessing the system LocationManager.
  * @param alreadyCentered True if we have already centered on the user this session.
  * @param onCentered Callback invoked after centering is triggered.
  */
 @SuppressLint("MissingPermission")
-private fun centerOnUserIfFirstLaunch(
+private fun centerOnUserAtStartup(
     map: MapLibreMap,
-    hasSavedPosition: Boolean,
+    context: Context,
     alreadyCentered: Boolean,
     onCentered: () -> Unit
 ) {
-    if (hasSavedPosition || alreadyCentered) return
+    if (alreadyCentered) return
 
-    val locationComponent = map.locationComponent
-    if (!locationComponent.isLocationComponentActivated) return
-
-    val engine = locationComponent.locationEngine ?: return
-
-    engine.getLastLocation(object : LocationEngineCallback<LocationEngineResult> {
-        override fun onSuccess(result: LocationEngineResult?) {
-            val location = result?.lastLocation
-            if (location != null) {
-                map.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(location.latitude, location.longitude),
-                        USER_LOCATION_ZOOM
-                    )
-                )
-                onCentered()
-            }
-        }
-
-        override fun onFailure(exception: Exception) {
-            Log.w("MapScreen", "Could not get last location for initial centering", exception)
-        }
-    })
+    // Delegate to the shared centering logic which handles all fallbacks
+    centerOnUserLocation(map, context)
+    onCentered()
 }
 
 /**
  * Centers the map camera on the user's current GPS position.
  *
- * First checks the location component's cached last known location.
- * If unavailable (e.g., GPS hasn't had a fix yet), falls back to
- * requesting a fresh location from the location engine asynchronously.
+ * Uses a multi-tier fallback strategy:
+ * 1. MapLibre location component's cached last known location (synchronous)
+ * 2. MapLibre location engine async request
+ * 3. Android system LocationManager's last known location (GPS or network)
+ * 4. Active single GPS fix request if no cached location is available
  *
- * @param map The MapLibre map instance with an active location component.
+ * Does not require the MapLibre location component to be activated —
+ * falls through to the system LocationManager directly when needed.
+ *
+ * @param map The MapLibre map instance.
+ * @param context Android context for accessing the system LocationManager.
  */
 @SuppressLint("MissingPermission")
-private fun centerOnUserLocation(map: MapLibreMap) {
+private fun centerOnUserLocation(map: MapLibreMap, context: Context) {
     val locationComponent = map.locationComponent
-    if (!locationComponent.isLocationComponentActivated) return
 
-    // Try cached location first
-    val lastLocation = locationComponent.lastKnownLocation
-    if (lastLocation != null) {
+    // Try MapLibre cached location first (only if component is active)
+    if (locationComponent.isLocationComponentActivated) {
+        val lastLocation = locationComponent.lastKnownLocation
+        if (lastLocation != null) {
+            map.animateCamera(
+                CameraUpdateFactory.newLatLngZoom(
+                    LatLng(lastLocation.latitude, lastLocation.longitude),
+                    USER_LOCATION_ZOOM
+                )
+            )
+            return
+        }
+
+        // Try MapLibre location engine async request
+        val engine = locationComponent.locationEngine
+        if (engine != null) {
+            engine.getLastLocation(object : LocationEngineCallback<LocationEngineResult> {
+                override fun onSuccess(result: LocationEngineResult?) {
+                    val location = result?.lastLocation
+                    if (location != null) {
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(location.latitude, location.longitude),
+                                USER_LOCATION_ZOOM
+                            )
+                        )
+                    } else {
+                        // Engine returned null — fall back to system LocationManager
+                        centerFromSystemLocation(map, context)
+                    }
+                }
+
+                override fun onFailure(exception: Exception) {
+                    Log.w("MapScreen", "Could not get location for centering", exception)
+                    centerFromSystemLocation(map, context)
+                }
+            })
+            return
+        }
+    }
+
+    // Location component not active or no engine — go straight to system
+    centerFromSystemLocation(map, context)
+}
+
+/**
+ * Centers the map using Android's system [LocationManager].
+ *
+ * Queries the last known GPS fix, then the network provider. If neither
+ * has a cached location, requests a single active GPS fix.
+ *
+ * @param map The MapLibre map instance.
+ * @param context Android context for accessing system services.
+ */
+@SuppressLint("MissingPermission")
+private fun centerFromSystemLocation(map: MapLibreMap, context: Context) {
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    if (locationManager == null) {
+        Log.w("MapScreen", "LocationManager unavailable")
+        return
+    }
+
+    // Try cached locations from GPS and network providers
+    val cachedLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+
+    if (cachedLocation != null) {
         map.animateCamera(
             CameraUpdateFactory.newLatLngZoom(
-                LatLng(lastLocation.latitude, lastLocation.longitude),
+                LatLng(cachedLocation.latitude, cachedLocation.longitude),
                 USER_LOCATION_ZOOM
             )
         )
         return
     }
 
-    // Fall back to location engine request
-    val engine = locationComponent.locationEngine ?: return
-    engine.getLastLocation(object : LocationEngineCallback<LocationEngineResult> {
-        override fun onSuccess(result: LocationEngineResult?) {
-            val location = result?.lastLocation
-            if (location != null) {
+    // No cached location at all — request a single active GPS fix
+    Log.d("MapScreen", "No cached location, requesting active GPS fix")
+    val provider = when {
+        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ->
+            LocationManager.GPS_PROVIDER
+        locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ->
+            LocationManager.NETWORK_PROVIDER
+        else -> {
+            Log.w("MapScreen", "No location providers enabled")
+            return
+        }
+    }
+
+    locationManager.requestSingleUpdate(
+        provider,
+        object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
                 map.animateCamera(
                     CameraUpdateFactory.newLatLngZoom(
                         LatLng(location.latitude, location.longitude),
@@ -509,12 +571,13 @@ private fun centerOnUserLocation(map: MapLibreMap) {
                     )
                 )
             }
-        }
-
-        override fun onFailure(exception: Exception) {
-            Log.w("MapScreen", "Could not get location for centering", exception)
-        }
-    })
+            @Deprecated("Required for API < 29")
+            override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        },
+        android.os.Looper.getMainLooper()
+    )
 }
 
 /**
