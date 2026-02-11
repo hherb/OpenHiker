@@ -136,6 +136,7 @@ struct MapView: View {
                 } else if let trackScene = trackOnlyScene {
                     SpriteView(scene: trackScene)
                         .ignoresSafeArea()
+                        .gesture(dragGesture)
                         .allowsHitTesting(true)
                         .focusable()
                         .digitalCrownRotation(
