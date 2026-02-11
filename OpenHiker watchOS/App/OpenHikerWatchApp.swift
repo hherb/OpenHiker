@@ -305,6 +305,52 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - On-Demand Tile Request
+
+    /// Whether a tile download request to the phone is currently pending.
+    @Published var isTileRequestPending = false
+
+    /// Timestamp of the last tile request, used for rate limiting.
+    private var lastTileRequestTime: Date?
+
+    /// Minimum interval between tile requests (10 minutes).
+    private static let tileRequestCooldownSec: TimeInterval = 600
+
+    /// Sends a message to the iPhone requesting map tiles for the given location.
+    ///
+    /// The iPhone will download tiles for zoom levels 12-15 around the coordinate,
+    /// package them as MBTiles, and transfer the file back via the standard region
+    /// transfer mechanism. Rate-limited to one request per 10 minutes.
+    ///
+    /// - Parameters:
+    ///   - coordinate: The center coordinate to download tiles for.
+    ///   - radiusKm: The radius in kilometers (clamped to 10km on the phone side).
+    func requestTilesFromPhone(coordinate: CLLocationCoordinate2D, radiusKm: Double = 5.0) {
+        guard let session = session, session.isReachable else { return }
+
+        // Rate limit: one request per cooldown period
+        if let last = lastTileRequestTime,
+           Date().timeIntervalSince(last) < Self.tileRequestCooldownSec {
+            print("Tile request rate limited — try again later")
+            return
+        }
+
+        lastTileRequestTime = Date()
+        DispatchQueue.main.async { self.isTileRequestPending = true }
+
+        session.sendMessage([
+            "action": "requestTilesForLocation",
+            "lat": coordinate.latitude,
+            "lon": coordinate.longitude,
+            "radiusKm": radiusKm
+        ], replyHandler: { _ in
+            // Phone acknowledged the request; tiles will arrive via file transfer
+        }, errorHandler: { error in
+            print("Error requesting tiles: \(error.localizedDescription)")
+            DispatchQueue.main.async { self.isTileRequestPending = false }
+        })
+    }
+
     // MARK: - Waypoint Sync
 
     /// Sends a waypoint to the iPhone via `transferUserInfo`.
@@ -396,6 +442,44 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
 
         session.transferFile(fileURL, metadata: metadata)
         print("Queued route transfer to iPhone: \(routeId.uuidString)")
+    }
+
+    /// Sends a partial in-progress route to the phone for live sync during recording.
+    ///
+    /// Only sends if the iPhone is currently reachable (app running in foreground).
+    /// Uses the same `savedRoute` transfer type so the iPhone's ``RouteStore``
+    /// can upsert (replace existing partial route with same UUID on each sync).
+    ///
+    /// - Parameter route: The ``SavedRoute`` representing the current recording state.
+    func syncLiveRoute(_ route: SavedRoute) {
+        guard let session = session, session.isReachable else { return }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        guard let jsonData = try? encoder.encode(route) else {
+            print("Failed to encode live route for sync")
+            return
+        }
+
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("\(route.id.uuidString).livesync")
+
+        do {
+            try jsonData.write(to: tempFile)
+        } catch {
+            print("Failed to write temp file for live sync: \(error.localizedDescription)")
+            return
+        }
+
+        let metadata: [String: Any] = [
+            "type": "savedRoute",
+            "routeId": route.id.uuidString,
+            "isLiveSync": "true"
+        ]
+
+        session.transferFile(tempFile, metadata: metadata)
+        print("Sent live route sync to iPhone: \(route.id.uuidString) (\(route.trackData.count) bytes)")
     }
 }
 
@@ -511,6 +595,8 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
             DispatchQueue.main.async {
                 self.availableRegions.append(regionMetadata)
                 self.lastReceivedRegion = name
+                // Clear tile request pending state if this was a requested download
+                self.isTileRequestPending = false
             }
 
             print("Successfully received and saved region: \(name)")

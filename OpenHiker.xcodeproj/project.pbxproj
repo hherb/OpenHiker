@@ -116,6 +116,7 @@
 		1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001B /* LowBatteryTrackingView.swift */; };
 		1B0000010000000000000060 /* UVCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000060 /* UVCategory.swift */; };
 		1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
+		1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001C /* TrackOnlyScene.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -287,6 +288,7 @@
 		2B0000010000000000000019 /* BatteryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryMonitor.swift; sourceTree = "<group>"; };
 		2B000001000000000000001A /* TrackRecoveryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRecoveryManager.swift; sourceTree = "<group>"; };
 		2B000001000000000000001B /* LowBatteryTrackingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowBatteryTrackingView.swift; sourceTree = "<group>"; };
+		2B000001000000000000001C /* TrackOnlyScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackOnlyScene.swift; sourceTree = "<group>"; };
 		2C0000010000000000000001 /* OpenHikerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerMacApp.swift; sourceTree = "<group>"; };
 		2C0000010000000000000002 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		2C0000010000000000000003 /* OpenHikerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerCommands.swift; sourceTree = "<group>"; };
@@ -487,6 +489,7 @@
 				2B0000010000000000000017 /* RenameSheet.swift */,
 				2B0000010000000000000018 /* MinimalistNavigationView.swift */,
 				2B000001000000000000001B /* LowBatteryTrackingView.swift */,
+				2B000001000000000000001C /* TrackOnlyScene.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -916,6 +919,7 @@
 				1B0000010000000000000055 /* LowBatteryTrackingView.swift in Sources */,
 				1B0000010000000000000060 /* UVCategory.swift in Sources */,
 				1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
+				1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -74,6 +74,17 @@ struct MapView: View {
     /// The SpriteKit scene displaying map tiles, or `nil` if no region is loaded.
     @State private var mapScene: MapScene?
 
+    /// A lightweight SpriteKit scene for mapless trail display, shown when recording
+    /// without a loaded map region. Displays the GPS trail on a black background.
+    @State private var trackOnlyScene: TrackOnlyScene?
+
+    /// Index into ``TrackOnlyScene/viewRadii`` controlling the visible radius
+    /// via Digital Crown when using the track-only scene.
+    @State private var viewRadiusIndex: Int = 2
+
+    /// Stable UUID for the current recording session, used for periodic phone sync.
+    @State private var liveRouteId: UUID?
+
     /// The region selected in the picker sheet (used for dismiss callback).
     @State private var pickedRegion: RegionMetadata?
 
@@ -117,6 +128,20 @@ struct MapView: View {
                             detent: $mapRenderer.currentZoom,
                             from: mapRenderer.minZoom,
                             through: mapRenderer.maxZoom,
+                            by: 1,
+                            sensitivity: .medium
+                        ) { _ in
+                            // Crown rotation handled by binding
+                        }
+                } else if let trackScene = trackOnlyScene {
+                    SpriteView(scene: trackScene)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(true)
+                        .focusable()
+                        .digitalCrownRotation(
+                            detent: $viewRadiusIndex,
+                            from: 0,
+                            through: TrackOnlyScene.viewRadii.count - 1,
                             by: 1,
                             sensitivity: .medium
                         ) { _ in
@@ -175,15 +200,25 @@ struct MapView: View {
         .onChange(of: locationManager.heading) { _, newHeading in
             if let heading = newHeading {
                 mapScene?.updateHeading(trueHeading: heading.trueHeading)
+                trackOnlyScene?.updateHeading(trueHeading: heading.trueHeading)
                 // In heading-up mode, refresh overlays since the map rotation changed
                 if isHeadingUp {
                     if locationManager.isTracking {
                         mapScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
+                        trackOnlyScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
                     }
                     refreshWaypointMarkers()
                     refreshRouteLine()
                     refreshTrailOverlays()
                 }
+            }
+        }
+        .onChange(of: viewRadiusIndex) { _, newIndex in
+            let clampedIndex = max(0, min(newIndex, TrackOnlyScene.viewRadii.count - 1))
+            trackOnlyScene?.setViewRadius(TrackOnlyScene.viewRadii[clampedIndex])
+            // Re-render trail at new zoom level
+            if locationManager.isTracking {
+                trackOnlyScene?.updateTrackTrail(trackPoints: locationManager.trackPoints)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
@@ -277,6 +312,22 @@ struct MapView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+
+            // On-demand tile request when phone is reachable
+            if connectivityManager.isTileRequestPending {
+                ProgressView("Requesting map...")
+                    .font(.caption)
+            } else if let location = locationManager.currentLocation,
+                      !connectivityManager.isReceivingFile {
+                Button("Request Map from iPhone") {
+                    connectivityManager.requestTilesFromPhone(
+                        coordinate: location.coordinate
+                    )
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+                .tint(.blue)
+            }
         }
         .padding()
     }
@@ -287,9 +338,17 @@ struct MapView: View {
     /// indicator is always visible.
     private var topInfoBar: some View {
         HStack {
-            // Zoom level (only meaningful when a map is loaded)
+            // Zoom level (tile map) or radius (track-only scene)
             if selectedRegion != nil {
                 Text("z\(mapRenderer.currentZoom)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+            } else if trackOnlyScene != nil {
+                let radiusIndex = max(0, min(viewRadiusIndex, TrackOnlyScene.viewRadii.count - 1))
+                let radius = TrackOnlyScene.viewRadii[radiusIndex]
+                Text(radius >= 1000 ? String(format: "%.1f km", radius / 1000.0) : "\(Int(radius))m")
                     .font(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -315,8 +374,8 @@ struct MapView: View {
     /// shown when a map scene is available.
     private var bottomControls: some View {
         HStack(spacing: 12) {
-            // Center on user / heading-up button (only useful when a map is loaded)
-            if selectedRegion != nil {
+            // Center on user / heading-up button (useful when a map or track-only scene is loaded)
+            if selectedRegion != nil || trackOnlyScene != nil {
                 Button {
                     centerOnUser()
                     WKInterfaceDevice.current().play(.click)
@@ -384,6 +443,7 @@ struct MapView: View {
                 isCenteredOnUser = false
                 isHeadingUp = false
                 mapScene?.isHeadingUpMode = false
+                trackOnlyScene?.isHeadingUpMode = false
                 // Pan the map
                 // This would require implementing pan logic in MapRenderer
             }
@@ -414,8 +474,14 @@ struct MapView: View {
             let scene = mapRenderer.createScene(size: WKInterfaceDevice.current().screenBounds.size)
             scene.isHeadingUpMode = isHeadingUp
             mapScene = scene
+            // Dismiss track-only scene now that a tile map is available
+            trackOnlyScene = nil
             refreshWaypointMarkers()
             refreshTrailOverlays()
+            // If actively recording, render existing track on the new map scene
+            if locationManager.isTracking {
+                scene.updateTrackTrail(trackPoints: locationManager.trackPoints)
+            }
         } catch {
             errorMessage = "Failed to load map region: \(error.localizedDescription)"
             showError = true
@@ -439,6 +505,15 @@ struct MapView: View {
 
         // Update position marker on map
         mapScene?.updatePositionMarker(coordinate: location.coordinate)
+
+        // Update track-only scene (mapless trail display)
+        if let trackScene = trackOnlyScene {
+            trackScene.updateCenter(location.coordinate)
+            trackScene.updatePositionMarker(coordinate: location.coordinate)
+            if locationManager.isTracking {
+                trackScene.updateTrackTrail(trackPoints: locationManager.trackPoints)
+            }
+        }
 
         // Update track trail if recording
         if locationManager.isTracking {
@@ -501,11 +576,13 @@ struct MapView: View {
         isCenteredOnUser = true
         isHeadingUp = true
         mapScene?.isHeadingUpMode = true
+        trackOnlyScene?.isHeadingUpMode = true
         mapRenderer.setCenter(location.coordinate)
 
         // Apply current heading immediately
         if let heading = locationManager.heading {
             mapScene?.updateHeading(trueHeading: heading.trueHeading)
+            trackOnlyScene?.updateHeading(trueHeading: heading.trueHeading)
         }
     }
 
@@ -576,6 +653,7 @@ struct MapView: View {
             locationManager.stopTracking()
             stopAutoSaveTimer()
             batteryMonitor.stopMonitoring()
+            liveRouteId = nil
             if healthKitManager.workoutActive {
                 Task {
                     let workout = await healthKitManager.stopWorkout(
@@ -594,11 +672,21 @@ struct MapView: View {
             if !locationManager.trackPoints.isEmpty {
                 showingSaveHike = true
             }
+            // Dismiss track-only scene after save sheet is presented
+            trackOnlyScene = nil
         } else {
             locationManager.startTracking()
+            liveRouteId = UUID()
             batteryMonitor.reset()
             batteryMonitor.startMonitoring()
             startAutoSaveTimer()
+            // Create track-only scene for mapless trail display when no map is loaded
+            if mapScene == nil {
+                let scene = TrackOnlyScene(size: WKInterfaceDevice.current().screenBounds.size)
+                scene.isHeadingUpMode = isHeadingUp
+                scene.setViewRadius(TrackOnlyScene.viewRadii[viewRadiusIndex])
+                trackOnlyScene = scene
+            }
             if recordWorkouts {
                 healthKitManager.startWorkout()
                 // Check if startWorkout set an error (synchronous method)
@@ -622,6 +710,8 @@ struct MapView: View {
 
         let locManager = locationManager
         let regionId = selectedRegion?.id
+        let connManager = connectivityManager
+        let currentLiveRouteId = liveRouteId
         autoSaveTimer = Timer.scheduledTimer(
             withTimeInterval: TrackRecoveryManager.autoSaveIntervalSec,
             repeats: true
@@ -640,9 +730,81 @@ struct MapView: View {
                     elevationLoss: loss,
                     regionId: regionId
                 )
+
+                // Sync partial route to phone if reachable
+                guard let routeId = currentLiveRouteId, !points.isEmpty else { return }
+                MapView.syncPartialRouteToPhone(
+                    connManager: connManager,
+                    routeId: routeId,
+                    trackPoints: points,
+                    distance: distance,
+                    elevationGain: gain,
+                    elevationLoss: loss,
+                    regionId: regionId
+                )
             }
         }
     }
+
+    /// Creates a partial ``SavedRoute`` from in-progress recording data and sends it
+    /// to the phone via live sync.
+    ///
+    /// Called from the auto-save timer every 5 minutes during active recording.
+    /// The route uses the stable ``liveRouteId`` so the phone can upsert
+    /// (replace the same route on each sync rather than creating duplicates).
+    ///
+    /// - Parameters:
+    ///   - connManager: The ``WatchConnectivityReceiver`` to send through.
+    ///   - routeId: The stable UUID for this recording session.
+    ///   - trackPoints: The current array of recorded GPS points.
+    ///   - distance: Total distance in meters.
+    ///   - elevationGain: Total elevation gain in meters.
+    ///   - elevationLoss: Total elevation loss in meters.
+    ///   - regionId: The current region ID, if any.
+    private static func syncPartialRouteToPhone(
+        connManager: WatchConnectivityReceiver,
+        routeId: UUID,
+        trackPoints: [CLLocation],
+        distance: CLLocationDistance,
+        elevationGain: Double,
+        elevationLoss: Double,
+        regionId: UUID?
+    ) {
+        guard let firstPoint = trackPoints.first,
+              let lastPoint = trackPoints.last else { return }
+
+        let compressedData = TrackCompression.encode(trackPoints)
+        let (walkingTime, restingTime) = LocationManager.computeWalkingAndRestingTime(from: trackPoints)
+
+        let route = SavedRoute(
+            id: routeId,
+            name: "Recording — \(Self.liveSyncDateFormatter.string(from: firstPoint.timestamp))",
+            startLatitude: firstPoint.coordinate.latitude,
+            startLongitude: firstPoint.coordinate.longitude,
+            endLatitude: lastPoint.coordinate.latitude,
+            endLongitude: lastPoint.coordinate.longitude,
+            startTime: firstPoint.timestamp,
+            endTime: lastPoint.timestamp,
+            totalDistance: distance,
+            elevationGain: elevationGain,
+            elevationLoss: elevationLoss,
+            walkingTime: walkingTime,
+            restingTime: restingTime,
+            comment: "In-progress recording",
+            regionId: regionId,
+            trackData: compressedData
+        )
+
+        connManager.syncLiveRoute(route)
+    }
+
+    /// Date formatter for live sync route names.
+    private static let liveSyncDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     /// Stops and invalidates the auto-save timer.
     private func stopAutoSaveTimer() {

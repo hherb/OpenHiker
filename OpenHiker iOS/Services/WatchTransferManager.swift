@@ -16,6 +16,7 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import CoreLocation
 import WatchConnectivity
 
 /// Manages WatchConnectivity on the iOS side for transferring map data to Apple Watch.
@@ -421,6 +422,7 @@ extension WatchConnectivityManager: WCSessionDelegate {
     ///   - metadata: The transfer metadata dictionary with the route ID.
     private func handleReceivedRoute(file: WCSessionFile, metadata: [String: Any]) {
         let routeIdString = metadata["routeId"] as? String ?? "unknown"
+        let isLiveSync = metadata["isLiveSync"] as? String == "true"
 
         do {
             let jsonData = try Data(contentsOf: file.fileURL)
@@ -430,7 +432,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
             let route = try decoder.decode(SavedRoute.self, from: jsonData)
 
             try RouteStore.shared.insert(route)
-            print("Received and saved route from watch: \(routeIdString) — \(route.name)")
+            if isLiveSync {
+                print("Live sync update from watch: \(routeIdString) — \(route.name)")
+            } else {
+                print("Received and saved route from watch: \(routeIdString) — \(route.name)")
+            }
         } catch {
             print("Error processing received route \(routeIdString): \(error.localizedDescription)")
         }
@@ -489,8 +495,75 @@ extension WatchConnectivityManager: WCSessionDelegate {
             switch action {
             case "ping":
                 replyHandler(["status": "ok", "timestamp": Date().timeIntervalSince1970])
+            case "requestTilesForLocation":
+                replyHandler(["status": "downloading"])
+                handleTileRequest(message)
             default:
                 replyHandler(["status": "unknown_action"])
+            }
+        }
+    }
+
+    // MARK: - On-Demand Tile Request
+
+    /// Handles a tile download request from the watch.
+    ///
+    /// Downloads map tiles for the given GPS location at zoom levels 12-15,
+    /// packages them as an MBTiles file, creates a region, and transfers it
+    /// to the watch via the standard region transfer mechanism.
+    ///
+    /// - Parameter message: The message dictionary containing `lat`, `lon`, and `radiusKm`.
+    private func handleTileRequest(_ message: [String: Any]) {
+        guard let lat = message["lat"] as? Double,
+              let lon = message["lon"] as? Double else {
+            print("Invalid tile request: missing lat/lon")
+            return
+        }
+
+        let radiusKm = min(message["radiusKm"] as? Double ?? 5.0, 10.0)
+        let radiusMeters = radiusKm * 1000.0
+
+        let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        let bbox = BoundingBox(center: center, radiusMeters: radiusMeters)
+
+        let dateStr: String = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return formatter.string(from: Date())
+        }()
+
+        let request = RegionSelectionRequest(
+            name: "Watch — \(dateStr)",
+            boundingBox: bbox,
+            zoomLevels: 12...15,
+            includeContours: false,
+            includeRoutingData: false
+        )
+
+        print("Processing tile request from watch: center=(\(lat), \(lon)) radius=\(radiusKm)km")
+
+        Task {
+            do {
+                let downloader = TileDownloader()
+                let mbtilesURL = try await downloader.downloadRegion(request) { progress in
+                    print("Watch tile request: \(progress.downloadedTiles)/\(progress.totalTiles) tiles")
+                }
+
+                let storage = RegionStorage.shared
+                let region = storage.createRegion(
+                    from: request,
+                    mbtilesURL: mbtilesURL,
+                    tileCount: request.boundingBox.estimateTileCount(zoomLevels: request.zoomLevels)
+                )
+                storage.saveRegion(region)
+
+                let metadata = storage.metadata(for: region)
+                transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+
+                print("Watch tile request complete: \(region.name) transferred to watch")
+            } catch {
+                print("Watch tile request failed: \(error.localizedDescription)")
             }
         }
     }
