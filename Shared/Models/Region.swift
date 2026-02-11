@@ -324,3 +324,14 @@ struct RegionMetadata: Identifiable, Codable, Sendable {
         boundingBox.contains(coordinate)
     }
 }
+
+// MARK: - Region Notifications
+
+extension Notification.Name {
+    /// Posted when a new region MBTiles file is received and saved on the watch.
+    ///
+    /// The `userInfo` dictionary contains a `"regionMetadata"` key with the
+    /// ``RegionMetadata`` of the received region. MapView observes this to
+    /// auto-load the region when no map is currently displayed.
+    static let regionFileReceived = Notification.Name("regionFileReceived")
+}

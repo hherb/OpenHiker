@@ -351,6 +351,44 @@ final class WatchConnectivityReceiver: NSObject, ObservableObject {
         })
     }
 
+    /// Asks the iPhone for an existing downloaded region covering the given coordinate.
+    ///
+    /// The phone searches its downloaded regions and transfers the largest one whose
+    /// bounding box contains the coordinate. If no existing region covers the location,
+    /// the phone automatically falls back to downloading new tiles on demand.
+    ///
+    /// Rate-limited to one request per ``tileRequestCooldownSec`` (shared with
+    /// ``requestTilesFromPhone(coordinate:radiusKm:)``).
+    ///
+    /// - Parameter coordinate: The GPS coordinate to find a matching region for.
+    func requestRegionFromPhone(coordinate: CLLocationCoordinate2D) {
+        guard let session = session, session.isReachable else { return }
+
+        // Share rate limit with tile requests
+        if let last = lastTileRequestTime,
+           Date().timeIntervalSince(last) < Self.tileRequestCooldownSec {
+            print("Region request rate limited — try again later")
+            return
+        }
+
+        lastTileRequestTime = Date()
+        DispatchQueue.main.async { self.isTileRequestPending = true }
+
+        session.sendMessage([
+            "action": "requestRegionForLocation",
+            "lat": coordinate.latitude,
+            "lon": coordinate.longitude
+        ], replyHandler: { response in
+            let status = response["status"] as? String ?? "unknown"
+            print("Region request reply: \(status)")
+            // Both "transferring" and "downloading" mean a file is on its way;
+            // isTileRequestPending will be cleared when the file arrives.
+        }, errorHandler: { error in
+            print("Error requesting region: \(error.localizedDescription)")
+            DispatchQueue.main.async { self.isTileRequestPending = false }
+        })
+    }
+
     // MARK: - Waypoint Sync
 
     /// Sends a waypoint to the iPhone via `transferUserInfo`.
@@ -597,6 +635,12 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
                 self.lastReceivedRegion = name
                 // Clear tile request pending state if this was a requested download
                 self.isTileRequestPending = false
+                // Notify MapView so it can auto-load the new region
+                NotificationCenter.default.post(
+                    name: .regionFileReceived,
+                    object: nil,
+                    userInfo: ["regionMetadata": regionMetadata]
+                )
             }
 
             print("Successfully received and saved region: \(name)")

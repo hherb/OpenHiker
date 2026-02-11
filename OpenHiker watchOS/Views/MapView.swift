@@ -225,6 +225,18 @@ struct MapView: View {
         .onReceive(NotificationCenter.default.publisher(for: .waypointSyncReceived)) { _ in
             loadWaypoints()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .regionFileReceived)) { notification in
+            // Auto-load the received region if no map is currently displayed
+            guard mapScene == nil,
+                  let metadata = notification.userInfo?["regionMetadata"] as? RegionMetadata else {
+                return
+            }
+            // Only auto-load if the region covers the current GPS position
+            if let coordinate = locationManager.currentLocation?.coordinate,
+               metadata.contains(coordinate: coordinate) {
+                loadRegion(metadata)
+            }
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -455,13 +467,47 @@ struct MapView: View {
 
     // MARK: - Actions
 
-    /// Attempts to load the most recently used map region from local storage.
+    /// Attempts to load a map region, using these strategies in order:
+    ///
+    /// 1. Load the most recently used local region (fast path).
+    /// 2. If no region loaded and GPS is available, find the largest local region
+    ///    whose bounding box contains the current coordinate.
+    /// 3. If still no match, ask the phone for an existing region covering this location
+    ///    (which falls back to on-demand tile download if the phone has none).
     private func loadSavedRegion() {
-        // Try to load the most recently used region
         let regions = connectivityManager.loadAllRegionMetadata()
+
+        // Strategy 1: most recently used region
         if let lastRegion = regions.first {
             loadRegion(lastRegion)
+            return
         }
+
+        // Strategy 2: find local region containing current GPS coordinate
+        if let coordinate = locationManager.currentLocation?.coordinate {
+            if let bestLocal = findLargestLocalRegion(containing: coordinate, from: regions) {
+                loadRegion(bestLocal)
+                return
+            }
+
+            // Strategy 3: ask phone for a matching region
+            connectivityManager.requestRegionFromPhone(coordinate: coordinate)
+        }
+    }
+
+    /// Finds the largest locally-available region whose bounding box contains the coordinate.
+    ///
+    /// - Parameters:
+    ///   - coordinate: The GPS coordinate to search for.
+    ///   - regions: The list of local region metadata to search through.
+    /// - Returns: The matching region with the largest area, or `nil` if none match.
+    private func findLargestLocalRegion(
+        containing coordinate: CLLocationCoordinate2D,
+        from regions: [RegionMetadata]
+    ) -> RegionMetadata? {
+        regions
+            .filter { $0.contains(coordinate: coordinate) }
+            .max { $0.boundingBox.areaKm2 < $1.boundingBox.areaKm2 }
     }
 
     /// Loads a map region by opening its MBTiles database and creating the SpriteKit scene.
@@ -687,6 +733,16 @@ struct MapView: View {
                 scene.isHeadingUpMode = isHeadingUp
                 scene.setViewRadius(TrackOnlyScene.viewRadii[viewRadiusIndex])
                 trackOnlyScene = scene
+
+                // Try to find a local region or request one from the phone
+                if let coordinate = locationManager.currentLocation?.coordinate {
+                    let localRegions = connectivityManager.loadAllRegionMetadata()
+                    if let bestLocal = findLargestLocalRegion(containing: coordinate, from: localRegions) {
+                        loadRegion(bestLocal)
+                    } else {
+                        connectivityManager.requestRegionFromPhone(coordinate: coordinate)
+                    }
+                }
             }
             if recordWorkouts {
                 healthKitManager.startWorkout()

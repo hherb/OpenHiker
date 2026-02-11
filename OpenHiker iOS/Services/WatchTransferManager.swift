@@ -529,8 +529,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     /// Handles incoming messages from the watch that expect a reply.
     ///
-    /// Currently supports:
+    /// Supports:
     /// - `"ping"`: Replies with `["status": "ok", "timestamp": <current_time>]`.
+    /// - `"requestRegionForLocation"`: Finds the largest downloaded region covering
+    ///   the given coordinate and transfers it; falls back to on-demand tile download.
+    /// - `"requestTilesForLocation"`: Downloads new tiles for the location.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
         print("Received message with reply handler: \(message)")
 
@@ -538,12 +541,64 @@ extension WatchConnectivityManager: WCSessionDelegate {
             switch action {
             case "ping":
                 replyHandler(["status": "ok", "timestamp": Date().timeIntervalSince1970])
+            case "requestRegionForLocation":
+                handleRegionForLocationRequest(message, replyHandler: replyHandler)
             case "requestTilesForLocation":
                 replyHandler(["status": "downloading"])
                 handleTileRequest(message)
             default:
                 replyHandler(["status": "unknown_action"])
             }
+        }
+    }
+
+    // MARK: - Region-for-Location Request
+
+    /// Handles a request from the watch for an existing region covering a GPS coordinate.
+    ///
+    /// Searches all downloaded regions on the phone for ones whose bounding box contains
+    /// the given coordinate. If multiple regions match, the largest by area is chosen
+    /// (most map coverage is most useful). The full region is transferred with its routing
+    /// database and planned routes via ``transferRegionWithRoutes(_:storage:)``.
+    ///
+    /// If no existing region covers the location, falls back to the on-demand tile
+    /// download via ``handleTileRequest(_:)``.
+    ///
+    /// - Parameters:
+    ///   - message: The message dictionary containing `lat` and `lon`.
+    ///   - replyHandler: The reply handler to inform the watch of the result.
+    private func handleRegionForLocationRequest(_ message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        guard let lat = message["lat"] as? Double,
+              let lon = message["lon"] as? Double else {
+            replyHandler(["status": "error", "reason": "missing lat/lon"])
+            return
+        }
+
+        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        let storage = RegionStorage.shared
+        storage.loadRegions()
+
+        // Find all regions whose bounding box contains the coordinate
+        let matchingRegions = storage.regions.filter { $0.boundingBox.contains(coordinate) }
+
+        if let bestRegion = matchingRegions.max(by: { $0.boundingBox.areaKm2 < $1.boundingBox.areaKm2 }) {
+            let mbtilesURL = storage.mbtilesURL(for: bestRegion)
+            guard FileManager.default.fileExists(atPath: mbtilesURL.path) else {
+                // MBTiles file missing on disk — fall back to tile download
+                print("Region \(bestRegion.name) matches but MBTiles file missing, falling back to tile download")
+                replyHandler(["status": "downloading"])
+                handleTileRequest(message)
+                return
+            }
+
+            print("Found existing region '\(bestRegion.name)' (\(String(format: "%.0f", bestRegion.boundingBox.areaKm2)) km²) covering (\(lat), \(lon))")
+            replyHandler(["status": "transferring", "regionId": bestRegion.id.uuidString])
+            transferRegionWithRoutes(bestRegion, storage: storage)
+        } else {
+            // No existing region covers this location — fall back to on-demand tile download
+            print("No existing region covers (\(lat), \(lon)), falling back to tile download")
+            replyHandler(["status": "downloading"])
+            handleTileRequest(message)
         }
     }
 
