@@ -136,6 +136,49 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         sendAvailableRegions()
     }
 
+    /// Transfers a single region to the Apple Watch along with its routing database
+    /// and all associated planned routes.
+    ///
+    /// This is the preferred method for sending a specific region to the watch.
+    /// It bundles:
+    /// 1. The MBTiles tile database
+    /// 2. The routing graph database (if the region has routing data)
+    /// 3. All ``PlannedRoute`` objects whose `regionId` matches this region
+    ///
+    /// - Parameters:
+    ///   - region: The ``Region`` to transfer.
+    ///   - storage: The ``RegionStorage`` instance to read files from.
+    func transferRegionWithRoutes(_ region: Region, storage: RegionStorage) {
+        let mbtilesURL = storage.mbtilesURL(for: region)
+        guard FileManager.default.fileExists(atPath: mbtilesURL.path) else {
+            print("MBTiles file not found for region \(region.name)")
+            return
+        }
+
+        let metadata = storage.metadata(for: region)
+        transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+
+        // Transfer the routing database if the region has routing data
+        if region.hasRoutingData {
+            let routingURL = storage.routingDbURL(for: region)
+            if FileManager.default.fileExists(atPath: routingURL.path) {
+                transferRoutingDatabase(at: routingURL, metadata: metadata)
+            }
+        }
+
+        // Transfer all planned routes associated with this region
+        let plannedRoutes = PlannedRouteStore.shared.fetchForRegion(region.id)
+        for route in plannedRoutes {
+            if let fileURL = PlannedRouteStore.shared.fileURL(for: route.id) {
+                sendPlannedRouteToWatch(fileURL: fileURL, route: route)
+            }
+        }
+
+        if !plannedRoutes.isEmpty {
+            print("Queued \(plannedRoutes.count) planned route(s) for region \(region.name)")
+        }
+    }
+
     /// Transfers all downloaded regions to the Apple Watch.
     ///
     /// Loads all regions from ``RegionStorage``, then initiates a file transfer

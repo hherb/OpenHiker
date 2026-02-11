@@ -650,14 +650,12 @@ struct RegionsListView: View {
 
     /// Initiates a WatchConnectivity file transfer for the specified region.
     ///
-    /// Reads the MBTiles file from local storage and sends it along with
-    /// region metadata to the paired Apple Watch.
+    /// Sends the MBTiles file, routing database (if available), and all
+    /// planned routes associated with this region to the paired Apple Watch.
     ///
     /// - Parameter region: The ``Region`` to transfer.
     private func transferToWatch(_ region: Region) {
-        let mbtilesURL = storage.mbtilesURL(for: region)
-        let metadata = storage.metadata(for: region)
-        watchConnectivity.transferMBTilesFile(at: mbtilesURL, metadata: metadata)
+        watchConnectivity.transferRegionWithRoutes(region, storage: storage)
     }
 }
 
