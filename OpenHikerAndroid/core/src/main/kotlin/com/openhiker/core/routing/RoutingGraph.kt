@@ -195,6 +195,16 @@ sealed class RoutingError : Exception() {
             get() = "Via-point ${index + 1} at ${coordinate.formatted()} is not reachable"
     }
 
+    /** A* exceeded the maximum node expansion limit without finding a route. */
+    data class NodeExpansionLimitExceeded(
+        val expandedNodes: Int,
+        val closestApproachMetres: Double
+    ) : RoutingError() {
+        override val message: String
+            get() = "Route search exceeded limit ($expandedNodes nodes explored, " +
+                "closest approach: %.0f m). Try shorter segments.".format(closestApproachMetres)
+    }
+
     /** The routing database is corrupt or has an unexpected schema. */
     data class DatabaseCorrupted(val detail: String) : RoutingError() {
         override val message: String get() = "Routing database error: $detail"

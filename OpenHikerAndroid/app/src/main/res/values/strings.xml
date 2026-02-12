@@ -29,4 +29,47 @@
     <string name="rename">Rename</string>
     <string name="save">Save</string>
     <string name="error">Error</string>
+    <string name="continue_label">Continue</string>
+    <string name="stop">Stop</string>
+    <string name="clear">Clear</string>
+    <string name="navigate">Navigate</string>
+
+    <!-- Navigation screen -->
+    <string name="nav_map_placeholder">Map with live GPS tracking</string>
+    <string name="nav_following_route">Following route…</string>
+    <string name="nav_off_route">Off Route</string>
+    <string name="nav_off_route_distance">%1$dm from route</string>
+    <string name="nav_arrived">You have arrived!</string>
+    <string name="nav_stat_walked">Walked</string>
+    <string name="nav_stat_remaining">Remaining</string>
+    <string name="nav_stat_time">Time</string>
+    <string name="nav_stop_navigation">Stop Navigation</string>
+    <string name="nav_stop_title">Stop Navigation?</string>
+    <string name="nav_stop_message">Are you sure you want to stop turn-by-turn navigation?</string>
+    <string name="nav_distance_metres">%1$d m</string>
+    <string name="nav_distance_km">%1$.1f km</string>
+
+    <!-- Route planning screen -->
+    <string name="route_hiking">Hiking</string>
+    <string name="route_cycling">Cycling</string>
+    <string name="route_start_to_end">Start → End</string>
+    <string name="route_back_to_start">Back to Start</string>
+    <string name="route_computing">Computing route…</string>
+    <string name="route_computed">Route Computed</string>
+    <string name="route_elevation_stats">%1$dm up / %2$dm down</string>
+    <string name="route_estimated_time">Est. %1$s</string>
+    <string name="route_instructions_count">%1$d turn instructions</string>
+    <string name="route_no_waypoints">No waypoints placed</string>
+    <string name="route_waypoints_count">%1$d waypoint%2$s placed</string>
+    <string name="route_wp_start">WP %1$d (start)</string>
+    <string name="route_wp_end">WP %1$d (end)</string>
+    <string name="route_wp_via">WP %1$d</string>
+    <string name="route_hint_tap_map">Tap on the map to place waypoints</string>
+    <string name="route_hint_add_more">Tap to add more waypoints (need at least 2)</string>
+    <string name="route_hint_compute">Tap to add waypoints, or compute your route</string>
+    <string name="route_select_region">Select a region</string>
+    <string name="route_region_label">Region</string>
+    <string name="route_no_regions">No regions downloaded</string>
+    <string name="route_save_title">Save Route</string>
+    <string name="route_name_label">Route name</string>
 </resources>

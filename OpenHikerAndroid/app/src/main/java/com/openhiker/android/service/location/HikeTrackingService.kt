@@ -145,6 +145,7 @@ class HikeTrackingService : Service() {
     private var lastPointTime: Long = 0L
     private var currentMaxSpeed: Double = 0.0
     private var totalMovingTime: Double = 0.0
+    private var consecutiveAutoSaveFailures: Int = 0
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -290,47 +291,51 @@ class HikeTrackingService : Service() {
     private fun startLocationCollection() {
         locationJob?.cancel()
         locationJob = serviceScope.launch {
-            locationProvider.location.collect { location ->
-                location ?: return@collect
-                if (_recordingState.value != HikeRecordingState.RECORDING) return@collect
+            try {
+                locationProvider.location.collect { location ->
+                    location ?: return@collect
+                    if (_recordingState.value != HikeRecordingState.RECORDING) return@collect
 
-                val now = System.currentTimeMillis()
-                val altitude = if (location.hasAltitude()) location.altitude else 0.0
+                    val now = System.currentTimeMillis()
+                    val altitude = if (location.hasAltitude()) location.altitude else 0.0
 
-                val trackPoint = TrackPoint(
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    altitude = altitude,
-                    timestamp = now.toDouble() / MILLIS_PER_SECOND
-                )
-
-                trackPoints.add(trackPoint)
-
-                // Update elevation gain/loss with noise filter
-                updateElevation(altitude)
-
-                // Update speed statistics
-                if (lastPointTime > 0L && trackPoints.size >= 2) {
-                    val prev = trackPoints[trackPoints.size - 2]
-                    val dist = Haversine.distance(
-                        prev.latitude, prev.longitude,
-                        trackPoint.latitude, trackPoint.longitude
+                    val trackPoint = TrackPoint(
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        altitude = altitude,
+                        timestamp = now.toDouble() / MILLIS_PER_SECOND
                     )
-                    val timeDelta = (now - lastPointTime).toDouble() / MILLIS_PER_SECOND
-                    if (timeDelta > 0) {
-                        val speed = dist / timeDelta
-                        if (speed > currentMaxSpeed) {
-                            currentMaxSpeed = speed
-                        }
-                        if (speed > HikeStatisticsConfig.RESTING_SPEED_THRESHOLD) {
-                            totalMovingTime += timeDelta
+
+                    trackPoints.add(trackPoint)
+
+                    // Update elevation gain/loss with noise filter
+                    updateElevation(altitude)
+
+                    // Update speed statistics
+                    if (lastPointTime > 0L && trackPoints.size >= 2) {
+                        val prev = trackPoints[trackPoints.size - 2]
+                        val dist = Haversine.distance(
+                            prev.latitude, prev.longitude,
+                            trackPoint.latitude, trackPoint.longitude
+                        )
+                        val timeDelta = (now - lastPointTime).toDouble() / MILLIS_PER_SECOND
+                        if (timeDelta > 0) {
+                            val speed = dist / timeDelta
+                            if (speed > currentMaxSpeed) {
+                                currentMaxSpeed = speed
+                            }
+                            if (speed > HikeStatisticsConfig.RESTING_SPEED_THRESHOLD) {
+                                totalMovingTime += timeDelta
+                            }
                         }
                     }
-                }
 
-                lastPointTime = now
-                updateLiveStats()
-                updateNotification()
+                    lastPointTime = now
+                    updateLiveStats()
+                    updateNotification()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "GPS location collection failed", e)
             }
         }
     }
@@ -405,13 +410,17 @@ class HikeTrackingService : Service() {
     private fun startTimer() {
         timerJob?.cancel()
         timerJob = serviceScope.launch {
-            while (true) {
-                delay(TIMER_UPDATE_INTERVAL_MS)
-                if (_recordingState.value != HikeRecordingState.IDLE) {
-                    _liveStats.value = _liveStats.value.copy(
-                        elapsedSeconds = elapsedSeconds().toLong()
-                    )
+            try {
+                while (true) {
+                    delay(TIMER_UPDATE_INTERVAL_MS)
+                    if (_recordingState.value != HikeRecordingState.IDLE) {
+                        _liveStats.value = _liveStats.value.copy(
+                            elapsedSeconds = elapsedSeconds().toLong()
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Timer coroutine failed", e)
             }
         }
     }
@@ -425,17 +434,27 @@ class HikeTrackingService : Service() {
     private fun startAutoSave() {
         autoSaveJob?.cancel()
         autoSaveJob = serviceScope.launch(Dispatchers.IO) {
-            while (true) {
-                delay(AUTO_SAVE_INTERVAL_MS)
-                if (trackPoints.isNotEmpty()) {
-                    try {
-                        val compressed = TrackCompression.compress(trackPoints.toList())
-                        getDraftFile().writeBytes(compressed)
-                        Log.d(TAG, "Auto-saved ${trackPoints.size} track points")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Auto-save failed", e)
+            try {
+                while (true) {
+                    delay(AUTO_SAVE_INTERVAL_MS)
+                    if (trackPoints.isNotEmpty()) {
+                        try {
+                            val compressed = TrackCompression.compress(trackPoints.toList())
+                            getDraftFile().writeBytes(compressed)
+                            consecutiveAutoSaveFailures = 0
+                            Log.d(TAG, "Auto-saved ${trackPoints.size} track points")
+                        } catch (e: Exception) {
+                            consecutiveAutoSaveFailures++
+                            Log.e(
+                                TAG,
+                                "Auto-save failed ($consecutiveAutoSaveFailures consecutive failures)",
+                                e
+                            )
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-save coroutine failed", e)
             }
         }
     }

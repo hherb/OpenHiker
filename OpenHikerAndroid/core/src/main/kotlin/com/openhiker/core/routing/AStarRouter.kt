@@ -38,8 +38,13 @@ import java.util.PriorityQueue
  * into a single [ComputedRoute].
  *
  * @param graph The routing graph to search (typically a Room DAO wrapper).
+ * @param maxNodeExpansions Maximum number of nodes to expand before aborting
+ *        (default: [DEFAULT_MAX_NODE_EXPANSIONS]). Prevents OOM on very large graphs.
  */
-class AStarRouter(private val graph: RoutingGraph) {
+class AStarRouter(
+    private val graph: RoutingGraph,
+    private val maxNodeExpansions: Int = DEFAULT_MAX_NODE_EXPANSIONS
+) {
 
     /**
      * Finds the optimal route between two coordinates, optionally
@@ -178,6 +183,14 @@ class AStarRouter(private val graph: RoutingGraph) {
         var closestApproachMetres = heuristic(startNode, endNode)
 
         while (openSet.isNotEmpty()) {
+            // Guard against unbounded expansion on large/sparse graphs
+            if (closedSet.size >= maxNodeExpansions) {
+                throw RoutingError.NodeExpansionLimitExceeded(
+                    expandedNodes = closedSet.size,
+                    closestApproachMetres = closestApproachMetres
+                )
+            }
+
             val current = openSet.poll()
             val currentId = current.nodeId
 
@@ -327,6 +340,17 @@ class AStarRouter(private val graph: RoutingGraph) {
             coordinates = coordinates,
             viaPoints = emptyList()
         )
+    }
+
+    companion object {
+        /**
+         * Default maximum number of nodes A* will expand before aborting.
+         *
+         * 500,000 is generous for hiking/cycling graphs (typical regional
+         * graphs have 50k–200k nodes). Prevents OOM on constrained devices
+         * when the graph is very large or poorly connected.
+         */
+        const val DEFAULT_MAX_NODE_EXPANSIONS = 500_000
     }
 }
 

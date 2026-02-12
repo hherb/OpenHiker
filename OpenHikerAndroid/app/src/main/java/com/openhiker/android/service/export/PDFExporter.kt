@@ -29,6 +29,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.openhiker.android.data.db.routes.SavedRouteEntity
+import com.openhiker.android.util.sanitizeFileName
 import com.openhiker.core.compression.TrackCompression
 import com.openhiker.core.compression.TrackPoint
 import com.openhiker.core.model.ElevationPoint
@@ -651,17 +652,6 @@ class PDFExporter @Inject constructor(
         }
     }
 
-    /**
-     * Sanitizes a string for use as a file name.
-     *
-     * @param name The raw name to sanitize.
-     * @return A file-system-safe name string.
-     */
-    private fun sanitizeFileName(name: String): String {
-        val sanitized = name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").trim()
-        return sanitized.ifBlank { DEFAULT_EXPORT_NAME }
-    }
-
     companion object {
         private const val TAG = "PDFExporter"
 
@@ -824,9 +814,6 @@ class PDFExporter @Inject constructor(
 
         /** Maximum age of cached export files before cleanup (1 hour). */
         private const val STALE_FILE_AGE_MS = 60 * 60 * 1000L
-
-        /** Default file name when the route name is empty or invalid. */
-        private const val DEFAULT_EXPORT_NAME = "openhiker_route"
 
         /** MIME type for PDF files. */
         private const val PDF_MIME_TYPE = "application/pdf"

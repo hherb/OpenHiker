@@ -24,6 +24,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.openhiker.android.data.db.routes.SavedRouteEntity
+import com.openhiker.android.util.sanitizeFileName
 import com.openhiker.core.compression.TrackCompression
 import com.openhiker.core.formats.GpxSerializer
 import com.openhiker.core.model.PlannedRoute
@@ -214,20 +215,6 @@ class GPXExporter @Inject constructor(
         return isoDateFormat.format(date)
     }
 
-    /**
-     * Sanitizes a string for use as a file name.
-     *
-     * Replaces characters that are invalid in file names with underscores,
-     * trims whitespace, and falls back to a default name if the result is empty.
-     *
-     * @param name The raw name to sanitize.
-     * @return A file-system-safe name string.
-     */
-    private fun sanitizeFileName(name: String): String {
-        val sanitized = name.replace(Regex("[^a-zA-Z0-9._\\- ]"), "_").trim()
-        return sanitized.ifBlank { DEFAULT_EXPORT_NAME }
-    }
-
     companion object {
         private const val TAG = "GPXExporter"
 
@@ -242,9 +229,6 @@ class GPXExporter @Inject constructor(
 
         /** Milliseconds per second for timestamp conversion. */
         private const val MILLIS_PER_SECOND = 1000.0
-
-        /** Default file name when the route name is empty or invalid. */
-        private const val DEFAULT_EXPORT_NAME = "openhiker_route"
 
         /** Thread-safe ISO-8601 date formatter for GPX timestamps. */
         private val isoDateFormat: SimpleDateFormat

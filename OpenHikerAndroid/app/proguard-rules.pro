@@ -150,8 +150,6 @@
 -keep class kotlinx.coroutines.android.AndroidExceptionPreHandler { *; }
 
 # ServiceLoader support for coroutines
--keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 -keep class * implements kotlinx.coroutines.internal.MainDispatcherFactory { *; }
 -keep class * implements kotlinx.coroutines.CoroutineExceptionHandler { *; }
 

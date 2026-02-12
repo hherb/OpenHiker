@@ -54,11 +54,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openhiker.android.R
 import com.openhiker.core.model.HikeStatsFormatter
 import com.openhiker.core.navigation.NavigationState
 
@@ -161,7 +163,7 @@ fun NavigationScreen(
                     ) {
                         Icon(Icons.Default.Close, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Stop Navigation")
+                        Text(stringResource(R.string.nav_stop_navigation))
                     }
                 }
             }
@@ -204,7 +206,7 @@ private fun MapPlaceholder() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Map with live GPS tracking",
+                text = stringResource(R.string.nav_map_placeholder),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -259,7 +261,7 @@ private fun InstructionCard(navState: NavigationState) {
                 )
             } else {
                 Text(
-                    text = "Following route...",
+                    text = stringResource(R.string.nav_following_route),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -287,19 +289,19 @@ private fun OffRouteWarning(distanceFromRoute: Double) {
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
-                contentDescription = "Off route",
+                contentDescription = stringResource(R.string.nav_off_route),
                 tint = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column {
                 Text(
-                    text = "Off Route",
+                    text = stringResource(R.string.nav_off_route),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
-                    text = "${distanceFromRoute.toInt()}m from route",
+                    text = stringResource(R.string.nav_off_route_distance, distanceFromRoute.toInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
@@ -320,7 +322,7 @@ private fun ArrivedBanner() {
         )
     ) {
         Text(
-            text = "You have arrived!",
+            text = stringResource(R.string.nav_arrived),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -362,15 +364,15 @@ private fun NavigationStatsCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 StatItem(
-                    label = "Walked",
+                    label = stringResource(R.string.nav_stat_walked),
                     value = HikeStatsFormatter.formatDistance(distanceWalked, true)
                 )
                 StatItem(
-                    label = "Remaining",
+                    label = stringResource(R.string.nav_stat_remaining),
                     value = HikeStatsFormatter.formatDistance(remainingDistance, true)
                 )
                 StatItem(
-                    label = "Time",
+                    label = stringResource(R.string.nav_stat_time),
                     value = HikeStatsFormatter.formatDuration(elapsedSeconds.toDouble())
                 )
             }
@@ -413,16 +415,16 @@ private fun StopNavigationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Stop Navigation?") },
-        text = { Text("Are you sure you want to stop turn-by-turn navigation?") },
+        title = { Text(stringResource(R.string.nav_stop_title)) },
+        text = { Text(stringResource(R.string.nav_stop_message)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Stop", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.stop), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Continue")
+                Text(stringResource(R.string.continue_label))
             }
         }
     )

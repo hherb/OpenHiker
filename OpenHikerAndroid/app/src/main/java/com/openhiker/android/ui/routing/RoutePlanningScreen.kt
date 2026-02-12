@@ -62,8 +62,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openhiker.android.R
 import com.openhiker.core.model.HikeStatsFormatter
 import com.openhiker.core.model.RoutingMode
 import com.openhiker.core.model.TurnInstruction
@@ -106,7 +108,7 @@ fun RoutePlanningScreen(
             FilterChip(
                 selected = uiState.routingMode == RoutingMode.HIKING,
                 onClick = { viewModel.setRoutingMode(RoutingMode.HIKING) },
-                label = { Text("Hiking") },
+                label = { Text(stringResource(R.string.route_hiking)) },
                 leadingIcon = {
                     Icon(Icons.Default.DirectionsWalk, contentDescription = null)
                 }
@@ -114,7 +116,7 @@ fun RoutePlanningScreen(
             FilterChip(
                 selected = uiState.routingMode == RoutingMode.CYCLING,
                 onClick = { viewModel.setRoutingMode(RoutingMode.CYCLING) },
-                label = { Text("Cycling") },
+                label = { Text(stringResource(R.string.route_cycling)) },
                 leadingIcon = {
                     Icon(Icons.Default.DirectionsBike, contentDescription = null)
                 }
@@ -147,7 +149,7 @@ fun RoutePlanningScreen(
                     modifier = Modifier.height(18.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Start \u2192 End")
+                Text(stringResource(R.string.route_start_to_end))
             }
 
             // Back to Start button
@@ -164,12 +166,12 @@ fun RoutePlanningScreen(
                     modifier = Modifier.height(18.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Back to Start")
+                Text(stringResource(R.string.route_back_to_start))
             }
 
             // Clear button
             IconButton(onClick = viewModel::clearRoute) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
             }
         }
 
@@ -184,7 +186,7 @@ fun RoutePlanningScreen(
                     modifier = Modifier.height(20.dp).width(20.dp),
                     strokeWidth = 2.dp
                 )
-                Text("Computing route\u2026", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.route_computing), style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -224,9 +226,9 @@ fun RoutePlanningScreen(
                 contentAlignment = Alignment.Center
             ) {
                 val hint = when {
-                    uiState.waypoints.isEmpty() -> "Tap on the map to place waypoints"
-                    uiState.waypoints.size == 1 -> "Tap to add more waypoints (need at least 2)"
-                    else -> "Tap to add waypoints, or compute your route"
+                    uiState.waypoints.isEmpty() -> stringResource(R.string.route_hint_tap_map)
+                    uiState.waypoints.size == 1 -> stringResource(R.string.route_hint_add_more)
+                    else -> stringResource(R.string.route_hint_compute)
                 }
                 Text(
                     text = hint,
@@ -257,7 +259,8 @@ private fun RegionSelector(
     onSelectRegion: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedName = regions.find { it.id == selectedRegionId }?.name ?: "Select a region"
+    val defaultRegionLabel = stringResource(R.string.route_select_region)
+    val selectedName = regions.find { it.id == selectedRegionId }?.name ?: defaultRegionLabel
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -267,7 +270,7 @@ private fun RegionSelector(
             value = selectedName,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Region") },
+            label = { Text(stringResource(R.string.route_region_label)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -288,7 +291,7 @@ private fun RegionSelector(
             }
             if (regions.isEmpty()) {
                 DropdownMenuItem(
-                    text = { Text("No regions downloaded") },
+                    text = { Text(stringResource(R.string.route_no_regions)) },
                     onClick = { expanded = false },
                     enabled = false
                 )
@@ -305,20 +308,24 @@ private fun WaypointInfo(uiState: RoutePlanningUiState) {
     Column {
         if (uiState.waypoints.isEmpty()) {
             Text(
-                text = "No waypoints placed",
+                text = stringResource(R.string.route_no_waypoints),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             Text(
-                text = "${uiState.waypoints.size} waypoint${if (uiState.waypoints.size != 1) "s" else ""} placed",
+                text = stringResource(
+                    R.string.route_waypoints_count,
+                    uiState.waypoints.size,
+                    if (uiState.waypoints.size != 1) "s" else ""
+                ),
                 style = MaterialTheme.typography.bodySmall
             )
             uiState.waypoints.forEachIndexed { index, coordinate ->
                 val label = when {
-                    index == 0 -> "WP 1 (start)"
-                    index == uiState.waypoints.size - 1 -> "WP ${index + 1} (end)"
-                    else -> "WP ${index + 1}"
+                    index == 0 -> stringResource(R.string.route_wp_start, 1)
+                    index == uiState.waypoints.size - 1 -> stringResource(R.string.route_wp_end, index + 1)
+                    else -> stringResource(R.string.route_wp_via, index + 1)
                 }
                 Text(
                     text = "$label: ${coordinate.formatted()}",
@@ -347,7 +354,7 @@ private fun RouteResultCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Route Computed", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.route_computed), style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
@@ -355,10 +362,10 @@ private fun RouteResultCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(HikeStatsFormatter.formatDistance(distance, true))
-                Text("${elevationGain.toInt()}m up / ${elevationLoss.toInt()}m down")
+                Text(stringResource(R.string.route_elevation_stats, elevationGain.toInt(), elevationLoss.toInt()))
             }
             Text(
-                "Est. ${HikeStatsFormatter.formatDuration(estimatedDuration)}",
+                stringResource(R.string.route_estimated_time, HikeStatsFormatter.formatDuration(estimatedDuration)),
                 style = MaterialTheme.typography.bodySmall
             )
 
@@ -372,12 +379,12 @@ private fun RouteResultCard(
                 Button(onClick = onSave, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
                 Button(onClick = onStartNavigation, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Navigation, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Navigate")
+                    Text(stringResource(R.string.navigate))
                 }
             }
 
@@ -385,7 +392,7 @@ private fun RouteResultCard(
             if (instructions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    "${instructions.size} turn instructions",
+                    stringResource(R.string.route_instructions_count, instructions.size),
                     style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -441,12 +448,12 @@ private fun SaveRouteDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Save Route") },
+        title = { Text(stringResource(R.string.route_save_title)) },
         text = {
             OutlinedTextField(
                 value = routeName,
                 onValueChange = { routeName = it },
-                label = { Text("Route name") },
+                label = { Text(stringResource(R.string.route_name_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -456,12 +463,12 @@ private fun SaveRouteDialog(
                 onClick = { onSave(routeName) },
                 enabled = routeName.isNotBlank()
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

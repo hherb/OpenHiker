@@ -61,7 +61,7 @@ The following data is stored locally on your device and remains entirely under y
 | Hike tracks | SQLite database | Recorded hike history and statistics |
 | Waypoints | SQLite database | User-created points of interest |
 | Routes | SQLite database | Planned and saved navigation routes |
-| App preferences | Android SharedPreferences | User settings (units, tile sources, etc.) |
+| App preferences | Jetpack DataStore | User settings (units, tile sources, etc.) |
 
 You can delete any of this data at any time through the app's interface or by clearing the app's storage in Android system settings.
 
@@ -78,7 +78,7 @@ Cloud sync transfers only your map regions, routes, waypoints, and hike tracks. 
 
 OpenHiker is licensed under the AGPL-3.0 license. The complete source code is publicly available, allowing anyone to independently verify the privacy claims made in this policy. You can inspect every network request, every database operation, and every permission usage in the source code.
 
-**Source Code:** [https://github.com/OpenHiker/OpenHiker](https://github.com/OpenHiker/OpenHiker)
+**Source Code:** [https://github.com/hherb/OpenHiker](https://github.com/hherb/OpenHiker)
 
 ## Children's Privacy
 
@@ -92,4 +92,4 @@ If this privacy policy is updated, the changes will be reflected in the app's so
 
 If you have questions or concerns about this privacy policy, please open an issue on the project's GitHub repository:
 
-**GitHub Issues:** [https://github.com/OpenHiker/OpenHiker/issues](https://github.com/OpenHiker/OpenHiker/issues)
+**GitHub Issues:** [https://github.com/hherb/OpenHiker/issues](https://github.com/hherb/OpenHiker/issues)

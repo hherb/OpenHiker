@@ -79,6 +79,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openhiker.android.data.db.waypoints.WaypointSummary
+import com.openhiker.android.util.parseCategoryColor
+import com.openhiker.android.util.resolveCategory
 import com.openhiker.core.geo.Haversine
 import com.openhiker.core.model.WaypointCategory
 
@@ -264,11 +266,7 @@ private fun CategoryFilterChips(
 
         WaypointCategory.entries.forEach { category ->
             val isSelected = selectedCategories.contains(category)
-            val chipColor = try {
-                Color(android.graphics.Color.parseColor("#${category.colorHex}"))
-            } catch (e: IllegalArgumentException) {
-                MaterialTheme.colorScheme.primary
-            }
+            val chipColor = parseCategoryColor(category)
 
             FilterChip(
                 selected = isSelected,
@@ -470,38 +468,6 @@ private fun DeleteWaypointDialog(
 }
 
 // ── Utility functions ───────────────────────────────────────────────
-
-/**
- * Resolves a category string (from the database) to a [WaypointCategory] enum value.
- *
- * Falls back to [WaypointCategory.CUSTOM] if the string does not match any known category.
- *
- * @param categoryName The raw category name from the database.
- * @return The matching [WaypointCategory], or [WaypointCategory.CUSTOM] as fallback.
- */
-private fun resolveCategory(categoryName: String): WaypointCategory {
-    return try {
-        WaypointCategory.valueOf(categoryName)
-    } catch (e: IllegalArgumentException) {
-        WaypointCategory.CUSTOM
-    }
-}
-
-/**
- * Parses the hex colour code from a [WaypointCategory] into a Compose [Color].
- *
- * Falls back to medium grey if the hex code is invalid.
- *
- * @param category The waypoint category with a [WaypointCategory.colorHex] field.
- * @return The parsed [Color].
- */
-private fun parseCategoryColor(category: WaypointCategory): Color {
-    return try {
-        Color(android.graphics.Color.parseColor("#${category.colorHex}"))
-    } catch (e: IllegalArgumentException) {
-        Color.Gray
-    }
-}
 
 /**
  * Formats the distance from the user's current location to a waypoint.
