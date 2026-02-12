@@ -117,74 +117,42 @@ struct MapView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Map Scene
-                if let scene = mapScene {
-                    SpriteView(scene: scene)
-                        .ignoresSafeArea()
-                        .gesture(dragGesture)
-                        .allowsHitTesting(true)
-                        .focusable()
-                        .digitalCrownRotation(
-                            detent: $mapRenderer.currentZoom,
-                            from: mapRenderer.minZoom,
-                            through: mapRenderer.maxZoom,
-                            by: 1,
-                            sensitivity: .medium
-                        ) { _ in
-                            // Crown rotation handled by binding
-                        }
-                } else if let trackScene = trackOnlyScene {
-                    SpriteView(scene: trackScene)
-                        .ignoresSafeArea()
-                        .gesture(dragGesture)
-                        .allowsHitTesting(true)
-                        .focusable()
-                        .digitalCrownRotation(
-                            detent: $viewRadiusIndex,
-                            from: 0,
-                            through: TrackOnlyScene.viewRadii.count - 1,
-                            by: 1,
-                            sensitivity: .medium
-                        ) { _ in
-                            // Crown rotation handled by binding
-                        }
-                } else {
-                    noMapView
-                }
-
-                // Hike stats overlay (distance, elevation, time, vitals)
-                HikeStatsOverlay()
-                    .allowsHitTesting(false)
-
-                // UV index overlay (WeatherKit-based)
-                UVIndexOverlay()
-                    .allowsHitTesting(false)
-
-                // Navigation overlay for route guidance
-                NavigationOverlay(guidance: routeGuidance)
-
-                // Overlays
-                VStack {
-                    // Top bar with info
-                    topInfoBar
-
-                    Spacer()
-
-                    // Bottom controls — always visible so recording works without a loaded map
-                    bottomControls
-                }
+                mapLayer
+                overlayLayer
+                controlsLayer
             }
         }
         .onAppear {
             loadSavedRegion()
             loadWaypoints()
-            locationManager.startLocationUpdates()
+            // Only start continuous location updates if actively tracking or navigating.
+            // Otherwise request a single position fix for initial map centering.
+            // Continuous updates keep the app foregrounded with high screen brightness,
+            // which drains battery when no hike is being recorded.
+            if locationManager.isTracking || routeGuidance.isNavigating {
+                locationManager.startLocationUpdates()
+            } else {
+                locationManager.requestSingleLocation()
+            }
             configureLowBatteryCallback()
         }
         .onDisappear {
             stopAutoSaveTimer()
             autoRecenterTimer?.invalidate()
             autoRecenterTimer = nil
+            // Stop continuous location updates when leaving the map view,
+            // unless a hike is being recorded (stopLocationUpdates is a no-op
+            // when isTracking is true).
+            locationManager.stopLocationUpdates()
+        }
+        .onChange(of: routeGuidance.isNavigating) { _, isNavigating in
+            // Start continuous updates when navigation begins so the map follows
+            // the user; stop them when navigation ends (unless tracking).
+            if isNavigating {
+                locationManager.startLocationUpdates()
+            } else {
+                locationManager.stopLocationUpdates()
+            }
         }
         .onChange(of: mapRenderer.currentZoom) { _, _ in
             mapScene?.updateVisibleTiles()
@@ -278,6 +246,72 @@ struct MapView: View {
     }
 
     // MARK: - Subviews
+
+    /// The map rendering layer: SpriteKit tile map, track-only trail, or placeholder.
+    ///
+    /// Hit testing is disabled on SpriteViews so that taps reach the SwiftUI buttons
+    /// in ``controlsLayer``. The Digital Crown and drag gesture are attached here
+    /// because they need to be on the same view that has `.focusable()`.
+    @ViewBuilder
+    private var mapLayer: some View {
+        if let scene = mapScene {
+            SpriteView(scene: scene)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .focusable()
+                .digitalCrownRotation(
+                    detent: $mapRenderer.currentZoom,
+                    from: mapRenderer.minZoom,
+                    through: mapRenderer.maxZoom,
+                    by: 1,
+                    sensitivity: .medium
+                ) { _ in }
+        } else if trackOnlyScene != nil {
+            SpriteView(scene: trackOnlyScene!)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .focusable()
+                .digitalCrownRotation(
+                    detent: $viewRadiusIndex,
+                    from: 0,
+                    through: TrackOnlyScene.viewRadii.count - 1,
+                    by: 1,
+                    sensitivity: .medium
+                ) { _ in }
+        } else {
+            noMapView
+        }
+    }
+
+    /// Non-interactive overlays for stats, UV, and navigation guidance.
+    private var overlayLayer: some View {
+        Group {
+            HikeStatsOverlay()
+                .allowsHitTesting(false)
+            UVIndexOverlay()
+                .allowsHitTesting(false)
+            NavigationOverlay(guidance: routeGuidance)
+        }
+    }
+
+    /// Interactive controls layer: top info bar and bottom action buttons.
+    ///
+    /// The drag gesture is placed on this layer's background rather than on
+    /// the SpriteView, so SwiftUI resolves button taps first (buttons are
+    /// children of this VStack) and only falls through to the drag gesture
+    /// for touches on the Spacer area.
+    private var controlsLayer: some View {
+        VStack {
+            topInfoBar
+            Spacer()
+            bottomControls
+        }
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(dragGesture)
+        )
+    }
 
     /// A placeholder view shown when no map region is loaded.
     ///
@@ -972,6 +1006,7 @@ struct RegionPickerSheet: View {
         }
     }
 }
+
 
 
 #Preview {
