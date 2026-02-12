@@ -114,13 +114,25 @@ struct MapView: View {
         category: "MapView"
     )
 
+    /// Height reserved for the bottom toolbar so buttons live outside the map's
+    /// gesture space and always receive taps reliably.
+    private static let toolbarHeight: CGFloat = 40
+
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                mapLayer
-                overlayLayer
-                controlsLayer
+        VStack(spacing: 0) {
+            // Map area — takes all remaining space above the toolbar
+            GeometryReader { geometry in
+                ZStack {
+                    mapLayer
+                    overlayLayer
+                    topInfoBar
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
             }
+
+            // Bottom toolbar — physically separated from the map so the
+            // SpriteView cannot intercept taps on these buttons.
+            bottomToolbar
         }
         .onAppear {
             loadSavedRegion()
@@ -249,15 +261,15 @@ struct MapView: View {
 
     /// The map rendering layer: SpriteKit tile map, track-only trail, or placeholder.
     ///
-    /// Hit testing is disabled on SpriteViews so that taps reach the SwiftUI buttons
-    /// in ``controlsLayer``. The Digital Crown and drag gesture are attached here
-    /// because they need to be on the same view that has `.focusable()`.
+    /// The SpriteView now occupies only the area above ``bottomToolbar``, so it
+    /// cannot intercept taps on the toolbar buttons. The drag gesture and Digital
+    /// Crown rotation are attached directly to the SpriteView.
     @ViewBuilder
     private var mapLayer: some View {
         if let scene = mapScene {
             SpriteView(scene: scene)
                 .ignoresSafeArea()
-                .allowsHitTesting(false)
+                .gesture(dragGesture)
                 .focusable()
                 .digitalCrownRotation(
                     detent: $mapRenderer.currentZoom,
@@ -269,7 +281,7 @@ struct MapView: View {
         } else if trackOnlyScene != nil {
             SpriteView(scene: trackOnlyScene!)
                 .ignoresSafeArea()
-                .allowsHitTesting(false)
+                .gesture(dragGesture)
                 .focusable()
                 .digitalCrownRotation(
                     detent: $viewRadiusIndex,
@@ -294,23 +306,65 @@ struct MapView: View {
         }
     }
 
-    /// Interactive controls layer: top info bar and bottom action buttons.
+    /// Bottom toolbar with action buttons, physically separated from the map.
     ///
-    /// The drag gesture is placed on this layer's background rather than on
-    /// the SpriteView, so SwiftUI resolves button taps first (buttons are
-    /// children of this VStack) and only falls through to the drag gesture
-    /// for touches on the Spacer area.
-    private var controlsLayer: some View {
-        VStack {
-            topInfoBar
-            Spacer()
-            bottomControls
+    /// Lives outside the SpriteView's `ZStack` in the parent `VStack`, so the
+    /// SpriteView's gesture recognisers and hit-testing cannot interfere with
+    /// button taps. Uses a thin opaque strip at the bottom of the screen.
+    private var bottomToolbar: some View {
+        HStack(spacing: 0) {
+            // Center on user / heading-up
+            if selectedRegion != nil || trackOnlyScene != nil {
+                toolbarButton(
+                    icon: isCenteredOnUser && isHeadingUp ? "location.north.line.fill" : isCenteredOnUser ? "location.fill" : "location",
+                    color: isCenteredOnUser ? .blue : .primary
+                ) {
+                    centerOnUser()
+                }
+            }
+
+            // Drop waypoint pin
+            toolbarButton(icon: "mappin.and.ellipse", color: .orange) {
+                showingAddWaypoint = true
+            }
+
+            // Start / Stop tracking
+            toolbarButton(
+                icon: locationManager.isTracking ? "stop.fill" : "play.fill",
+                color: locationManager.isTracking ? .red : .green
+            ) {
+                toggleTracking()
+            }
+
+            // Region picker
+            toolbarButton(icon: "map", color: .primary) {
+                showingRegionPicker = true
+            }
         }
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(dragGesture)
-        )
+        .frame(height: Self.toolbarHeight)
+        .background(.black.opacity(0.85))
+    }
+
+    /// Creates a single toolbar button with haptic feedback.
+    ///
+    /// Each button fills an equal fraction of the toolbar width so the tap
+    /// targets are as large as possible on the small watch screen.
+    ///
+    /// - Parameters:
+    ///   - icon: The SF Symbol name for the button icon.
+    ///   - color: The foreground color for the icon.
+    ///   - action: The closure to execute on tap.
+    private func toolbarButton(icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            WKInterfaceDevice.current().play(.click)
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(.plain)
     }
 
     /// A placeholder view shown when no map region is loaded.
@@ -414,67 +468,6 @@ struct MapView: View {
         .allowsHitTesting(false)
     }
 
-    /// The bottom control bar with center-on-user, pin, tracking toggle, and region picker buttons.
-    ///
-    /// Recording and waypoint buttons are always visible so that trail recording
-    /// works even when no map region is loaded. The center-on-user button is only
-    /// shown when a map scene is available.
-    private var bottomControls: some View {
-        HStack(spacing: 12) {
-            // Center on user / heading-up button (useful when a map or track-only scene is loaded)
-            if selectedRegion != nil || trackOnlyScene != nil {
-                Button {
-                    centerOnUser()
-                    WKInterfaceDevice.current().play(.click)
-                } label: {
-                    Image(systemName: isCenteredOnUser && isHeadingUp ? "location.north.line.fill" : isCenteredOnUser ? "location.fill" : "location")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(isCenteredOnUser ? .blue : .primary)
-
-                Spacer()
-            }
-
-            // Drop waypoint pin button
-            Button {
-                WKInterfaceDevice.current().play(.click)
-                showingAddWaypoint = true
-            } label: {
-                Image(systemName: "mappin.and.ellipse")
-                    .font(.title3)
-                    .foregroundStyle(.orange)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            // Start/Stop tracking
-            Button {
-                WKInterfaceDevice.current().play(.click)
-                toggleTracking()
-            } label: {
-                Image(systemName: locationManager.isTracking ? "stop.fill" : "play.fill")
-                    .font(.title3)
-                    .foregroundStyle(locationManager.isTracking ? .red : .green)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            // Region picker
-            Button {
-                WKInterfaceDevice.current().play(.click)
-                showingRegionPicker = true
-            } label: {
-                Image(systemName: "map")
-                    .font(.title3)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-    }
 
     // MARK: - Gestures
 
