@@ -25,6 +25,8 @@ enum GitHubRouteError: Error, LocalizedError {
     case invalidResponse(String)
     /// The bot token is missing or invalid.
     case authenticationFailed
+    /// The GitHub API rate limit was hit; `retryAfter` is the suggested wait in seconds.
+    case rateLimited(retryAfter: TimeInterval?)
     /// A network request failed after all retry attempts.
     case networkError(Error)
     /// The route index could not be fetched or decoded.
@@ -40,6 +42,8 @@ enum GitHubRouteError: Error, LocalizedError {
             return "Invalid GitHub response: \(detail)"
         case .authenticationFailed:
             return "GitHub authentication failed — please check the app configuration"
+        case .rateLimited:
+            return "GitHub rate limit reached — please try again later"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .indexFetchFailed(let detail):
@@ -93,6 +97,10 @@ actor GitHubRouteService {
 
     /// Base delay in seconds for exponential backoff (doubled on each retry).
     private static let baseRetryDelaySec: UInt64 = 2
+
+    /// Upper bound (seconds) on how long to wait for a rate-limit reset before
+    /// giving up, so a large `Retry-After`/reset value can't block indefinitely.
+    private static let maxRateLimitDelaySec: TimeInterval = 60
 
     /// User-Agent header value for API requests (required by GitHub).
     private static let userAgent = "OpenHiker/1.0 (iOS; community route sharing)"
@@ -642,8 +650,12 @@ actor GitHubRouteService {
     /// - Throws: ``GitHubRouteError`` if all retries are exhausted.
     private func performWithRetry(request: URLRequest) async throws -> Data {
         var lastError: Error?
+        // When set, overrides the exponential backoff for the next attempt (used to
+        // honor a rate-limit Retry-After / reset hint).
+        var nextDelayOverrideSec: UInt64?
 
         for attempt in 0..<Self.maxRetryAttempts {
+            nextDelayOverrideSec = nil
             do {
                 let (data, response) = try await session.data(for: request)
 
@@ -654,7 +666,20 @@ actor GitHubRouteService {
                 switch httpResponse.statusCode {
                 case 200...299:
                     return data
-                case 401, 403:
+                case 403, 429:
+                    // 403 is overloaded by GitHub: it means auth failure OR rate
+                    // limiting; 429 is always rate limiting. Distinguish by the
+                    // rate-limit headers and retry (honoring the reset hint) rather
+                    // than reporting a spurious authentication failure.
+                    if let retryAfter = Self.rateLimitRetryAfter(from: httpResponse) {
+                        lastError = GitHubRouteError.rateLimited(retryAfter: retryAfter)
+                        nextDelayOverrideSec = UInt64(min(max(retryAfter, 1), Self.maxRateLimitDelaySec))
+                    } else if httpResponse.statusCode == 403 {
+                        throw GitHubRouteError.authenticationFailed
+                    } else {
+                        lastError = GitHubRouteError.rateLimited(retryAfter: nil)
+                    }
+                case 401:
                     throw GitHubRouteError.authenticationFailed
                 case 400...499:
                     // Client errors — do not retry
@@ -679,9 +704,10 @@ actor GitHubRouteService {
                 lastError = error
             }
 
-            // Exponential backoff: 2s, 4s, 8s, 16s
+            // Exponential backoff (2s, 4s, 8s, 16s), unless a rate-limit hint
+            // overrides the delay for this attempt.
             if attempt < Self.maxRetryAttempts - 1 {
-                let delay = Self.baseRetryDelaySec * UInt64(1 << attempt)
+                let delay = nextDelayOverrideSec ?? (Self.baseRetryDelaySec * UInt64(1 << attempt))
                 try await Task.sleep(nanoseconds: delay * Self.nanosecondsPerSecond)
             }
         }
@@ -690,6 +716,42 @@ actor GitHubRouteService {
             throw error
         }
         throw GitHubRouteError.networkError(lastError ?? NSError(domain: "GitHubRouteService", code: -1))
+    }
+
+    /// Determines whether an HTTP response indicates GitHub rate limiting, and if
+    /// so, how long to wait before retrying.
+    ///
+    /// GitHub signals rate limiting via the `Retry-After` header (secondary limits)
+    /// or `x-ratelimit-remaining: 0` together with an `x-ratelimit-reset` epoch
+    /// (primary limits). A 403 without any of these is a genuine authorization
+    /// failure, not a rate limit.
+    ///
+    /// - Parameter response: The HTTP response to inspect.
+    /// - Returns: The suggested wait in seconds, or `nil` if not rate limited.
+    private static func rateLimitRetryAfter(from response: HTTPURLResponse) -> TimeInterval? {
+        let headers = response.allHeaderFields
+
+        // Secondary rate limit: explicit Retry-After (seconds).
+        if let retryAfter = headers["Retry-After"] as? String,
+           let seconds = TimeInterval(retryAfter.trimmingCharacters(in: .whitespaces)) {
+            return max(seconds, 1)
+        }
+
+        // Primary rate limit: remaining == 0, wait until the reset epoch.
+        if let remaining = (headers["x-ratelimit-remaining"] as? String)
+            ?? (headers["X-RateLimit-Remaining"] as? String),
+           remaining == "0" {
+            if let resetString = (headers["x-ratelimit-reset"] as? String)
+                ?? (headers["X-RateLimit-Reset"] as? String),
+               let resetEpoch = TimeInterval(resetString) {
+                let wait = resetEpoch - Date().timeIntervalSince1970
+                return max(wait, 1)
+            }
+            // Remaining is zero but no reset hint — wait the default backoff.
+            return TimeInterval(baseRetryDelaySec)
+        }
+
+        return nil
     }
 
     // MARK: - PR Description Builder
