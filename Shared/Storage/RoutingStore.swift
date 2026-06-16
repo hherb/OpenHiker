@@ -193,7 +193,7 @@ final class RoutingStore: @unchecked Sendable {
         let bbox = BoundingBox(center: coordinate, radiusMeters: maxRadiusMetres)
         let candidates = try getNodesInBoundingBox(bbox)
 
-        return candidates.min(by: { a, b in
+        let nearest = candidates.min(by: { a, b in
             let distA = haversineDistance(
                 lat1: coordinate.latitude, lon1: coordinate.longitude,
                 lat2: a.latitude, lon2: a.longitude
@@ -204,6 +204,16 @@ final class RoutingStore: @unchecked Sendable {
             )
             return distA < distB
         })
+
+        // The bounding box extends to ~radius*sqrt(2) at its corners, so enforce the
+        // true radius here; otherwise a node well outside maxRadiusMetres could be
+        // accepted and "no nearby node" would be effectively unreachable.
+        guard let nearest = nearest else { return nil }
+        let nearestDist = haversineDistance(
+            lat1: coordinate.latitude, lon1: coordinate.longitude,
+            lat2: nearest.latitude, lon2: nearest.longitude
+        )
+        return nearestDist <= maxRadiusMetres ? nearest : nil
     }
 
     // MARK: - Edge Queries
@@ -518,7 +528,13 @@ final class RoutingStore: @unchecked Sendable {
                 }
             }
 
-            return bestResult
+            // Reject a snap whose trail distance exceeds the search radius, so callers
+            // get a clean "no trail nearby" result instead of a far-away match (the
+            // bounding box extends to ~radius*sqrt(2) at its corners).
+            guard let result = bestResult, result.distanceToTrail <= maxRadiusMetres else {
+                return nil
+            }
+            return result
         }
     }
 
