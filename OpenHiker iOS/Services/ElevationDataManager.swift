@@ -242,9 +242,13 @@ actor ElevationDataManager {
         data.withUnsafeBytes { buffer in
             let bytes = buffer.bindMemory(to: UInt8.self)
             for i in 0..<grid.count {
-                let hi = Int16(bytes[i * 2])
-                let lo = Int16(bytes[i * 2 + 1])
-                grid[i] = (hi << 8) | lo  // Big-endian
+                // Assemble the big-endian sample in an UNSIGNED 16-bit value first,
+                // then reinterpret the bit pattern as signed. Shifting directly on Int16
+                // traps whenever the high byte is >= 0x80 (e.g. the standard SRTM void
+                // marker 0x8000) because the intermediate value exceeds Int16.max.
+                let hi = UInt16(bytes[i * 2])
+                let lo = UInt16(bytes[i * 2 + 1])
+                grid[i] = Int16(bitPattern: (hi << 8) | lo)  // Big-endian
             }
         }
         return grid
