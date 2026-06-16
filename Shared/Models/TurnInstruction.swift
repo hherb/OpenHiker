@@ -461,7 +461,7 @@ enum TurnInstructionGenerator {
         edgeIndex: Int
     ) -> Double {
         let startNode = route.nodes[edgeIndex]
-        let intermediateCoords = EdgeGeometry.unpack(edge.geometry)
+        let intermediateCoords = orientedGeometry(for: edge, traversalStart: startNode)
 
         if let firstIntermediate = intermediateCoords.first {
             return BearingCalculator.bearing(from: startNode.coordinate, to: firstIntermediate)
@@ -482,14 +482,36 @@ enum TurnInstructionGenerator {
         edgeIndex: Int
     ) -> Double {
         let endNode = route.nodes[edgeIndex + 1]
-        let intermediateCoords = EdgeGeometry.unpack(edge.geometry)
+        let startNode = route.nodes[edgeIndex]
+        let intermediateCoords = orientedGeometry(for: edge, traversalStart: startNode)
 
         if let lastIntermediate = intermediateCoords.last {
             return BearingCalculator.bearing(from: lastIntermediate, to: endNode.coordinate)
         } else {
-            let startNode = route.nodes[edgeIndex]
             return BearingCalculator.bearing(from: startNode.coordinate, to: endNode.coordinate)
         }
+    }
+
+    /// Returns an edge's intermediate geometry oriented along the direction it is
+    /// actually traversed in the route.
+    ///
+    /// Edge geometry is stored once in canonical `fromNode → toNode` order, but the
+    /// router may traverse an edge in reverse. The bearing helpers need the geometry
+    /// in traversal order; otherwise the computed incoming/outgoing bearings point
+    /// backwards and turn directions are wrong on reverse-traversed edges.
+    ///
+    /// - Parameters:
+    ///   - edge: The edge whose geometry to orient.
+    ///   - traversalStart: The node at which traversal of this edge begins.
+    /// - Returns: Intermediate coordinates ordered from the traversal start.
+    private static func orientedGeometry(
+        for edge: RoutingEdge,
+        traversalStart: RoutingNode
+    ) -> [CLLocationCoordinate2D] {
+        let coords = EdgeGeometry.unpack(edge.geometry)
+        // If traversal begins at the edge's toNode, the edge is traversed reversed,
+        // so the canonical from→to geometry must be flipped.
+        return traversalStart.id == edge.toNode ? Array(coords.reversed()) : coords
     }
 
     /// Computes the initial bearing of an edge (from start toward destination).
