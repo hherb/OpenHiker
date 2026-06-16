@@ -283,7 +283,7 @@ actor TileDownloader {
         // recorded the timestamp *after* sleeping, suspended callers would all read
         // the same stale value and fire as a burst, defeating the throttle.
         let minInterval = Duration.nanoseconds(Self.minRequestIntervalNs)
-        let now = ContinuousClock.now
+        let now: ContinuousClock.Instant = .now
         let slot = max(now, nextRequestSlot)
         nextRequestSlot = slot + minInterval
 
