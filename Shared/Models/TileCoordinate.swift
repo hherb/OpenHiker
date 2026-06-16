@@ -61,14 +61,28 @@ struct TileCoordinate: Hashable, Codable, Sendable {
     ///   - zoom: The desired zoom level.
     init(latitude: Double, longitude: Double, zoom: Int) {
         self.z = zoom
+        let maxIndex = (1 << zoom) - 1
         let n = Double(1 << zoom)
 
-        // Convert longitude to tile X
-        self.x = Int(floor((longitude + 180.0) / 360.0 * n))
+        // Normalize longitude into [-180, 180) so values outside that range (e.g.
+        // a bounding box that wraps the antimeridian) don't produce out-of-range
+        // tile columns.
+        var lon = longitude.truncatingRemainder(dividingBy: 360.0)
+        if lon < -180.0 { lon += 360.0 }
+        if lon >= 180.0 { lon -= 360.0 }
 
-        // Convert latitude to tile Y using Web Mercator projection
-        let latRad = latitude * .pi / 180.0
-        self.y = Int(floor((1.0 - asinh(tan(latRad)) / .pi) / 2.0 * n))
+        // Clamp latitude to the Web Mercator limit; beyond it tan() diverges and
+        // would yield a NaN / out-of-range row.
+        let clampedLat = min(max(latitude, -85.05112878), 85.05112878)
+
+        // Convert longitude to tile X, clamped to the valid axis range.
+        let rawX = Int(floor((lon + 180.0) / 360.0 * n))
+        self.x = min(max(rawX, 0), maxIndex)
+
+        // Convert latitude to tile Y using Web Mercator projection, clamped likewise.
+        let latRad = clampedLat * .pi / 180.0
+        let rawY = Int(floor((1.0 - asinh(tan(latRad)) / .pi) / 2.0 * n))
+        self.y = min(max(rawY, 0), maxIndex)
     }
 
     /// Create a tile coordinate from explicit x, y, z values.
@@ -311,8 +325,21 @@ struct BoundingBox: Codable, Sendable, Equatable, Hashable {
 
         self.north = min(center.latitude + latDelta, 85.0)
         self.south = max(center.latitude - latDelta, -85.0)
-        self.east = center.longitude + lonDelta
-        self.west = center.longitude - lonDelta
+        // Normalize the east/west edges into [-180, 180) so a box centered near the
+        // antimeridian doesn't produce longitudes outside the valid range.
+        self.east = BoundingBox.normalizeLongitude(center.longitude + lonDelta)
+        self.west = BoundingBox.normalizeLongitude(center.longitude - lonDelta)
+    }
+
+    /// Wraps a longitude into the half-open range `[-180, 180)`.
+    ///
+    /// - Parameter longitude: A longitude in degrees, possibly outside the range.
+    /// - Returns: The equivalent longitude within `[-180, 180)`.
+    private static func normalizeLongitude(_ longitude: Double) -> Double {
+        var lon = longitude.truncatingRemainder(dividingBy: 360.0)
+        if lon < -180.0 { lon += 360.0 }
+        if lon >= 180.0 { lon -= 360.0 }
+        return lon
     }
 
     /// Check if a coordinate falls within this bounding box.

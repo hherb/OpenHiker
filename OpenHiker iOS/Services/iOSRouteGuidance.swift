@@ -271,9 +271,13 @@ final class iOSRouteGuidance: ObservableObject {
         segStart: CLLocationCoordinate2D,
         segEnd: CLLocationCoordinate2D
     ) -> (point: CLLocationCoordinate2D, fraction: Double) {
-        let dx = segEnd.longitude - segStart.longitude
+        // Longitude degrees are scaled by cos(latitude) so the projection is computed
+        // in an isotropic (metric) space; otherwise distance-along-route is skewed on
+        // diagonal segments, with the error growing toward higher latitudes.
+        let lonScale = cos(segStart.latitude * .pi / 180)
+        let dx = (segEnd.longitude - segStart.longitude) * lonScale
         let dy = segEnd.latitude - segStart.latitude
-        let px = point.longitude - segStart.longitude
+        let px = (point.longitude - segStart.longitude) * lonScale
         let py = point.latitude - segStart.latitude
 
         let segLengthSquared = dx * dx + dy * dy
@@ -284,8 +288,9 @@ final class iOSRouteGuidance: ObservableObject {
 
         let t = max(0, min(1, (px * dx + py * dy) / segLengthSquared))
 
-        let projectedLat = segStart.latitude + t * dy
-        let projectedLon = segStart.longitude + t * dx
+        // Interpolate with the original (unscaled) coordinates; t is metric-agnostic.
+        let projectedLat = segStart.latitude + t * (segEnd.latitude - segStart.latitude)
+        let projectedLon = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
 
         return (
             point: CLLocationCoordinate2D(latitude: projectedLat, longitude: projectedLon),

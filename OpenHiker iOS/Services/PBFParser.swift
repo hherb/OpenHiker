@@ -289,16 +289,54 @@ actor PBFParser {
             sourceData = data
         }
 
-        let bufferSize = max(expectedSize, sourceData.count * 4)
-        var destinationBuffer = Data(count: bufferSize)
+        // When raw_size is known (the OSM PBF spec always provides it for zlib
+        // blobs) the output must be exactly that size. Otherwise fall back to a
+        // grow-and-retry loop. compression_decode_buffer does NOT signal an error
+        // when the destination is too small -- it just returns the bytes that fit --
+        // so a fixed multiplier could silently truncate the block. We therefore
+        // verify the output length and never accept a partial result.
+        if expectedSize > 0 {
+            let output = try decodeZlib(sourceData, into: expectedSize)
+            guard output.count == expectedSize else {
+                // Short output means the stream was corrupt/truncated.
+                throw ParseError.decompressError
+            }
+            return output
+        }
 
+        // Unknown raw_size: grow the buffer until the whole stream fits.
+        var bufferSize = max(sourceData.count * 4, 1024)
+        let maxBufferSize = sourceData.count * 1024  // generous ceiling vs. zlib ratios
+        while true {
+            let output = try decodeZlib(sourceData, into: bufferSize)
+            // If the decoder filled the entire buffer, output may be truncated;
+            // grow and retry. A smaller-than-buffer result is guaranteed complete.
+            if output.count < bufferSize {
+                return output
+            }
+            if bufferSize >= maxBufferSize {
+                throw ParseError.decompressError
+            }
+            bufferSize = min(bufferSize * 2, maxBufferSize)
+        }
+    }
+
+    /// Decodes a raw DEFLATE stream into a buffer of the given capacity.
+    ///
+    /// - Parameters:
+    ///   - sourceData: The raw DEFLATE bytes (zlib header already stripped).
+    ///   - capacity: The destination buffer size in bytes.
+    /// - Returns: The decoded bytes (length = bytes actually written).
+    /// - Throws: ``ParseError/decompressError`` if the decoder reports failure.
+    private func decodeZlib(_ sourceData: Data, into capacity: Int) throws -> Data {
+        var destinationBuffer = Data(count: capacity)
         let decompressedSize = sourceData.withUnsafeBytes { srcPtr -> Int in
             destinationBuffer.withUnsafeMutableBytes { dstPtr -> Int in
                 guard let srcBase = srcPtr.baseAddress,
                       let dstBase = dstPtr.baseAddress else { return 0 }
                 return compression_decode_buffer(
                     dstBase.assumingMemoryBound(to: UInt8.self),
-                    bufferSize,
+                    capacity,
                     srcBase.assumingMemoryBound(to: UInt8.self),
                     sourceData.count,
                     nil,
