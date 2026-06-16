@@ -229,33 +229,55 @@ enum TrackCompression {
 
     /// Decompresses zlib-compressed data via Apple's Compression framework.
     ///
-    /// Allocates a destination buffer at 10x the compressed size to accommodate
-    /// the expected expansion ratio. Returns `nil` if decompression fails.
+    /// The destination buffer starts at 10x the compressed size and grows on
+    /// retry until the entire stream fits. This matters because
+    /// `compression_decode_buffer` does NOT report an error when the destination
+    /// is too small -- it simply returns the bytes that fit. A single fixed
+    /// multiplier would therefore silently truncate the track (dropping whole
+    /// 20-byte point records) on data that expands beyond the multiplier.
     ///
     /// - Parameter compressedData: Zlib-compressed data.
-    /// - Returns: The decompressed raw data, or `nil` if decompression fails.
+    /// - Returns: The complete decompressed data, or `nil` if decompression fails.
     private static func decompress(_ compressedData: Data) -> Data? {
-        // Estimate decompressed size: for our binary track data, typical ratio is ~2:1
-        // Use 10x as upper bound to be safe.
-        let destinationBufferSize = compressedData.count * decompressionBufferMultiplier
-        let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
-        defer { destinationBuffer.deallocate() }
+        guard !compressedData.isEmpty else { return nil }
 
-        let decompressedSize = compressedData.withUnsafeBytes { sourceBuffer -> Int in
-            guard let sourcePtr = sourceBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                return 0
+        var destinationBufferSize = compressedData.count * decompressionBufferMultiplier
+        // Ceiling guards against unbounded growth on malformed input while still
+        // comfortably exceeding any realistic zlib expansion ratio.
+        let maxBufferSize = max(destinationBufferSize, compressedData.count * 1024)
+
+        while true {
+            let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
+            defer { destinationBuffer.deallocate() }
+
+            let decompressedSize = compressedData.withUnsafeBytes { sourceBuffer -> Int in
+                guard let sourcePtr = sourceBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    return 0
+                }
+                return compression_decode_buffer(
+                    destinationBuffer,
+                    destinationBufferSize,
+                    sourcePtr,
+                    compressedData.count,
+                    nil,
+                    COMPRESSION_ZLIB
+                )
             }
-            return compression_decode_buffer(
-                destinationBuffer,
-                destinationBufferSize,
-                sourcePtr,
-                compressedData.count,
-                nil,
-                COMPRESSION_ZLIB
-            )
-        }
 
-        guard decompressedSize > 0 else { return nil }
-        return Data(bytes: destinationBuffer, count: decompressedSize)
+            guard decompressedSize > 0 else { return nil }
+
+            // A result smaller than the buffer is guaranteed complete. If it
+            // exactly filled the buffer, output may have been truncated -- grow
+            // and retry until it fits or we hit the ceiling.
+            if decompressedSize < destinationBufferSize {
+                return Data(bytes: destinationBuffer, count: decompressedSize)
+            }
+            if destinationBufferSize >= maxBufferSize {
+                // Cannot prove completeness; treat as failure rather than return
+                // a possibly-truncated track.
+                return nil
+            }
+            destinationBufferSize = min(destinationBufferSize * 2, maxBufferSize)
+        }
     }
 }
