@@ -729,20 +729,16 @@ actor GitHubRouteService {
     /// - Parameter response: The HTTP response to inspect.
     /// - Returns: The suggested wait in seconds, or `nil` if not rate limited.
     private static func rateLimitRetryAfter(from response: HTTPURLResponse) -> TimeInterval? {
-        let headers = response.allHeaderFields
-
+        // value(forHTTPHeaderField:) is case-insensitive, unlike allHeaderFields.
         // Secondary rate limit: explicit Retry-After (seconds).
-        if let retryAfter = headers["Retry-After"] as? String,
+        if let retryAfter = response.value(forHTTPHeaderField: "Retry-After"),
            let seconds = TimeInterval(retryAfter.trimmingCharacters(in: .whitespaces)) {
             return max(seconds, 1)
         }
 
         // Primary rate limit: remaining == 0, wait until the reset epoch.
-        if let remaining = (headers["x-ratelimit-remaining"] as? String)
-            ?? (headers["X-RateLimit-Remaining"] as? String),
-           remaining == "0" {
-            if let resetString = (headers["x-ratelimit-reset"] as? String)
-                ?? (headers["X-RateLimit-Reset"] as? String),
+        if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0" {
+            if let resetString = response.value(forHTTPHeaderField: "x-ratelimit-reset"),
                let resetEpoch = TimeInterval(resetString) {
                 let wait = resetEpoch - Date().timeIntervalSince1970
                 return max(wait, 1)
