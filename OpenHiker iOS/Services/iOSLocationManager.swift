@@ -75,6 +75,13 @@ final class iOSLocationManager: NSObject, ObservableObject {
     /// Recorded GPS points during the current hike track.
     @Published var trackPoints: [CLLocation] = []
 
+    /// The last recorded point with acceptable horizontal accuracy (< 100 m).
+    ///
+    /// Cumulative distance and elevation are measured from this anchor rather than
+    /// from the immediately preceding track point, so low-accuracy jitter points
+    /// (which are still recorded for visual continuity) do not inflate the totals.
+    private var lastHighAccuracyPoint: CLLocation?
+
     /// Total distance of the current track in meters (incrementally updated).
     @Published private(set) var totalDistance: CLLocationDistance = 0
 
@@ -254,6 +261,7 @@ final class iOSLocationManager: NSObject, ObservableObject {
         }
 
         trackPoints.removeAll()
+        lastHighAccuracyPoint = nil
         totalDistance = 0
         elevationGain = 0
         elevationLoss = 0
@@ -397,6 +405,10 @@ final class iOSLocationManager: NSObject, ObservableObject {
             }
         }
 
+        // Re-anchor distance accumulation on the last accurate restored point so the
+        // first segment after recovery is measured (not silently dropped).
+        lastHighAccuracyPoint = trackPoints.last { $0.horizontalAccuracy >= 0 && $0.horizontalAccuracy < 100 }
+
         // Restore stats
         if let data = try? Data(contentsOf: Self.trackStatsFileURL),
            let stats = try? JSONSerialization.jsonObject(with: data) as? [String: Double] {
@@ -468,13 +480,18 @@ extension iOSLocationManager: CLLocationManagerDelegate {
             if let lastPoint = trackPoints.last {
                 let distance = location.distance(from: lastPoint)
                 if distance >= gpsMode.distanceFilter {
-                    // Only update elevation stats for high-accuracy points to avoid
-                    // barometric altitude noise from degraded GPS readings
+                    // Accumulate distance and elevation only between high-accuracy
+                    // points, measured from the last high-accuracy anchor. A noisy
+                    // (>=100m) reading can sit ~100m from the true path, so counting
+                    // its distance would over-report the total (the watch avoids this
+                    // by dropping such points entirely). Low-accuracy points are still
+                    // appended to the track for visual continuity, but contribute no
+                    // distance and the span across them is measured from the anchor.
                     if isHighAccuracy {
-                        updateCachedStats(from: lastPoint, to: location)
-                    } else {
-                        // Still count distance even for low-accuracy points
-                        totalDistance += distance
+                        if let anchor = lastHighAccuracyPoint {
+                            updateCachedStats(from: anchor, to: location)
+                        }
+                        lastHighAccuracyPoint = location
                     }
                     trackPoints.append(location)
 
@@ -485,6 +502,9 @@ extension iOSLocationManager: CLLocationManagerDelegate {
                 }
             } else {
                 trackPoints.append(location)
+                if isHighAccuracy {
+                    lastHighAccuracyPoint = location
+                }
             }
         }
     }
