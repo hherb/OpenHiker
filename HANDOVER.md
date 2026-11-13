@@ -73,12 +73,11 @@ Found 2026-11-14. These are not tracked in an issue yet:
 
 ### CI
 
-- `ios.yml` (build and test scheme `OpenHiker`) was green on `main` in June. On PR #40 (2026-11-13) it failed:
-  the `macos-latest` runner (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
+- `ios.yml` builds and tests scheme `OpenHiker`. It is pinned to `macos-15` (PR #40): `macos-latest`
+  (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
 - `codeql.yml` is disabled for inactivity (last run 2026-04-14). Re-enable it with
   `gh workflow enable codeql.yml` if code scanning is wanted.
-- **`swift.yml` has failed on every run:** it calls `swift build`, but there is no `Package.swift`. Delete
-  the workflow or replace it with watchOS and macOS `xcodebuild` jobs (ROADMAP: CI coverage).
+- `swift.yml` was deleted in PR #40: it ran `swift build` with no `Package.swift` and failed on every run.
 - No CI job runs Android, watchOS or macOS.
 
 ## Open GitHub issues

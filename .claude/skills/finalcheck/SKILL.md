@@ -23,14 +23,10 @@ git worktree list`. If the branch is checked out in another worktree, `cd` into 
    - A deferred item gets no closing keyword before its number ("Deferred: #N", never "not fixed: #N"),
      in commits and in the PR body alike.
 3. **Drive CI to green.** Loop:
-   - Watch the checks for the pushed head commit with `gh pr checks --watch` (not `--fail-fast`: the
-     known-red `Swift` check below would end the watch before the iOS check finishes). Checks can take a
+   - Watch the checks for the pushed head commit with `gh pr checks --watch`. Checks can take a
      minute to register, so wait if it reports none yet. `codeql.yml` is disabled for inactivity
      (`gh workflow list --all`) and runs on nothing until someone re-enables it.
-   - **Known red, not your fault:** the `Swift` workflow (`swift.yml`) runs `swift build` but the repo has no
-     `Package.swift`, so it has failed on every run (see HANDOVER.md). Ignore it until it is fixed or
-     removed. Never treat any other failure this way.
-   - All other checks green → done. Report the PR URL and the final check list.
+   - All checks green → done. Report the PR URL and the final check list.
    - A check failed → read the cause: `gh run list --branch "$(git branch --show-current)" --limit 5`, then
      `gh run view <run-id> --log-failed`. Reproduce it locally with the command the failing job runs (see
      `.github/workflows/`):
@@ -43,7 +39,7 @@ git worktree list`. If the branch is checked out in another worktree, `cd` into 
      Judge each command by its **exit code**, never by filtered output: `cmd | tail` reports `tail`'s
      status, so use `set -o pipefail`. Fix the root cause, using TDD where it is a code bug. Confirm the fix
      passes locally, commit with a message naming the CI failure, push, and loop again.
-   - **CI-only failures.** CI runs on `macos-latest`, whose Xcode and simulators may differ from the local
+   - **CI-only failures.** CI runs on `macos-15` (pinned: `macos-latest` had no iOS simulator), whose Xcode and simulators may differ from the local
      ones. Compare `xcodebuild -version` and the simulator the job picked (in its log) before guessing.
    - **A job CANCELLED with no log** hit its timeout or lost its runner. Look for a hang before you call it
      a flake.

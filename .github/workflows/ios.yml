@@ -9,7 +9,8 @@ on:
 jobs:
   build:
     name: Build and Test default scheme using any available iPhone simulator
-    runs-on: macos-latest
+    # macos-latest (Xcode 26.6) ships no iOS simulator runtime; macos-15 does
+    runs-on: macos-15
 
     steps:
       - name: Checkout
