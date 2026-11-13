@@ -12,7 +12,7 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 |---|---|---|
 | **Android tests green** | Fix the 4 failing `:core` tests (see HANDOVER) | `OpenHikerAndroid/core/src/test` |
 | **Android test coverage** | Service and ViewModel tests; tests for phase 3's public functions | #23, #30 |
-| **CI coverage** | Replace the broken `swift.yml` with jobs that build watchOS and macOS; add a `./gradlew test` job for Android | `.github/workflows/` |
+| **CI coverage** | Make `ios.yml` install or pin an iOS simulator runtime (macos-latest with Xcode 26.6 has none, so the job fails); replace the broken `swift.yml` with jobs that build watchOS and macOS; add a `./gradlew test` job for Android | `.github/workflows/` |
 | **README** | Bring the Android status table and "What's Next" up to date | `README.md` |
 
 ## Feature parity
@@ -20,7 +20,7 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 | Feature | iOS | watchOS | macOS | Android | Spec |
 |---|---|---|---|---|---|
 | Trail overlay rendering from the routing DB (`routing_edges`) | todo | **done** | todo | todo | `docs/TODO/<platform>/trail-overlay-rendering.md` |
-| Cloud sync of saved routes and waypoints | done | done | done | todo (TODO stubs in `CloudDriveSyncEngine.kt`) | — |
+| Cloud sync of saved routes and waypoints | done | n/a (via iPhone) | done | todo (TODO stubs in `CloudDriveSyncEngine.kt`) | — |
 
 ## Release blockers
 

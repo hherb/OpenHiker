@@ -2,12 +2,12 @@
 name: nextsession
 description: Use when starting or resuming a work session on the OpenHiker project, to load current project state and re-establish the coding rules and session workflow before doing any work.
 disable-model-invocation: true
-allowed-tools: Read, Edit, Bash(git add *), Bash(git commit *), Bash(git push *), Bash(git status *), Bash(git diff *), Bash(git log *), Bash(gh issue *), Bash(gh pr *), Bash(gh run *), Bash(xcodebuild *), Bash(./gradlew *)
+allowed-tools: Read, Edit, Bash(git add *), Bash(git commit *), Bash(git push *), Bash(git status *), Bash(git diff *), Bash(git log *), Bash(gh issue *), Bash(gh pr *), Bash(gh run *), Bash(xcodebuild *), Bash(./gradlew *), Bash(cd OpenHikerAndroid *), Bash(set -o pipefail*)
 ---
 
 Read HANDOVER.md and follow its instructions. ROADMAP.md lists planned work not yet started. Ask me if you have any questions.
 
-Our coding rules are in `docs/llm/general_golden_rules.md` (Swift and Kotlin). Read and follow them. Also follow
+Our coding rules are in `docs/llm/general_golden_rules.md`; they apply to Swift and Kotlin alike. Read and follow them. Also follow
 CLAUDE.md, especially the pbxproj rules for new Swift files and the `docs/TODO/<platform>/<feature>.md` rule
 for feature parity. On top of those, follow this session workflow:
 

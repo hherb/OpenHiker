@@ -17,9 +17,11 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   metrics and HealthKit, waypoints, saved hikes, offline A* routing, planning and guidance, export, iCloud
   sync, the native macOS app). Since then: P2P sharing, mapless trail display, on-demand tile requests from the
   watch, periodic route sync, and a watchOS toolbar below the map.
-- **Android:** phases 1–5 merged (PRs #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
-  history, waypoints, export, community routes, cloud-drive sync, settings. The last code PR was #39
-  (2026-06-16, bug fixes from review).
+- **Android:** phases 1–5 merged (PRs #14, #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
+  history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change: `9cb9251`
+  (2026-02-12).
+- **Last code PR overall:** #39 (2026-06-16), Apple and `Shared/` bug fixes from review (crashes, GPS and SpO2
+  accuracy, throttling, rate limiting).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
@@ -31,8 +33,9 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | `:app` passes; **`:core` 318 run, 4 fail** |
 
-The simulators named in older docs (iPhone 16 Pro, Apple Watch Ultra 2) are not valid destinations under Xcode
-27.2. CLAUDE.md and the skills now use iPhone 17 and Apple Watch Ultra 3.
+The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
+11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
+runtimes: `iPhone 17,OS=27.0` and `Apple Watch Ultra 3 (49mm),OS=26.5` (watchOS 27.0 has only an Ultra 4).
 
 ## In flight
 
@@ -45,10 +48,11 @@ These were staged before the 2026-11-14 session, never committed, and are now in
   `project.pbxproj`. Most of the watchOS `Info.plist` is gone. The HealthKit and WeatherKit framework build
   files got Xcode-generated IDs (`6F81…`), which breaks the `1B…` convention in CLAUDE.md. That is harmless
   but inconsistent.
-- **iOS background modes** `processing` and `fetch` added. **watchOS entitlement**
-  `com.apple.developer.healthkit.background-delivery` added.
-- **Shared schemes** `OpenHiker` and `OpenHiker Watch App` (the `OpenHiker macOS` scheme is still
-  user-local, not shared).
+- **Removed in finalcheck:** iOS background modes `processing` and `fetch`, and the watchOS entitlement
+  `com.apple.developer.healthkit.background-delivery`. Nothing used them: no BGTaskScheduler code, no
+  `BGTaskSchedulerPermittedIdentifiers` (an App Store upload fails without it), no `enableBackgroundDelivery`.
+  Add them back together with the code that needs them.
+- **Shared schemes** `OpenHiker`, `OpenHiker Watch App` and (added in finalcheck) `OpenHiker macOS`.
 - `Screenshots/` (9 iPhone PNGs, about 14 MB) and `report.md` (code statistics, 2026-02-10).
 - **Verify:** all three Apple gates above pass with these changes staged (checked 2026-11-14). Also run the iOS
   app once on a device to confirm the location and HealthKit permission prompts still appear.
@@ -57,9 +61,8 @@ These were staged before the 2026-11-14 session, never committed, and are now in
 
 Found 2026-11-14. These are not tracked in an issue yet:
 
-- `TileCoordinateTest` › *fromLatLon converts Innsbruck … zoom 14*: expected x ≈ 8725, got 8710. Check
-  whether the test's coordinates or the expected tile are wrong before touching `TileCoordinate`, because the
-  iOS `TileCoordinate` is the reference.
+- `TileCoordinateTest` › *fromLatLon converts Innsbruck … zoom 14*: expected x ≈ 8725, got 8710. The code
+  is right: floor((11.39 + 180) / 360 · 2^14) = 8710. Fix the test's expectation.
 - `RouteFollowerTest` › *approaching turn …* (line 158) and *isAtTurn …* (line 184): the thresholds and the
   test geometry disagree.
 - `OsmXmlParserTest` › *parse handles long way with many nodes* (line 266): `SAXParseException` "processing
@@ -70,7 +73,10 @@ Found 2026-11-14. These are not tracked in an issue yet:
 
 ### CI
 
-- `ios.yml` (build and test scheme `OpenHiker`) is green. `codeql.yml` runs weekly and is green.
+- `ios.yml` (build and test scheme `OpenHiker`) was green on `main` in June. On PR #40 (2026-11-13) it failed:
+  the `macos-latest` runner (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
+- `codeql.yml` is disabled for inactivity (last run 2026-04-14). Re-enable it with
+  `gh workflow enable codeql.yml` if code scanning is wanted.
 - **`swift.yml` has failed on every run:** it calls `swift build`, but there is no `Package.swift`. Delete
   the workflow or replace it with watchOS and macOS `xcodebuild` jobs (ROADMAP: CI coverage).
 - No CI job runs Android, watchOS or macOS.

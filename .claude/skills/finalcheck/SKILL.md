@@ -2,7 +2,7 @@
 name: finalcheck
 description: Use for the final pre-merge pass on the current OpenHiker PR. Review it, fix everything the review found, then drive GitHub CI to green.
 disable-model-invocation: false
-allowed-tools: Read, Edit, Bash(git *), Bash(gh *), Bash(xcodebuild *), Bash(xcrun *), Bash(./gradlew *), Bash(actionlint *)
+allowed-tools: Read, Edit, Bash(git *), Bash(gh *), Bash(xcodebuild *), Bash(xcrun *), Bash(./gradlew *), Bash(cd OpenHikerAndroid *), Bash(set -o pipefail*), Bash(actionlint *)
 ---
 Run these steps in order on the PR for the current branch. First run `pwd && git branch --show-current &&
 git worktree list`. If the branch is checked out in another worktree, `cd` into it. Then find the PR with
@@ -23,9 +23,10 @@ git worktree list`. If the branch is checked out in another worktree, `cd` into 
    - A deferred item gets no closing keyword before its number ("Deferred: #N", never "not fixed: #N"),
      in commits and in the PR body alike.
 3. **Drive CI to green.** Loop:
-   - Watch the checks for the pushed head commit with `gh pr checks --watch --fail-fast`. Checks can take a
-     minute to register, so wait if it reports none yet. `codeql.yml` may run on the PR as well as on its
-     weekly schedule.
+   - Watch the checks for the pushed head commit with `gh pr checks --watch` (not `--fail-fast`: the
+     known-red `Swift` check below would end the watch before the iOS check finishes). Checks can take a
+     minute to register, so wait if it reports none yet. `codeql.yml` is disabled for inactivity
+     (`gh workflow list --all`) and runs on nothing until someone re-enables it.
    - **Known red, not your fault:** the `Swift` workflow (`swift.yml`) runs `swift build` but the repo has no
      `Package.swift`, so it has failed on every run (see HANDOVER.md). Ignore it until it is fixed or
      removed. Never treat any other failure this way.
