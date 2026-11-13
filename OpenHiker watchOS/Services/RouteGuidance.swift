@@ -284,10 +284,15 @@ final class RouteGuidance: ObservableObject {
         segStart: CLLocationCoordinate2D,
         segEnd: CLLocationCoordinate2D
     ) -> (point: CLLocationCoordinate2D, fraction: Double) {
-        // Convert to a local planar coordinate system for projection
-        let dx = segEnd.longitude - segStart.longitude
+        // Convert to a local planar coordinate system for projection. Longitude
+        // degrees are scaled by cos(latitude) so 1 unit east ~= 1 unit north in
+        // metres; without this, the fraction is computed in a distorted space and
+        // distance-along-route is skewed on diagonal segments (the error grows with
+        // latitude, e.g. ~0.68x at 47 degrees).
+        let lonScale = cos(segStart.latitude * .pi / 180)
+        let dx = (segEnd.longitude - segStart.longitude) * lonScale
         let dy = segEnd.latitude - segStart.latitude
-        let px = point.longitude - segStart.longitude
+        let px = (point.longitude - segStart.longitude) * lonScale
         let py = point.latitude - segStart.latitude
 
         let segLengthSquared = dx * dx + dy * dy
@@ -299,8 +304,10 @@ final class RouteGuidance: ObservableObject {
         // Fraction along the segment (clamped to 0-1)
         let t = max(0, min(1, (px * dx + py * dy) / segLengthSquared))
 
-        let projectedLat = segStart.latitude + t * dy
-        let projectedLon = segStart.longitude + t * dx
+        // Interpolate the position with the original (unscaled) coordinates; the
+        // fraction t is metric-agnostic, so linear interpolation in lat/lon is exact.
+        let projectedLat = segStart.latitude + t * (segEnd.latitude - segStart.latitude)
+        let projectedLon = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
 
         return (
             point: CLLocationCoordinate2D(latitude: projectedLat, longitude: projectedLon),

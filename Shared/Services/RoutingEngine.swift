@@ -431,7 +431,14 @@ private struct AStarEntry: Comparable {
     let fScore: Double
 
     static func < (lhs: AStarEntry, rhs: AStarEntry) -> Bool {
-        lhs.fScore < rhs.fScore
+        // Total order: primarily by f-score (what the heap needs), with nodeId as a
+        // tiebreaker so the ordering is consistent with `==`. Without the tiebreaker,
+        // two entries with equal f-scores but different nodeIds would be neither `<`,
+        // `>`, nor `==`, violating Comparable's strict-weak-ordering contract.
+        if lhs.fScore != rhs.fScore {
+            return lhs.fScore < rhs.fScore
+        }
+        return lhs.nodeId < rhs.nodeId
     }
 
     static func == (lhs: AStarEntry, rhs: AStarEntry) -> Bool {

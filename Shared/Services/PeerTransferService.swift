@@ -647,6 +647,12 @@ extension PeerTransferService: MCSessionDelegate {
     ///   - name: The resource name (e.g., `"manifest:<uuid>"`, `"mbtiles:<uuid>"`).
     ///   - localURL: The temporary file URL where the resource was saved.
     private func handleReceivedResource(name: String, at localURL: URL) {
+        // Guarantee the received temp file is removed on every exit path. For the
+        // mbtiles/routing cases this is a no-op on success (moveItem already
+        // consumed it) but reclaims the file on the early-return guard failures and
+        // save errors that previously leaked it.
+        defer { try? FileManager.default.removeItem(at: localURL) }
+
         let components = name.split(separator: ":", maxSplits: 1)
         guard components.count == 2 else {
             transferState = .failed("Invalid resource name: \(name)")
@@ -666,7 +672,6 @@ extension PeerTransferService: MCSessionDelegate {
             } catch {
                 transferState = .failed("Failed to decode manifest: \(error.localizedDescription)")
             }
-            try? FileManager.default.removeItem(at: localURL)
 
         case "mbtiles":
             guard let region = receivedManifest, region.id.uuidString == uuidString else {
@@ -718,7 +723,6 @@ extension PeerTransferService: MCSessionDelegate {
             } catch {
                 print("PeerTransferService: Failed to import saved routes: \(error.localizedDescription)")
             }
-            try? FileManager.default.removeItem(at: localURL)
 
         case "plannedroutes":
             do {
@@ -733,7 +737,6 @@ extension PeerTransferService: MCSessionDelegate {
             } catch {
                 print("PeerTransferService: Failed to import planned routes: \(error.localizedDescription)")
             }
-            try? FileManager.default.removeItem(at: localURL)
 
         case "waypoints":
             do {
@@ -748,7 +751,6 @@ extension PeerTransferService: MCSessionDelegate {
             } catch {
                 print("PeerTransferService: Failed to import waypoints: \(error.localizedDescription)")
             }
-            try? FileManager.default.removeItem(at: localURL)
 
         case "done":
             let regionName = receivedManifest?.name ?? "unknown"
@@ -756,11 +758,9 @@ extension PeerTransferService: MCSessionDelegate {
             progress = 1.0
             receivedManifest = nil
             print("PeerTransferService: Transfer complete for '\(regionName)'")
-            try? FileManager.default.removeItem(at: localURL)
 
         default:
             print("PeerTransferService: Unknown resource type '\(prefix)', ignoring")
-            try? FileManager.default.removeItem(at: localURL)
         }
     }
 }

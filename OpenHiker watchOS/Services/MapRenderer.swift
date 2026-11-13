@@ -341,6 +341,13 @@ final class MapScene: SKScene {
     /// In-memory cache of tile textures to avoid re-creating them from PNG data.
     private var textureCache: [TileCoordinate: SKTexture] = [:]
 
+    /// Insertion/most-recently-used order for ``textureCache``, used for eviction.
+    ///
+    /// A `Dictionary`'s key order is undefined, so the cache cannot derive an
+    /// "oldest" entry from its keys. This array tracks access order so eviction is
+    /// a true least-recently-used policy: the front is the oldest used tile.
+    private var textureCacheOrder: [TileCoordinate] = []
+
     /// Maximum number of textures to keep in the cache before evicting old entries.
     private let maxCacheSize = 100
 
@@ -589,34 +596,21 @@ final class MapScene: SKScene {
     ///
     /// - Parameter tile: The ``TileCoordinate`` to create a sprite for.
     private func addTileSprite(for tile: TileCoordinate) {
-        guard let renderer = renderer,
-              let tileData = renderer.getTileData(for: tile) else {
-            // No tile data - show placeholder
-            addPlaceholderTile(for: tile)
-            return
-        }
-
-        // Create texture from tile data
-        #if os(watchOS)
-        guard let uiImage = UIImage(data: tileData) else {
-            addPlaceholderTile(for: tile)
-            return
-        }
-        #else
-        guard let uiImage = UIImage(data: tileData) else {
-            addPlaceholderTile(for: tile)
-            return
-        }
-        #endif
-
-        let texture = SKTexture(image: uiImage)
-        textureCache[tile] = texture
-
-        // Manage cache size
-        if textureCache.count > maxCacheSize {
-            // Remove oldest entries (simple FIFO for now)
-            let keysToRemove = Array(textureCache.keys.prefix(textureCache.count - maxCacheSize))
-            keysToRemove.forEach { textureCache.removeValue(forKey: $0) }
+        // Serve from the texture cache when possible to avoid re-querying SQLite
+        // and re-decoding the PNG every time the tile re-enters the visible grid.
+        let texture: SKTexture
+        if let cached = cachedTexture(for: tile) {
+            texture = cached
+        } else {
+            guard let renderer = renderer,
+                  let tileData = renderer.getTileData(for: tile),
+                  let uiImage = UIImage(data: tileData) else {
+                // No tile data - show placeholder
+                addPlaceholderTile(for: tile)
+                return
+            }
+            texture = SKTexture(image: uiImage)
+            store(texture: texture, for: tile)
         }
 
         let sprite = SKSpriteNode(texture: texture)
@@ -625,6 +619,37 @@ final class MapScene: SKScene {
         sprite.anchorPoint = CGPoint(x: 0.5, y: 0.5)
 
         tilesNode.addChild(sprite)
+    }
+
+    /// Returns a cached texture for the tile, if present, marking it most-recently-used.
+    ///
+    /// - Parameter tile: The tile to look up.
+    /// - Returns: The cached ``SKTexture``, or `nil` on a cache miss.
+    private func cachedTexture(for tile: TileCoordinate) -> SKTexture? {
+        guard let texture = textureCache[tile] else { return nil }
+        if let index = textureCacheOrder.firstIndex(of: tile) {
+            textureCacheOrder.remove(at: index)
+        }
+        textureCacheOrder.append(tile)
+        return texture
+    }
+
+    /// Inserts a texture into the cache, evicting the least-recently-used entries
+    /// once the cache exceeds ``maxCacheSize``.
+    ///
+    /// - Parameters:
+    ///   - texture: The texture to cache.
+    ///   - tile: The tile key.
+    private func store(texture: SKTexture, for tile: TileCoordinate) {
+        if textureCache[tile] == nil {
+            textureCacheOrder.append(tile)
+        }
+        textureCache[tile] = texture
+
+        while textureCache.count > maxCacheSize, !textureCacheOrder.isEmpty {
+            let oldest = textureCacheOrder.removeFirst()
+            textureCache.removeValue(forKey: oldest)
+        }
     }
 
     /// Creates a gray placeholder tile with coordinate labels for debugging.

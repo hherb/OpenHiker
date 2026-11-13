@@ -69,6 +69,11 @@ actor ElevationDataManager {
     /// Each entry holds the full 3601×3601 grid of Int16 elevation samples.
     private var loadedTiles: [String: [Int16]] = [:]
 
+    /// Least-recently-used order for ``loadedTiles`` (front = oldest). A Dictionary's
+    /// key order is undefined, so this array is required to evict the actual oldest
+    /// tile rather than an arbitrary one.
+    private var loadedTileOrder: [String] = []
+
     /// Directory where downloaded HGT files are cached on disk.
     private let cacheDirectory: URL
 
@@ -183,6 +188,7 @@ actor ElevationDataManager {
     /// Clear all cached elevation tiles from disk and memory.
     func clearCache() throws {
         loadedTiles.removeAll()
+        loadedTileOrder.removeAll()
         if FileManager.default.fileExists(atPath: cacheDirectory.path) {
             try FileManager.default.removeItem(at: cacheDirectory)
             try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
@@ -195,6 +201,7 @@ actor ElevationDataManager {
     /// will reload tiles from disk on demand.
     func clearMemoryCache() {
         loadedTiles.removeAll()
+        loadedTileOrder.removeAll()
     }
 
     // MARK: - Tile Loading
@@ -206,6 +213,7 @@ actor ElevationDataManager {
     private func loadTile(_ tileName: String) async throws -> [Int16] {
         // Memory cache
         if let cached = loadedTiles[tileName] {
+            touchTile(tileName)
             return cached
         }
 
@@ -221,7 +229,18 @@ actor ElevationDataManager {
 
         let grid = try readHGT(at: diskPath)
         loadedTiles[tileName] = grid
+        touchTile(tileName)
         return grid
+    }
+
+    /// Marks a tile as most-recently-used in the LRU order.
+    ///
+    /// - Parameter tileName: The tile that was just accessed or inserted.
+    private func touchTile(_ tileName: String) {
+        if let index = loadedTileOrder.firstIndex(of: tileName) {
+            loadedTileOrder.remove(at: index)
+        }
+        loadedTileOrder.append(tileName)
     }
 
     /// Read an HGT file from disk into an array of Int16 elevation samples.
@@ -242,9 +261,13 @@ actor ElevationDataManager {
         data.withUnsafeBytes { buffer in
             let bytes = buffer.bindMemory(to: UInt8.self)
             for i in 0..<grid.count {
-                let hi = Int16(bytes[i * 2])
-                let lo = Int16(bytes[i * 2 + 1])
-                grid[i] = (hi << 8) | lo  // Big-endian
+                // Assemble the big-endian sample in an UNSIGNED 16-bit value first,
+                // then reinterpret the bit pattern as signed. Shifting directly on Int16
+                // traps whenever the high byte is >= 0x80 (e.g. the standard SRTM void
+                // marker 0x8000) because the intermediate value exceeds Int16.max.
+                let hi = UInt16(bytes[i * 2])
+                let lo = UInt16(bytes[i * 2 + 1])
+                grid[i] = Int16(bitPattern: (hi << 8) | lo)  // Big-endian
             }
         }
         return grid
@@ -553,15 +576,15 @@ actor ElevationDataManager {
         return names
     }
 
-    /// Evict the oldest tile from the memory cache when it exceeds ``maxCachedTiles``.
+    /// Evict the least-recently-used tile(s) from the memory cache when it reaches
+    /// ``maxCachedTiles``.
     ///
-    /// Uses a simple FIFO strategy: removes an arbitrary entry when the cache
-    /// is full. This bounds memory usage to approximately `maxCachedTiles × 25 MB`.
+    /// Uses the ``loadedTileOrder`` LRU list to remove the genuinely oldest entry.
+    /// This bounds memory usage to approximately `maxCachedTiles × 25 MB`.
     private func evictTileIfNeeded() {
-        while loadedTiles.count >= Self.maxCachedTiles {
-            if let key = loadedTiles.keys.first {
-                loadedTiles.removeValue(forKey: key)
-            }
+        while loadedTiles.count >= Self.maxCachedTiles, !loadedTileOrder.isEmpty {
+            let oldest = loadedTileOrder.removeFirst()
+            loadedTiles.removeValue(forKey: oldest)
         }
     }
 }

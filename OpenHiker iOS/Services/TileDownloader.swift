@@ -119,8 +119,12 @@ actor TileDownloader {
     /// Cache hits bypass this throttle entirely.
     private static let minRequestIntervalNs: UInt64 = 50_000_000
 
-    /// Timestamp of the last network request, used for per-request rate limiting.
-    private var lastNetworkRequestTime: ContinuousClock.Instant = .now
+    /// The instant at which the next network request is allowed to fire.
+    ///
+    /// Used as a reservation cursor for per-request rate limiting: each caller
+    /// advances it by ``minRequestIntervalNs`` *before* suspending, so concurrent
+    /// callers stagger onto distinct slots rather than all reading a stale value.
+    private var nextRequestSlot: ContinuousClock.Instant = .now
 
     /// Creates a new tile downloader with a configured URL session and cache directory.
     ///
@@ -273,12 +277,20 @@ actor TileDownloader {
     /// Enforces minimum spacing between network requests to avoid overloading tile servers.
     /// Cache hits do not call this method and proceed at full speed.
     private func throttleIfNeeded() async throws {
-        let elapsed = lastNetworkRequestTime.duration(to: .now)
+        // Reserve the next slot synchronously, while actor isolation is held and
+        // before any suspension point. This advance is atomic per call, so N
+        // concurrent callers claim N distinct, staggered slots. If we instead
+        // recorded the timestamp *after* sleeping, suspended callers would all read
+        // the same stale value and fire as a burst, defeating the throttle.
         let minInterval = Duration.nanoseconds(Self.minRequestIntervalNs)
-        if elapsed < minInterval {
-            try await Task.sleep(for: minInterval - elapsed)
+        let now: ContinuousClock.Instant = .now
+        let slot = max(now, nextRequestSlot)
+        nextRequestSlot = slot + minInterval
+
+        let waitUntilSlot = now.duration(to: slot)
+        if waitUntilSlot > .zero {
+            try await Task.sleep(for: waitUntilSlot)
         }
-        lastNetworkRequestTime = .now
     }
 
     /// Downloads a single tile from the server, checking the local cache first.

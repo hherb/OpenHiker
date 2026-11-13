@@ -499,9 +499,13 @@ final class HealthKitManager: NSObject, ObservableObject, @unchecked Sendable {
     private func processSpO2Samples(_ samples: [HKSample]?) {
         guard let samples = samples as? [HKQuantitySample], !samples.isEmpty else { return }
 
+        // HKUnit.percent() yields a 0...100 value, but `currentSpO2`/`spO2Samples`
+        // are defined as a fraction (0.0...1.0) and the UI formatter multiplies by
+        // 100 again. Convert to a fraction here so the value is not scaled twice
+        // (otherwise 0.97 would display as "9700%").
         let percentUnit = HKUnit.percent()
 
-        let spO2Values = samples.map { $0.quantity.doubleValue(for: percentUnit) }
+        let spO2Values = samples.map { $0.quantity.doubleValue(for: percentUnit) / 100.0 }
         samplesQueue.sync {
             spO2Samples.append(contentsOf: spO2Values)
         }
@@ -509,7 +513,7 @@ final class HealthKitManager: NSObject, ObservableObject, @unchecked Sendable {
         if let latestSample = samples.last {
             let age = Date().timeIntervalSince(latestSample.endDate)
             if age < HikeStatisticsConfig.spO2MaxAgeSec {
-                let value = latestSample.quantity.doubleValue(for: percentUnit)
+                let value = latestSample.quantity.doubleValue(for: percentUnit) / 100.0
                 DispatchQueue.main.async {
                     self.currentSpO2 = value
                 }

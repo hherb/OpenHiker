@@ -222,15 +222,52 @@ final class TileStore: @unchecked Sendable {
     /// - Returns: An array of (coordinate, data) tuples for each found tile.
     /// - Throws: Rethrows any unexpected database errors.
     func getTiles(in range: TileRange) throws -> [(TileCoordinate, Data)] {
-        var results: [(TileCoordinate, Data)] = []
-
-        for tile in range.allTiles() {
-            if let data = try? getTile(tile) {
-                results.append((tile, data))
+        try queue.sync {
+            guard let db = db else {
+                throw TileStoreError.databaseNotOpen
             }
-        }
 
-        return results
+            // Convert the XYZ y-range to TMS rows once. TMS flips the y-axis
+            // (tmsY = 2^z - 1 - y), so the min/max swap: the smallest XYZ y maps to
+            // the largest TMS row and vice versa.
+            let maxRow = (1 << range.zoom) - 1 - range.minY
+            let minRow = (1 << range.zoom) - 1 - range.maxY
+
+            // A single ranged SELECT with one prepared statement, rather than
+            // re-preparing and re-acquiring the serial queue once per tile.
+            let query = """
+                SELECT tile_column, tile_row, tile_data FROM tiles
+                WHERE zoom_level = ?
+                  AND tile_column BETWEEN ? AND ?
+                  AND tile_row BETWEEN ? AND ?
+                """
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+                throw TileStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(statement) }
+
+            sqlite3_bind_int(statement, 1, Int32(range.zoom))
+            sqlite3_bind_int(statement, 2, Int32(range.minX))
+            sqlite3_bind_int(statement, 3, Int32(range.maxX))
+            sqlite3_bind_int(statement, 4, Int32(minRow))
+            sqlite3_bind_int(statement, 5, Int32(maxRow))
+
+            var results: [(TileCoordinate, Data)] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let column = Int(sqlite3_column_int(statement, 0))
+                let row = Int(sqlite3_column_int(statement, 1))
+                guard let blob = sqlite3_column_blob(statement, 2) else { continue }
+                let size = sqlite3_column_bytes(statement, 2)
+
+                // Convert the TMS row back to standard XYZ y.
+                let y = (1 << range.zoom) - 1 - row
+                let coordinate = TileCoordinate(x: column, y: y, z: range.zoom)
+                results.append((coordinate, Data(bytes: blob, count: Int(size))))
+            }
+
+            return results
+        }
     }
 
     // MARK: - Private Methods
