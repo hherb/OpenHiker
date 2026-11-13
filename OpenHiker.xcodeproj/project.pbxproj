@@ -79,7 +79,6 @@
 		1B0000010000000000000006 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000006 /* MapView.swift */; };
 		1B0000010000000000000007 /* HikeStatsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000007 /* HikeStatsOverlay.swift */; };
 		1B0000010000000000000008 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000008 /* HealthKitManager.swift */; };
-		1B0000010000000000000009 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
 		1B0000010000000000000010 /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1B0000010000000000000011 /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
 		1B0000010000000000000012 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000012 /* Region.swift */; };
@@ -107,7 +106,6 @@
 		1B0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
 		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
-		1B000001000000000000004A /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 		1B0000010000000000000050 /* HikeStatsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000016 /* HikeStatsDashboardView.swift */; };
 		1B0000010000000000000051 /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000017 /* RenameSheet.swift */; };
 		1B0000010000000000000052 /* MinimalistNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000018 /* MinimalistNavigationView.swift */; };
@@ -169,6 +167,8 @@
 		1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000001 /* WatchHealthRelayTests.swift */; };
 		1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */; };
 		1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000003 /* iOSLocationManagerTests.swift */; };
+		6F81B2D52F3F76EF00218D95 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
+		6F81B2D82F3F76F100218D95 /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -331,8 +331,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1B0000010000000000000009 /* HealthKit.framework in Frameworks */,
-				1B000001000000000000004A /* WeatherKit.framework in Frameworks */,
+				6F81B2D82F3F76F100218D95 /* WeatherKit.framework in Frameworks */,
+				6F81B2D52F3F76EF00218D95 /* HealthKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1135,8 +1135,10 @@
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "OpenHiker uses the local network to receive map regions from a nearby Mac.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and download relevant map tiles.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs continuous location access to record your hiking track in the background.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and record hiking tracks.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
@@ -1171,8 +1173,10 @@
 				INFOPLIST_FILE = "OpenHiker iOS/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "OpenHiker uses the local network to receive map regions from a nearby Mac.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and download relevant map tiles.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs continuous location access to record your hiking track in the background.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and record hiking tracks.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
@@ -1200,6 +1204,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "OpenHiker watchOS/OpenHiker watchOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1207,10 +1212,13 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker watchOS/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenHiker reads your heart rate and blood oxygen during hikes to display live vitals and record workout data.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "OpenHiker saves your hikes as workouts in Apple Health with distance, elevation, route, and calorie data.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.openhiker.ios;
 				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				INFOPLIST_KEY_WKWatchOnly = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1231,6 +1239,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "OpenHiker watchOS/OpenHiker watchOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1238,10 +1247,13 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "OpenHiker watchOS/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenHiker;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenHiker reads your heart rate and blood oxygen during hikes to display live vitals and record workout data.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "OpenHiker saves your hikes as workouts in Apple Health with distance, elevation, route, and calorie data.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map, track your hike, and provide navigation guidance even when the app is in the background.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "OpenHiker needs your location to show your position on the map and track your hike.";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.openhiker.ios;
 				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				INFOPLIST_KEY_WKWatchOnly = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1400,20 +1412,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				9A0000010000000000000001 /* Debug */,
-				9A0000010000000000000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		7D0000010000000000000001 /* Build configuration list for PBXNativeTarget "OpenHikerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9D0000010000000000000001 /* Debug */,
 				9D0000010000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8A0000010000000000000002 /* Build configuration list for PBXProject "OpenHiker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000010000000000000001 /* Debug */,
+				9A0000010000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

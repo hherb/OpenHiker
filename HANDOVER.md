@@ -36,9 +36,9 @@ The simulators named in older docs (iPhone 16 Pro, Apple Watch Ultra 2) are not 
 
 ## In flight
 
-### Uncommitted staged changes on `main`
+### Project config changes (PR from `chore/session-skills-handover`)
 
-These were staged before this session and are not committed yet. Review them, then commit them on a branch:
+These were staged before the 2026-11-14 session, never committed, and are now in that PR's second commit:
 
 - **Info.plist keys moved to build settings.** Location and HealthKit usage strings,
   `LSSupportsOpeningDocumentsInPlace` and `WKWatchOnly` went from `Info.plist` into `INFOPLIST_KEY_*` in
