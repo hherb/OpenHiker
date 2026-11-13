@@ -16,12 +16,12 @@ when a feature gets implemented on one platform, aim at feature equivalnce on al
 
 Build iOS app:
 ```bash
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0"
 ```
 
 Build watchOS app:
 ```bash
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=26.5"
 ```
 
 The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with corresponding schemes. There are no third-party dependencies — only Apple frameworks and the system SQLite3 library.

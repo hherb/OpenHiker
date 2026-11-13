@@ -1,0 +1,90 @@
+# HANDOVER
+
+Working notes for picking up in-flight work. Each section is one self-contained slice: what's known, where to
+start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
+work. Planned work that has not started lives in `ROADMAP.md`.
+
+Last updated: 2026-11-14.
+
+---
+
+## State of the project
+
+Four platforms. Apple (iOS, watchOS, macOS) share `Shared/` in one Xcode project. Android is a separate Gradle
+project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
+
+- **iOS, watchOS, macOS:** feature-complete for the original roadmap (`docs/planning/roadmap.md`, phases 1–6:
+  metrics and HealthKit, waypoints, saved hikes, offline A* routing, planning and guidance, export, iCloud
+  sync, the native macOS app). Since then: P2P sharing, mapless trail display, on-demand tile requests from the
+  watch, periodic route sync, and a watchOS toolbar below the map.
+- **Android:** phases 1–5 merged (PRs #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
+  history, waypoints, export, community routes, cloud-drive sync, settings. The last code PR was #39
+  (2026-06-16, bug fixes from review).
+- **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
+
+## Baseline (checked 2026-11-14, Xcode 27.2)
+
+| Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
+|---|---|---|
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **25/25 pass** |
+| watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
+| macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | `:app` passes; **`:core` 318 run, 4 fail** |
+
+The simulators named in older docs (iPhone 16 Pro, Apple Watch Ultra 2) are not valid destinations under Xcode
+27.2. CLAUDE.md and the skills now use iPhone 17 and Apple Watch Ultra 3.
+
+## In flight
+
+### Uncommitted staged changes on `main`
+
+These were staged before this session and are not committed yet. Review them, then commit them on a branch:
+
+- **Info.plist keys moved to build settings.** Location and HealthKit usage strings,
+  `LSSupportsOpeningDocumentsInPlace` and `WKWatchOnly` went from `Info.plist` into `INFOPLIST_KEY_*` in
+  `project.pbxproj`. Most of the watchOS `Info.plist` is gone. The HealthKit and WeatherKit framework build
+  files got Xcode-generated IDs (`6F81…`), which breaks the `1B…` convention in CLAUDE.md. That is harmless
+  but inconsistent.
+- **iOS background modes** `processing` and `fetch` added. **watchOS entitlement**
+  `com.apple.developer.healthkit.background-delivery` added.
+- **Shared schemes** `OpenHiker` and `OpenHiker Watch App` (the `OpenHiker macOS` scheme is still
+  user-local, not shared).
+- `Screenshots/` (9 iPhone PNGs, about 14 MB) and `report.md` (code statistics, 2026-02-10).
+- **Verify:** all three Apple gates above pass with these changes staged (checked 2026-11-14). Also run the iOS
+  app once on a device to confirm the location and HealthKit permission prompts still appear.
+
+### Android `:core` test failures (pre-existing)
+
+Found 2026-11-14. These are not tracked in an issue yet:
+
+- `TileCoordinateTest` › *fromLatLon converts Innsbruck … zoom 14*: expected x ≈ 8725, got 8710. Check
+  whether the test's coordinates or the expected tile are wrong before touching `TileCoordinate`, because the
+  iOS `TileCoordinate` is the reference.
+- `RouteFollowerTest` › *approaching turn …* (line 158) and *isAtTurn …* (line 184): the thresholds and the
+  test geometry disagree.
+- `OsmXmlParserTest` › *parse handles long way with many nodes* (line 266): `SAXParseException` "processing
+  instruction target matching [xX][mM][lL] is not allowed". The test builds XML with leading whitespace before
+  `<?xml`. Most likely a `trimIndent()` or raw-string problem in the test, not in the parser.
+
+**Verify:** `cd OpenHikerAndroid && ./gradlew :core:test --rerun-tasks`.
+
+### CI
+
+- `ios.yml` (build and test scheme `OpenHiker`) is green. `codeql.yml` runs weekly and is green.
+- **`swift.yml` has failed on every run:** it calls `swift build`, but there is no `Package.swift`. Delete
+  the workflow or replace it with watchOS and macOS `xcodebuild` jobs (ROADMAP: CI coverage).
+- No CI job runs Android, watchOS or macOS.
+
+## Open GitHub issues
+
+- #23: Android service and ViewModel test coverage.
+- #30: missing unit tests for public functions from PR #26 (Android phase 3).
+
+## Known stubs
+
+- **Community route upload** needs a real GitHub bot token on both platforms
+  (`Shared/Services/GitHubRouteService.swift:175`, placeholder bytes;
+  `OpenHikerAndroid/.../community/GitHubRouteService.kt:544`, empty `OBFUSCATED_TOKEN`).
+- **Android cloud sync** skips saved routes and waypoints (`CloudDriveSyncEngine.kt:176`, `:183`, both TODO).
+- **README is stale for Android:** its phase table says phase 3 is "In Progress" and phase 4 "Planned", but
+  both are merged.
