@@ -16,15 +16,15 @@ when a feature gets implemented on one platform, aim at feature equivalnce on al
 
 Build iOS app:
 ```bash
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0"
 ```
 
 Build watchOS app:
 ```bash
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=26.5"
 ```
 
-The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with corresponding schemes. There are no third-party dependencies — only Apple frameworks and the system SQLite3 library.
+The Xcode project has four targets (`OpenHiker`, `OpenHiker Watch App`, `OpenHiker macOS`, `OpenHikerTests`) and three shared schemes (`OpenHiker`, `OpenHiker Watch App`, `OpenHiker macOS`); the Android app is a separate Gradle project in `OpenHikerAndroid/`. There are no third-party dependencies — only Apple frameworks and the system SQLite3 library.
 
 ## Architecture
 
@@ -65,15 +65,16 @@ The project has two Xcode targets (`OpenHiker` and `OpenHiker Watch App`) with c
 
 This project uses a **traditional Xcode project** (`project.pbxproj`) with explicit file references — NOT the newer folder-based auto-discovery. When creating or adding any new `.swift` file, you **MUST** also add it to `OpenHiker.xcodeproj/project.pbxproj` in all four required sections:
 
-1. **PBXBuildFile** — build file entry (prefix `1A...` for iOS target, `1B...` for watchOS target)
-2. **PBXFileReference** — file reference entry (prefix `2A...` for iOS/Shared files, `2B...` for watchOS-only files)
+1. **PBXBuildFile** — build file entry (prefix `1A...` for iOS target, `1B...` for watchOS target, `1C...` for macOS target, `1D...` for tests)
+2. **PBXFileReference** — file reference entry (prefix `2A...` for iOS/Shared files, `2B...` for watchOS-only files, `2C...` for macOS-only files)
 3. **PBXGroup** — add to the appropriate group (Views, Services, Models, Storage, Utilities)
 4. **PBXSourcesBuildPhase** — add to the target's Sources list
 
 **Target membership rules:**
 - `OpenHiker iOS/` files → iOS target only (`1A...` build IDs)
 - `OpenHiker watchOS/` files → watchOS target only (`1B...` build IDs)
-- `Shared/` files → **both** targets (one `1A...` and one `1B...` build ID, same `2A...` file ref)
+- `OpenHiker macOS/` files → macOS target only (`1C...` build IDs)
+- `Shared/` files → **all three** app targets (one `1A...`, one `1B...` and one `1C...` build ID, same `2A...` file ref)
 - Exception: Shared files using iOS-only APIs (e.g., `UIGraphicsImageRenderer`) → iOS target only
 
 **ID convention:** Increment from the highest existing ID in each prefix series (check the file for current max).
