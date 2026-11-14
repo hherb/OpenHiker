@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-14.
+Last updated: 2026-11-15.
 
 ---
 
@@ -35,19 +35,20 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     CoreLocation's cached first fix (#47, PR #48), and fixes more than 10 s in the future, which would
     freeze the gate until the clock caught up (#49, PR #50). If the device clock jumps back mid-session,
     the gate starts afresh as for a first fix (#51, PR #52). It does the same after a forward jump, which
-    it spots when fix timestamps outrun a monotonic clock by more than 20 s (#53, this branch).
-    `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
+    it spots when fix timestamps outrun a monotonic clock by more than 20 s (#53, PR #54). The 10 s
+    recheck cap runs on the same monotonic clock, so a smaller clock step cannot shorten it (#55, this
+    branch). `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
     onto the route, so the leg choice does not apply there.
-- **Last PRs:** #52 (2026-11-14, #51, backward clock jump), #50 (#49, future-dated fixes), #48 (#46 and
-  #47, guidance start).
+- **Last PRs:** #54 (2026-11-14, #53, forward clock jump), #52 (#51, backward clock jump), #50 (#49,
+  future-dated fixes).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
-## Baseline (checked 2026-11-14, Xcode 27.2)
+## Baseline (Apple checked 2026-11-15, Android 2026-11-14; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **74/74 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **76/76 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 321/321, `:app` green) |
@@ -88,8 +89,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #30: missing unit tests for public functions from PR #26 (Android phase 3).
-- #55: a 10-20 s forward clock step during a recheck shortens the 10 s recheck cap (found in the PR #54
-  review). Low impact; the issue suggests measuring the cap on the monotonic clock.
 
 ## Known stubs
 

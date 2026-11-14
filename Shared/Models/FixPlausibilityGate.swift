@@ -37,9 +37,9 @@ import CoreLocation
 /// - The speed used is the larger of the planned speed and the fix's own Doppler-measured speed,
 ///   when its `speedAccuracy` is good (``measuredSpeed(of:)``). A position jump caused by a signal
 ///   reflection does not come with a matching measured speed.
-/// - A recheck lasts at most ``RouteGuidanceConfig/maxRecheckDurationSeconds``. A fix arriving
-///   after that is accepted as it is; if no fix arrives for that long, the caller ends the
-///   recheck with ``abandonRecheck()``.
+/// - A recheck lasts at most ``RouteGuidanceConfig/maxRecheckDurationSeconds`` on the monotonic
+///   clock. A fix arriving after that is accepted as it is; if no fix arrives for that long, the
+///   caller ends the recheck with ``abandonRecheck()``.
 ///
 /// If the device clock jumps back mid-session, every fix would look older than the newest one
 /// seen. If it jumps forward, the next fix would look as though it followed a long GPS gap and pass
@@ -83,9 +83,10 @@ struct FixPlausibilityGate {
     /// How many fixes have agreed with ``suspect`` so far.
     private var confirmations = 0
 
-    /// Timestamp of the fix that started the current recheck. A disagreeing recheck that becomes
-    /// the new suspect does not reset it, so a chain of suspects is still capped.
-    private var recheckStartedAt: Date?
+    /// `monotonicClock` when the current recheck started. A disagreeing recheck that becomes the
+    /// new suspect does not reset it, so a chain of suspects is still capped. Fix timestamps would
+    /// let a clock step too small to count as a jump shorten the cap (#55).
+    private var recheckStartedAt: TimeInterval?
 
     /// Whether a suspect fix is waiting for confirmation.
     var isRechecking: Bool { suspect != nil }
@@ -177,7 +178,8 @@ struct FixPlausibilityGate {
     /// first fix (#53).
     ///
     /// - Parameters:
-    ///   - fix: The GPS fix (its `timestamp` is used for elapsed time).
+    ///   - fix: The GPS fix (its `timestamp` sets the reachable distance; the recheck cap uses
+    ///     `monotonicClock`).
     ///   - progressJump: How far the fix lies beyond the progress high-water mark, in metres
     ///     (`distanceAlong - highWaterMark`; zero or negative means no forward jump).
     ///   - now: The current time. If the newest fix seen is more than
@@ -211,7 +213,7 @@ struct FixPlausibilityGate {
         newestFixMonotonicTime = monotonicNow
 
         if let started = recheckStartedAt,
-           fix.timestamp.timeIntervalSince(started) >= RouteGuidanceConfig.maxRecheckDurationSeconds {
+           monotonicNow - started >= RouteGuidanceConfig.maxRecheckDurationSeconds {
             print("Route guidance: recheck cap reached; accepting fix \(Int(progressJump)) m ahead")
             return accept(fix) // Cap reached: accept rather than freeze guidance with the GPS in burst mode.
         }
@@ -235,7 +237,7 @@ struct FixPlausibilityGate {
         print("Route guidance: holding back fix \(Int(progressJump)) m ahead for recheck")
         suspect = fix
         confirmations = 0
-        if recheckStartedAt == nil { recheckStartedAt = fix.timestamp }
+        if recheckStartedAt == nil { recheckStartedAt = monotonicNow }
         return .recheck
     }
 
