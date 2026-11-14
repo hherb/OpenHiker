@@ -200,7 +200,8 @@ final class RouteGuidance: ObservableObject {
         ) else { return }
 
         // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
-        let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
+        let decision = plausibilityGate.evaluate(
+            location, progressJump: closest.distanceAlong - progressHighWaterMark, now: Date())
         syncRecheckState()
         guard decision == .accept else { return }
         if course != nil { legChosenByCourse = true }

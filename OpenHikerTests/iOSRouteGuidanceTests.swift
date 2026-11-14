@@ -711,8 +711,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// A forward step within the reachable distance is accepted at once.
     func testGateAcceptsPlausibleFix() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.0001, after: 10), progressJump: 33), .accept, "33 <= 1.8*10 + 15")
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0001, after: 10), progressJump: 33, now: clock), .accept,
+                       "33 <= 1.8*10 + 15")
         XCTAssertFalse(gate.isRechecking)
     }
 
@@ -727,28 +728,31 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// An implausible jump is held back until two agreeing rechecks confirm it.
     func testGateConfirmsJumpAfterTwoAgreeingRechecks() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
         XCTAssertTrue(gate.isRechecking)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005), .recheck, "1st recheck")
-        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011), .accept, "2nd recheck")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005, now: clock), .recheck,
+                       "1st recheck")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011, now: clock), .accept, "2nd recheck")
         XCTAssertFalse(gate.isRechecking)
     }
 
     /// A recheck that disagrees with the suspect drops it and is judged on its own.
     func testGateDropsSuspectWhenRecheckDisagrees() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.00002, after: 1), progressJump: 2), .accept, "back where we were")
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.00002, after: 1), progressJump: 2, now: clock), .accept,
+                       "back where we were")
         XCTAssertFalse(gate.isRechecking)
     }
 
     /// After a long GPS gap, a long forward jump is plausible and accepted at once.
     func testGateAcceptsLongJumpAfterLongGap() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1000), progressJump: 1112), .accept, "1112 <= 1815")
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1000), progressJump: 1112, now: clock), .accept,
+                       "1112 <= 1815")
     }
 
     /// Planned speed is distance / duration, falling back to the mode's base speed without a duration.
@@ -778,12 +782,13 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Real fast travel comes with a matching measured speed, so its fixes are accepted at once.
     func testGateUsesTrustedMeasuredSpeed() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
         XCTAssertEqual(gate.evaluate(
-            fix(0, 25 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 1), progressJump: 25), .accept,
+            fix(0, 25 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 1), progressJump: 25, now: clock), .accept,
             "25 <= 25*1.8*1 + 15")
         XCTAssertEqual(gate.evaluate(
-            fix(0, 50 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 5), progressJump: 25), .recheck,
+            fix(0, 50 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 5), progressJump: 25, now: clock),
+            .recheck,
             "untrusted speed: 25 > 1*1.8*1 + 15")
     }
 
@@ -791,9 +796,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// past 10 s since the recheck began is accepted.
     func testGateCapsRecheckDuration() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
         let decisions = (1...11).map { i in
-            gate.evaluate(fix(0, Double(25 * i) * degreesPerMetre, after: 1), progressJump: Double(25 * i))
+            gate.evaluate(fix(0, Double(25 * i) * degreesPerMetre, after: 1), progressJump: Double(25 * i), now: clock)
         }
         XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept])
         XCTAssertFalse(gate.isRechecking)
@@ -803,25 +808,27 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// settings change) is not an independent confirmation.
     func testGateIgnoresRedeliveredSuspect() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
         let wild = fix(0, 0.01, after: 1)
-        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000), .recheck)
-        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000), .recheck, "duplicate ignored")
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005), .recheck, "only 1st recheck")
-        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011), .accept, "2nd recheck")
+        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000, now: clock), .recheck, "duplicate ignored")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005, now: clock), .recheck,
+                       "only 1st recheck")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011, now: clock), .accept, "2nd recheck")
     }
 
     /// A fix older than one already seen is ignored, so it cannot rewind the reference time and
     /// widen the reachable distance for the next fix.
     func testGateIgnoresOutOfOrderFix() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 100), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 100), progressJump: 0, now: clock), .accept)
         let stale = CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0), altitude: 0, horizontalAccuracy: 5,
             verticalAccuracy: 5, timestamp: clock - 50)
-        XCTAssertEqual(gate.evaluate(stale, progressJump: 0), .recheck, "older than the last fix")
+        XCTAssertEqual(gate.evaluate(stale, progressJump: 0, now: clock), .recheck, "older than the last fix")
         XCTAssertFalse(gate.isRechecking)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100), .recheck, "100 > 1.8*1 + 15")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100, now: clock), .recheck,
+                       "100 > 1.8*1 + 15")
     }
 
     /// A fix more than 10 s old (#47) or more than 10 s in the future (#49) is stale.
@@ -855,6 +862,17 @@ final class iOSRouteGuidanceTests: XCTestCase {
                        "real fix after the future-dated one is used")
     }
 
+    /// After the device clock jumps back a minute mid-session, fixes at the new time are still used
+    /// rather than all looking older than the last accepted one (#51).
+    func testGuidanceSurvivesBackwardClockJump() {
+        let guidance = makeGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        clock -= 60
+        guidance.updateLocation(fix(0, 0.0001, after: 1)) // ~11 m on, within the 15 m first-fix radius
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 11.0 / 1112, accuracy: 0.005, "fix after the clock jump is used")
+    }
+
     /// A cached fix minutes old, as CoreLocation delivers when updates start, is ignored: it moves
     /// nothing and does not become the gate's reference fix (#47).
     func testGuidanceIgnoresStaleCachedFix() {
@@ -876,8 +894,8 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Abandoning a recheck clears it, so the GPS burst can end when no fixes arrive.
     func testGateAbandonRecheck() {
         var gate = makeGate()
-        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
-        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
         gate.abandonRecheck()
         XCTAssertFalse(gate.isRechecking)
     }
