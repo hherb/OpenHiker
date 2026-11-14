@@ -182,7 +182,7 @@ final class RouteGuidance: ObservableObject {
     ///
     /// - Parameter location: The user's current GPS location.
     func updateLocation(_ location: CLLocation) {
-        // A cached fix minutes old would skew the plausibility gate's clock (#47).
+        // A cached fix minutes old or a future-dated fix would skew the plausibility gate's clock (#47, #49).
         guard isNavigating,
               let route = activeRoute,
               !route.coordinates.isEmpty,

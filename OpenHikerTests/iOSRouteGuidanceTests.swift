@@ -38,6 +38,14 @@ final class iOSRouteGuidanceTests: XCTestCase {
         clock = Date()
     }
 
+    /// A guidance whose current time is the test clock, so fixes from `fix(_:_:after:)` are never
+    /// too old or future-dated however far the clock has run.
+    private func makeGuidance() -> iOSRouteGuidance {
+        let guidance = iOSRouteGuidance()
+        guidance.currentDate = { [unowned self] in self.clock }
+        return guidance
+    }
+
     /// A fix at (`lat`, `lon`), `seconds` after the previous one. The default of 10 minutes
     /// makes any jump on these test routes plausible; plausibility tests pass shorter gaps.
     /// `speed`, `speedAccuracy`, `course` and `courseAccuracy` default to -1 (invalid), as when no
@@ -167,7 +175,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies default state before starting navigation.
     func testInitialState() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         XCTAssertFalse(guidance.isNavigating)
         XCTAssertNil(guidance.activeRoute)
         XCTAssertNil(guidance.currentInstruction)
@@ -181,7 +189,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that ``start(route:)`` sets navigation state correctly.
     func testStartSetsNavigationState() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
 
         guidance.start(route: route)
@@ -194,7 +202,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that the first non-start instruction is set as current.
     func testStartSkipsStartInstruction() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
 
         guidance.start(route: route)
@@ -205,7 +213,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that ``stop()`` clears all navigation state.
     func testStopClearsState() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
 
         guidance.start(route: route)
@@ -225,7 +233,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Verifies that updating location near the route start shows low progress
     /// and high remaining distance.
     func testLocationUpdateNearStart() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
         guidance.start(route: route)
 
@@ -239,7 +247,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that updating location near the midpoint shows ~50% progress.
     func testLocationUpdateAtMidpoint() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
         startAtTrailhead(guidance, route)
 
@@ -252,7 +260,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that updating location near the end shows high progress.
     func testLocationUpdateNearEnd() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
         startAtTrailhead(guidance, route)
 
@@ -264,7 +272,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that a location update when not navigating is a no-op.
     func testLocationUpdateIgnoredWhenNotNavigating() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let location = fix(0, 0.005)
         guidance.updateLocation(location)
 
@@ -275,7 +283,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that a location far from the route triggers off-route status.
     func testOffRouteDetection() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
         startAtTrailhead(guidance, route)
 
@@ -288,7 +296,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that returning near the route clears off-route status.
     func testBackOnRoute() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeStraightRoute()
         startAtTrailhead(guidance, route)
 
@@ -307,7 +315,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that current instruction advances when the user passes a turn point.
     func testInstructionAdvancement() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeRoutWithTurn()
         startAtTrailhead(guidance, route)
 
@@ -325,7 +333,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Regression test for #41: within the at-turn radius (30 m before the turn) the turn
     /// being approached must still be current, so its at-turn direction haptic can fire.
     func testInstructionDoesNotAdvanceBeforeTurnIsPassed() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         startAtTrailhead(guidance, makeRoutWithTurn())
 
         // ~11 m before the turn at (0, 0.005)
@@ -338,7 +346,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Arrival is handled once per session: repeated fixes at the end do not re-fire it, and
     /// restarting navigation resets it.
     func testArrivalHandledOncePerSession() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeRoutWithTurn()
         startAtTrailhead(guidance, route)
         XCTAssertFalse(guidance.arrivalHandled)
@@ -409,7 +417,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Verifies that ``distanceToNextTurn`` decreases as the user approaches.
     func testDistanceToNextTurnDecreases() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         let route = makeRoutWithTurn()
         startAtTrailhead(guidance, route)
 
@@ -473,7 +481,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
             CLLocationCoordinate2D(latitude: 0.005, longitude: 0),
             CLLocationCoordinate2D(latitude: 0, longitude: 0),
         ]
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(corners, middle: .left))
 
         // ~11 m north of the trailhead, ~1 m east of it: nearest is the closing segment.
@@ -503,7 +511,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
             CLLocationCoordinate2D(latitude: 0.005, longitude: 0),
             CLLocationCoordinate2D(latitude: 0, longitude: 0),
         ]
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(corners, middle: .left))
         for _ in 1...4 { guidance.updateLocation(fix(0.0003, 0, after: 5)) }
         XCTAssertFalse(guidance.arrivalHandled)
@@ -514,7 +522,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Starting guidance halfway along the route: the far first fix is rechecked, then accepted
     /// once two more fixes agree, so guidance does not stay frozen.
     func testGuidanceStartedMidRouteAcceptsConfirmedPosition() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoutWithTurn())
         guidance.updateLocation(fix(0, 0.005, after: 1))
         XCTAssertTrue(guidance.isRecheckingFix)
@@ -527,7 +535,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// Stopping during a recheck ends it, so the GPS leaves burst mode.
     func testStopDuringRecheckClearsIt() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         startAtTrailhead(guidance, makeRoutWithTurn())
         guidance.updateLocation(fix(0.004, 0.005, after: 1))
         XCTAssertTrue(guidance.isRecheckingFix)
@@ -543,7 +551,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
             CLLocationCoordinate2D(latitude: 0, longitude: 0.005),
             CLLocationCoordinate2D(latitude: 0, longitude: 0),
         ]
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(points, middle: .uTurn))
 
         walk(guidance, along: Array(points[0...1]))
@@ -567,7 +575,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Guidance started while walking the return leg of an out-and-back (#46): the westward course
     /// puts the fix on the return leg, the gate confirms the jump, and the route finishes.
     func testOutAndBackStartedOnReturnLegFollowsCourse() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
         for _ in 1...3 { guidance.updateLocation(fix(0, 0.0025, after: 1, course: 270, courseAccuracy: 10)) }
         XCTAssertFalse(guidance.isRecheckingFix)
@@ -584,7 +592,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Once the leg is chosen, turning back briefly on the outbound leg does not jump guidance to
     /// the return leg and past the u-turn: the course picks the leg only at the start (#46).
     func testOutAndBackTurnBackMidOutboundStaysOnOutboundLeg() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
         guidance.updateLocation(fix(0, 0.0005, course: 90, courseAccuracy: 10))
         guidance.updateLocation(fix(0, 0.001, after: 60, course: 90, courseAccuracy: 10))
@@ -597,7 +605,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Guidance started standing still on the return leg lands on the outbound leg (no course to go
     /// by), but switches to the return leg once the user walks and the course is known (#46).
     func testOutAndBackRecoversReturnLegOnceMoving() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
         for _ in 1...3 { guidance.updateLocation(fix(0, 0.0025, after: 1)) }
         XCTAssertEqual(guidance.progress, 0.25, accuracy: 0.01, "no course: earliest leg")
@@ -816,7 +824,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100), .recheck, "100 > 1.8*1 + 15")
     }
 
-    /// A fix more than 10 s old is stale; a current or future one is not (#47).
+    /// A fix more than 10 s old (#47) or more than 2 s in the future (#49) is stale.
     func testGateIsStale() {
         let now = Date()
         func fixAt(_ time: Date) -> CLLocation {
@@ -826,13 +834,29 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now), now: now))
         XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now - 10), now: now))
         XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now - 10.1), now: now))
-        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now + 5), now: now))
+        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now + 2), now: now))
+        XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now + 2.1), now: now))
+    }
+
+    /// A fix timestamped a minute ahead is ignored, so the next real fix is not taken as out of
+    /// order and guidance does not freeze until the clock catches up (#49).
+    func testGuidanceIgnoresFutureDatedFix() {
+        let guidance = makeGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        guidance.updateLocation(CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0.001), altitude: 0,
+            horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: clock + 60))
+        XCTAssertEqual(guidance.progress, 0, "future-dated fix not applied")
+
+        guidance.updateLocation(fix(0, 0.0002, after: 20)) // ~22 m on, reachable in 20 s
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertGreaterThan(guidance.progress, 0, "real fix after the future-dated one is used")
     }
 
     /// A cached fix minutes old, as CoreLocation delivers when updates start, is ignored: it moves
     /// nothing and does not become the gate's reference fix (#47).
     func testGuidanceIgnoresStaleCachedFix() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         guidance.start(route: makeRoutWithTurn())
         guidance.updateLocation(CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0.005), altitude: 0,
@@ -859,7 +883,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// One wild fix far ahead during navigation neither skips the turn nor moves progress; the GPS
     /// is asked for rechecks, and the next real fix resumes guidance.
     func testGuidanceIgnoresSingleWildFix() {
-        let guidance = iOSRouteGuidance()
+        let guidance = makeGuidance()
         startAtTrailhead(guidance, makeRoutWithTurn())
         guidance.updateLocation(fix(0, 0.001))
         let progressBefore = guidance.progress

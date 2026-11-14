@@ -63,6 +63,11 @@ enum RouteGuidanceConfig {
     /// fix minutes old when updates start, which would skew ``FixPlausibilityGate``'s clock (#47).
     static let maxFixAgeSeconds: TimeInterval = 10.0
 
+    /// Guidance ignores a GPS fix timestamped more than this many seconds after the current time.
+    /// ``FixPlausibilityGate`` would otherwise store it as its newest fix and treat every real fix
+    /// as out of order until the clock caught up, freezing guidance (#49).
+    static let maxFixLeadSeconds: TimeInterval = 2.0
+
     /// How many times the route's planned speed counts as still reachable when judging whether a
     /// GPS fix is plausible. See ``FixPlausibilityGate``.
     static let maxSpeedFactor: Double = 1.8
