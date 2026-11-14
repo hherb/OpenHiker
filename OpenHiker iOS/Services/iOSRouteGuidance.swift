@@ -106,6 +106,10 @@ final class iOSRouteGuidance: ObservableObject {
     /// with their simulated clock.
     var currentDate: () -> Date = Date.init
 
+    /// The monotonic time, used to spot a forward clock jump (#53). Tests replace it with their
+    /// simulated clock. Read once when navigation starts and builds the gate, so set it before that.
+    var currentMonotonicTime: () -> TimeInterval = FixPlausibilityGate.monotonicTime
+
     /// Haptic feedback generators for iPhone.
     private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactGenerator = UIImpactFeedbackGenerator(style: .heavy)
@@ -134,7 +138,8 @@ final class iOSRouteGuidance: ObservableObject {
         totalRouteDistance = cumulativeDistances.last ?? 0
         progressHighWaterMark = 0
         legChosenByCourse = false
-        plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
+        plausibilityGate = FixPlausibilityGate(
+            speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route), monotonicClock: currentMonotonicTime)
         syncRecheckState()
 
         // Prepare haptic generators for low-latency feedback
