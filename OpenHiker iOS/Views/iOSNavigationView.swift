@@ -311,6 +311,9 @@ struct iOSNavigationView: View {
                 routeGuidance.updateLocation(location)
                 autoSelectMapStyleIfNeeded()
             }
+            .onChange(of: routeGuidance.isRecheckingFix) { _, rechecking in
+                locationManager.isFixRecheckActive = rechecking
+            }
         }
     }
 

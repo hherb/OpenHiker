@@ -63,6 +63,10 @@ final class RouteGuidance: ObservableObject {
     /// from the nearest point on the route polyline.
     @Published var isOffRoute: Bool = false
 
+    /// Whether a suspect GPS fix is being rechecked. Observers should switch the GPS to fast,
+    /// high-accuracy updates while this is true. See ``FixPlausibilityGate``.
+    @Published private(set) var isRecheckingFix: Bool = false
+
     /// Whether active navigation is in progress.
     @Published var isNavigating: Bool = false
 
@@ -95,6 +99,9 @@ final class RouteGuidance: ObservableObject {
     /// ``RouteProjection`` pick the right leg of a loop or out-and-back route.
     private var progressHighWaterMark: Double = 0
 
+    /// Holds back fixes that jump further along the route than the user could have walked.
+    private var plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: 0)
+
     // MARK: - Public API
 
     /// Starts active navigation along the given planned route.
@@ -117,6 +124,8 @@ final class RouteGuidance: ObservableObject {
         cumulativeDistances = RouteProjection.cumulativeDistances(route.coordinates)
         totalRouteDistance = cumulativeDistances.last ?? 0
         progressHighWaterMark = 0
+        plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
+        isRecheckingFix = false
 
         // Set initial instruction
         if !route.turnInstructions.isEmpty {
@@ -145,6 +154,7 @@ final class RouteGuidance: ObservableObject {
         cumulativeDistances = []
         totalRouteDistance = 0
         progressHighWaterMark = 0
+        isRecheckingFix = false
 
         print("Route guidance stopped")
     }
@@ -172,6 +182,12 @@ final class RouteGuidance: ObservableObject {
             cumulativeDistances: cumulativeDistances,
             progressHighWaterMark: progressHighWaterMark
         ) else { return }
+
+        // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
+        let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
+        isRecheckingFix = plausibilityGate.isRechecking
+        guard decision == .accept else { return }
+
         let distanceAlongRoute = closest.distanceAlong
         progressHighWaterMark = max(progressHighWaterMark, distanceAlongRoute)
 

@@ -72,6 +72,7 @@
 		1A0000010000000000000060 /* UVCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000060 /* UVCategory.swift */; };
 		1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
 		1A0000010000000000000062 /* RouteProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000062 /* RouteProjection.swift */; };
+		1A0000010000000000000063 /* FixPlausibilityGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000063 /* FixPlausibilityGate.swift */; };
 		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
 		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
 		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
@@ -117,6 +118,7 @@
 		1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
 		1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001C /* TrackOnlyScene.swift */; };
 		1B0000010000000000000063 /* RouteProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000062 /* RouteProjection.swift */; };
+		1B0000010000000000000064 /* FixPlausibilityGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000063 /* FixPlausibilityGate.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -270,6 +272,7 @@
 		2A0000010000000000000060 /* UVCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVCategory.swift; sourceTree = "<group>"; };
 		2A0000010000000000000061 /* RouteGuidanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidanceConfig.swift; sourceTree = "<group>"; };
 		2A0000010000000000000062 /* RouteProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProjection.swift; sourceTree = "<group>"; };
+		2A0000010000000000000063 /* FixPlausibilityGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixPlausibilityGate.swift; sourceTree = "<group>"; };
 		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
 		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
@@ -546,6 +549,7 @@
 				2A0000010000000000000060 /* UVCategory.swift */,
 				2A0000010000000000000061 /* RouteGuidanceConfig.swift */,
 				2A0000010000000000000062 /* RouteProjection.swift */,
+				2A0000010000000000000063 /* FixPlausibilityGate.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -875,6 +879,7 @@
 				1A0000010000000000000060 /* UVCategory.swift in Sources */,
 				1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 				1A0000010000000000000062 /* RouteProjection.swift in Sources */,
+				1A0000010000000000000063 /* FixPlausibilityGate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -925,6 +930,7 @@
 				1B0000010000000000000060 /* UVCategory.swift in Sources */,
 				1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 				1B0000010000000000000063 /* RouteProjection.swift in Sources */,
+				1B0000010000000000000064 /* FixPlausibilityGate.swift in Sources */,
 				1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

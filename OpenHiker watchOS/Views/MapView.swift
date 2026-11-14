@@ -157,6 +157,9 @@ struct MapView: View {
             // when isTracking is true).
             locationManager.stopLocationUpdates()
         }
+        .onChange(of: routeGuidance.isRecheckingFix) { _, rechecking in
+            locationManager.isFixRecheckActive = rechecking
+        }
         .onChange(of: routeGuidance.isNavigating) { _, isNavigating in
             // Start continuous updates when navigation begins so the map follows
             // the user; stop them when navigation ends (unless tracking).

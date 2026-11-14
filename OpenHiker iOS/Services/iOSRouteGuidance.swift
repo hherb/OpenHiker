@@ -57,6 +57,10 @@ final class iOSRouteGuidance: ObservableObject {
     /// Whether the user is currently more than the off-route threshold from the route.
     @Published var isOffRoute: Bool = false
 
+    /// Whether a suspect GPS fix is being rechecked. Observers should switch the GPS to fast,
+    /// high-accuracy updates while this is true. See ``FixPlausibilityGate``.
+    @Published private(set) var isRecheckingFix: Bool = false
+
     /// Whether active navigation is in progress.
     @Published var isNavigating: Bool = false
 
@@ -87,6 +91,9 @@ final class iOSRouteGuidance: ObservableObject {
     /// ``RouteProjection`` pick the right leg of a loop or out-and-back route.
     private var progressHighWaterMark: Double = 0
 
+    /// Holds back fixes that jump further along the route than the user could have walked.
+    private var plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: 0)
+
     /// Haptic feedback generators for iPhone.
     private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactGenerator = UIImpactFeedbackGenerator(style: .heavy)
@@ -114,6 +121,8 @@ final class iOSRouteGuidance: ObservableObject {
         cumulativeDistances = RouteProjection.cumulativeDistances(route.coordinates)
         totalRouteDistance = cumulativeDistances.last ?? 0
         progressHighWaterMark = 0
+        plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
+        isRecheckingFix = false
 
         // Prepare haptic generators for low-latency feedback
         impactGenerator.prepare()
@@ -146,6 +155,7 @@ final class iOSRouteGuidance: ObservableObject {
         cumulativeDistances = []
         totalRouteDistance = 0
         progressHighWaterMark = 0
+        isRecheckingFix = false
 
         print("iOS route guidance stopped")
     }
@@ -173,6 +183,12 @@ final class iOSRouteGuidance: ObservableObject {
             cumulativeDistances: cumulativeDistances,
             progressHighWaterMark: progressHighWaterMark
         ) else { return }
+
+        // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
+        let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
+        isRecheckingFix = plausibilityGate.isRechecking
+        guard decision == .accept else { return }
+
         let distanceAlongRoute = closest.distanceAlong
         progressHighWaterMark = max(progressHighWaterMark, distanceAlongRoute)
 

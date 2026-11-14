@@ -49,4 +49,15 @@ enum RouteGuidanceConfig {
     /// How much more a metre backwards along the route costs than a metre forwards when
     /// ``RouteProjection`` picks between candidate segments. Hikers rarely walk a route backwards.
     static let projectionBacktrackPenalty: Double = 4.0
+
+    /// How many times the route's planned speed counts as still reachable when judging whether a
+    /// GPS fix is plausible. See ``FixPlausibilityGate``.
+    static let maxSpeedFactor: Double = 1.8
+
+    /// GPS noise allowance in metres: added to the reachable distance, and the radius within which
+    /// rechecks must agree with a suspect fix (plus any plausible movement since it).
+    static let certaintyRadiusMetres: Double = 15.0
+
+    /// How many agreeing rechecks a suspect fix needs before it is accepted.
+    static let recheckConfirmationsRequired: Int = 2
 }

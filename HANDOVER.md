@@ -26,13 +26,17 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   watchOS targets only). Among segments within 20 m of the nearest one, it picks the one that best fits the
   session's high-water mark of progress, so loop and out-and-back routes no longer jump to the wrong leg. Android
   `RouteFollower` reports arrival only on the last instruction, so a loop does not arrive at the trailhead.
+  The same branch adds `FixPlausibilityGate` (`Shared/Models/FixPlausibilityGate.swift`). A fix further ahead
+  than planned speed × 1.8 × elapsed time + 15 m is held back. The GPS switches to a best-accuracy burst
+  until two agreeing rechecks confirm the jump, or one disagreeing recheck drops it. Android port:
+  `docs/TODO/Android/gps-fix-plausibility.md`.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **38/38 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **45/45 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 320/320, `:app` green) |
@@ -53,7 +57,9 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - **Still to do:** run the iOS app once on a device to confirm the location and HealthKit permission prompts
   still appear. On the same run, check #41 on device: simulate a route with an Xcode GPX file on iPhone and
   watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic. Repeat
-  with a loop route and an out-and-back route (#44): no arrival at the start, arrival back at the trailhead.
+  with a loop route and an out-and-back route (#44): no arrival at the start, arrival back at the trailhead. Watch
+  the GPS indicator for the recheck burst. Check that it ends within a few seconds and does not get stuck
+  on, which would drain the battery.
 
 ### CI
 

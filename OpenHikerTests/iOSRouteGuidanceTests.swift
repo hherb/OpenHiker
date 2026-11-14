@@ -26,6 +26,18 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     // MARK: - Test Helpers
 
+    /// Simulated clock for GPS fixes, so ``FixPlausibilityGate`` sees realistic elapsed time.
+    private var clock = Date(timeIntervalSince1970: 0)
+
+    /// A fix at (`lat`, `lon`), `seconds` after the previous one. The default of 10 minutes
+    /// makes any jump on these test routes plausible; plausibility tests pass shorter gaps.
+    private func fix(_ lat: Double, _ lon: Double, after seconds: TimeInterval = 600) -> CLLocation {
+        clock += seconds
+        return CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: clock)
+    }
+
     /// Creates a simple straight-line route from (0,0) to (0,0.01) with two
     /// turn instructions: "Start" at the beginning and "Arrive" at the end.
     ///
@@ -129,6 +141,13 @@ final class iOSRouteGuidanceTests: XCTestCase {
         )
     }
 
+    /// Starts navigation and feeds a fix at the route start, so the plausibility gate has an
+    /// accepted reference fix (a first fix far along the route is rechecked like any jump).
+    private func startAtTrailhead(_ guidance: iOSRouteGuidance, _ route: PlannedRoute) {
+        guidance.start(route: route)
+        guidance.updateLocation(fix(route.coordinates[0].latitude, route.coordinates[0].longitude))
+    }
+
     // MARK: - Initial State
 
     /// Verifies default state before starting navigation.
@@ -195,7 +214,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         let route = makeStraightRoute()
         guidance.start(route: route)
 
-        let location = CLLocation(latitude: 0, longitude: 0.0001)
+        let location = fix(0, 0.0001)
         guidance.updateLocation(location)
 
         XCTAssertLessThan(guidance.progress, 0.05, "Should be near the start")
@@ -207,9 +226,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testLocationUpdateAtMidpoint() {
         let guidance = iOSRouteGuidance()
         let route = makeStraightRoute()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
-        let location = CLLocation(latitude: 0, longitude: 0.005)
+        let location = fix(0, 0.005)
         guidance.updateLocation(location)
 
         XCTAssertGreaterThan(guidance.progress, 0.4)
@@ -220,9 +239,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testLocationUpdateNearEnd() {
         let guidance = iOSRouteGuidance()
         let route = makeStraightRoute()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
-        let location = CLLocation(latitude: 0, longitude: 0.0098)
+        let location = fix(0, 0.0098)
         guidance.updateLocation(location)
 
         XCTAssertGreaterThan(guidance.progress, 0.9)
@@ -231,7 +250,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// Verifies that a location update when not navigating is a no-op.
     func testLocationUpdateIgnoredWhenNotNavigating() {
         let guidance = iOSRouteGuidance()
-        let location = CLLocation(latitude: 0, longitude: 0.005)
+        let location = fix(0, 0.005)
         guidance.updateLocation(location)
 
         XCTAssertEqual(guidance.progress, 0, "Progress should remain 0 when not navigating")
@@ -243,10 +262,10 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testOffRouteDetection() {
         let guidance = iOSRouteGuidance()
         let route = makeStraightRoute()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
         // Move 0.01 degrees (~1.1 km) north of the east-running route → well off-route
-        let farAway = CLLocation(latitude: 0.01, longitude: 0.005)
+        let farAway = fix(0.01, 0.005)
         guidance.updateLocation(farAway)
 
         XCTAssertTrue(guidance.isOffRoute)
@@ -256,15 +275,15 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testBackOnRoute() {
         let guidance = iOSRouteGuidance()
         let route = makeStraightRoute()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
         // Go off route
-        let farAway = CLLocation(latitude: 0.01, longitude: 0.005)
+        let farAway = fix(0.01, 0.005)
         guidance.updateLocation(farAway)
         XCTAssertTrue(guidance.isOffRoute)
 
         // Come back on route
-        let onRoute = CLLocation(latitude: 0, longitude: 0.005)
+        let onRoute = fix(0, 0.005)
         guidance.updateLocation(onRoute)
         XCTAssertFalse(guidance.isOffRoute)
     }
@@ -275,13 +294,13 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testInstructionAdvancement() {
         let guidance = iOSRouteGuidance()
         let route = makeRoutWithTurn()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
         // Should start on the "Turn left" instruction (index 1, skipping "Start")
         XCTAssertEqual(guidance.currentInstruction?.direction, .left)
 
         // Move past the turn point (the turn is at ~556m along the route)
-        let pastTurn = CLLocation(latitude: 0.001, longitude: 0.005)
+        let pastTurn = fix(0.001, 0.005)
         guidance.updateLocation(pastTurn)
 
         // Should now advance to "Arrive" instruction
@@ -292,10 +311,10 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// being approached must still be current, so its at-turn direction haptic can fire.
     func testInstructionDoesNotAdvanceBeforeTurnIsPassed() {
         let guidance = iOSRouteGuidance()
-        guidance.start(route: makeRoutWithTurn())
+        startAtTrailhead(guidance, makeRoutWithTurn())
 
         // ~11 m before the turn at (0, 0.005)
-        guidance.updateLocation(CLLocation(latitude: 0, longitude: 0.0049))
+        guidance.updateLocation(fix(0, 0.0049))
 
         XCTAssertEqual(guidance.currentInstruction?.direction, .left)
         XCTAssertLessThan(guidance.distanceToNextTurn ?? .infinity, RouteGuidanceConfig.atTurnDistanceMetres)
@@ -306,17 +325,17 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testArrivalHandledOncePerSession() {
         let guidance = iOSRouteGuidance()
         let route = makeRoutWithTurn()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
         XCTAssertFalse(guidance.arrivalHandled)
 
-        guidance.updateLocation(CLLocation(latitude: 0.001, longitude: 0.005)) // past the turn
-        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005)) // at the end
+        guidance.updateLocation(fix(0.001, 0.005)) // past the turn
+        guidance.updateLocation(fix(0.005, 0.005)) // at the end
         XCTAssertTrue(guidance.arrivalHandled)
-        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005))
+        guidance.updateLocation(fix(0.005, 0.005))
         XCTAssertTrue(guidance.arrivalHandled)
 
         guidance.stop()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
         XCTAssertFalse(guidance.arrivalHandled, "restart resets arrival")
     }
 
@@ -377,15 +396,15 @@ final class iOSRouteGuidanceTests: XCTestCase {
     func testDistanceToNextTurnDecreases() {
         let guidance = iOSRouteGuidance()
         let route = makeRoutWithTurn()
-        guidance.start(route: route)
+        startAtTrailhead(guidance, route)
 
         // Near start, far from the turn
-        let nearStart = CLLocation(latitude: 0, longitude: 0.001)
+        let nearStart = fix(0, 0.001)
         guidance.updateLocation(nearStart)
         let distFar = guidance.distanceToNextTurn ?? 0
 
         // Closer to the turn
-        let nearTurn = CLLocation(latitude: 0, longitude: 0.004)
+        let nearTurn = fix(0, 0.004)
         guidance.updateLocation(nearTurn)
         let distClose = guidance.distanceToNextTurn ?? 0
 
@@ -421,9 +440,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
         for i in 1..<points.count {
             for step in 1...10 {
                 let t = Double(step) / 10
-                guidance.updateLocation(CLLocation(
-                    latitude: points[i - 1].latitude + t * (points[i].latitude - points[i - 1].latitude),
-                    longitude: points[i - 1].longitude + t * (points[i].longitude - points[i - 1].longitude)
+                guidance.updateLocation(fix(
+                    points[i - 1].latitude + t * (points[i].latitude - points[i - 1].latitude),
+                    points[i - 1].longitude + t * (points[i].longitude - points[i - 1].longitude)
                 ))
             }
         }
@@ -443,7 +462,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         guidance.start(route: makeRoute(corners, middle: .left))
 
         // ~11 m north of the trailhead, ~1 m east of it: nearest is the closing segment.
-        guidance.updateLocation(CLLocation(latitude: 0.0001, longitude: 0.00001))
+        guidance.updateLocation(fix(0.0001, 0.00001))
         XCTAssertFalse(guidance.arrivalHandled, "no arrival at the trailhead")
         XCTAssertLessThan(guidance.progress, 0.05)
         XCTAssertEqual(guidance.currentInstruction?.coordinate.longitude, 0.005, "heading for the first corner")
@@ -467,7 +486,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         walk(guidance, along: Array(points[0...1]))
         XCTAssertEqual(guidance.currentInstruction?.direction, .arrive, "u-turn passed")
 
-        guidance.updateLocation(CLLocation(latitude: 0, longitude: 0.0025))
+        guidance.updateLocation(fix(0, 0.0025))
         XCTAssertEqual(guidance.progress, 0.75, accuracy: 0.01, "on the return leg, not the outbound one")
         XCTAssertFalse(guidance.arrivalHandled)
 
@@ -507,5 +526,85 @@ final class iOSRouteGuidanceTests: XCTestCase {
             cumulativeDistances: RouteProjection.cumulativeDistances(route), progressHighWaterMark: 1000)
         XCTAssertEqual(result?.segment, 0)
         XCTAssertEqual(result?.distanceAlong ?? 0, 111, accuracy: 1)
+    }
+
+    // MARK: - FixPlausibilityGate
+
+    /// 1 m/s, so the reachable distance is 1.8 m per second plus the 15 m certainty radius.
+    private func makeGate() -> FixPlausibilityGate { FixPlausibilityGate(speedMetresPerSecond: 1) }
+
+    /// A forward step within the reachable distance is accepted at once.
+    func testGateAcceptsPlausibleFix() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0001, after: 10), progressJump: 33), .accept, "33 <= 1.8*10 + 15")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// The reachable distance is the planned speed x 1.8 x elapsed time, plus the certainty radius.
+    func testGateReachableDistance() {
+        let gate = makeGate()
+        XCTAssertEqual(gate.reachableDistance(elapsed: 0), 15)
+        XCTAssertEqual(gate.reachableDistance(elapsed: 100), 195, accuracy: 1e-9)
+        XCTAssertEqual(gate.reachableDistance(elapsed: -5), 15, "clock skew counts as no time")
+    }
+
+    /// An implausible jump is held back until two agreeing rechecks confirm it.
+    func testGateConfirmsJumpAfterTwoAgreeingRechecks() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
+        XCTAssertTrue(gate.isRechecking)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005), .recheck, "1st recheck")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011), .accept, "2nd recheck")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A recheck that disagrees with the suspect drops it and is judged on its own.
+    func testGateDropsSuspectWhenRecheckDisagrees() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.00002, after: 1), progressJump: 2), .accept, "back where we were")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// After a long GPS gap, a long forward jump is plausible and accepted at once.
+    func testGateAcceptsLongJumpAfterLongGap() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1000), progressJump: 1112), .accept, "1112 <= 1815")
+    }
+
+    /// Planned speed is distance / duration, falling back to the mode's base speed without a duration.
+    func testPlannedSpeed() {
+        XCTAssertEqual(FixPlausibilityGate.plannedSpeed(for: makeRoutWithTurn()), 1112.0 / 900, accuracy: 1e-9)
+        let route = makeRoutWithTurn()
+        let noDuration = PlannedRoute(
+            name: route.name, mode: .hiking, startCoordinate: route.startCoordinate,
+            endCoordinate: route.endCoordinate, coordinates: route.coordinates,
+            turnInstructions: route.turnInstructions, totalDistance: route.totalDistance,
+            estimatedDuration: 0, elevationGain: 0, elevationLoss: 0)
+        XCTAssertEqual(FixPlausibilityGate.plannedSpeed(for: noDuration),
+                       RoutingCostConfig.hikingBaseSpeedMetresPerSecond)
+    }
+
+    /// One wild fix far ahead during navigation neither skips the turn nor moves progress; the GPS
+    /// is asked for rechecks, and the next real fix resumes guidance.
+    func testGuidanceIgnoresSingleWildFix() {
+        let guidance = iOSRouteGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        guidance.updateLocation(fix(0, 0.001))
+        let progressBefore = guidance.progress
+
+        guidance.updateLocation(fix(0.004, 0.005, after: 1)) // ~1 km ahead, past the turn
+        XCTAssertTrue(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, progressBefore, "wild fix not applied")
+        XCTAssertEqual(guidance.currentInstruction?.direction, .left, "turn not skipped")
+
+        guidance.updateLocation(fix(0, 0.00101, after: 1)) // back at the real position
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.currentInstruction?.direction, .left)
+        XCTAssertEqual(guidance.progress, progressBefore, accuracy: 0.01)
     }
 }
