@@ -38,9 +38,9 @@ class TileCoordinateTest {
         // Innsbruck, Austria: approximately 47.26, 11.39
         val tile = TileCoordinate.fromLatLon(47.26, 11.39, 14)
         assertEquals(14, tile.z)
-        // At zoom 14, Innsbruck should be around x=8725, y=5765
-        assertTrue("x should be around 8725, got ${tile.x}", tile.x in 8720..8730)
-        assertTrue("y should be around 5765, got ${tile.y}", tile.y in 5760..5770)
+        // x = floor((lon + 180) / 360 * 2^z), y = floor((1 - asinh(tan(lat)) / pi) / 2 * 2^z)
+        assertEquals(8710, tile.x)
+        assertEquals(5745, tile.y)
     }
 
     @Test

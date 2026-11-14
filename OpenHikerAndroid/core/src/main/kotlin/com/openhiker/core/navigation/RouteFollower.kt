@@ -99,17 +99,13 @@ class RouteFollower(
             )
         }
 
-        // Advance instruction index if we've passed the current turn
-        while (currentInstructionIndex < instructions.size - 1) {
-            val instruction = instructions[currentInstructionIndex]
-            val distToTurn = Haversine.distance(currentPos, instruction.coordinate)
-            if (distToTurn <= RouteGuidanceConfig.AT_TURN_DISTANCE_METRES &&
-                cumulativeDistance >= instruction.cumulativeDistance - RouteGuidanceConfig.AT_TURN_DISTANCE_METRES
-            ) {
-                currentInstructionIndex++
-            } else {
-                break
-            }
+        // Advance past every turn the user has already walked beyond. Judged by distance along the
+        // route, not proximity, so a missed GPS fix near a turn (or starting away from the START
+        // point) cannot leave the follower stuck; advancing only once passed keeps isAtTurn reachable.
+        while (currentInstructionIndex < instructions.size - 1 &&
+            cumulativeDistance >= instructions[currentInstructionIndex].cumulativeDistance
+        ) {
+            currentInstructionIndex++
         }
 
         val currentInstruction = instructions.getOrNull(currentInstructionIndex)
