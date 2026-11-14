@@ -178,7 +178,8 @@ struct FixPlausibilityGate {
     /// first fix (#53).
     ///
     /// - Parameters:
-    ///   - fix: The GPS fix (its `timestamp` is used for elapsed time).
+    ///   - fix: The GPS fix (its `timestamp` sets the reachable distance; the recheck cap uses
+    ///     `monotonicClock`).
     ///   - progressJump: How far the fix lies beyond the progress high-water mark, in metres
     ///     (`distanceAlong - highWaterMark`; zero or negative means no forward jump).
     ///   - now: The current time. If the newest fix seen is more than

@@ -850,7 +850,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         let decisions = (1...11).map { i in
             gate.evaluate(fix(0, Double(25 * i) * degreesPerMetre, after: 1), progressJump: Double(25 * i), now: clock)
         }
-        XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept], "cap reached on the new clock")
+        XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept], "cap reached 10 s after the restarted recheck")
         XCTAssertFalse(gate.isRechecking)
     }
 
@@ -875,7 +875,11 @@ final class iOSRouteGuidanceTests: XCTestCase {
                        "restarted: 1000 > 15, not judged on an hour's walk")
         clock += 3600
         XCTAssertEqual(gate.evaluate(fix(0, 0.02, after: 1), progressJump: 2000, now: clock), .recheck,
-                       "a second jump restarts the gate again, so the first recheck's cap never fires")
+                       "second jump: restart, so this is a fresh suspect")
+        // Without the restart the 2000 m fix would have confirmed the 1000 m suspect once, and this
+        // agreeing fix would be the second confirmation.
+        XCTAssertEqual(gate.evaluate(fix(0, 0.02, after: 1), progressJump: 2000, now: clock), .recheck,
+                       "first confirmation of the fresh suspect, not the second of the old one")
         XCTAssertTrue(gate.isRechecking)
     }
 
@@ -943,6 +947,24 @@ final class iOSRouteGuidanceTests: XCTestCase {
                           now: clock)
         }
         XCTAssertEqual(decisions, Array(repeating: .recheck, count: 8) + [.accept], "cap at 10 s of real time")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A clock step back during a recheck too small to count as a jump (5 s) does not lengthen the
+    /// 10 s cap either: the fixes it makes look out of order are ignored, and the first fix 10 real
+    /// seconds after the recheck began is accepted (#55).
+    func testGateRecheckCapIgnoresSmallBackwardClockStep() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 100 * degreesPerMetre, after: 1), progressJump: 100, now: clock),
+                       .recheck)
+        clock -= 5
+        let decisions = (2...11).map { i in
+            gate.evaluate(fix(0, Double(100 * i) * degreesPerMetre, after: 1), progressJump: Double(100 * i),
+                          now: clock)
+        }
+        XCTAssertEqual(decisions, Array(repeating: .recheck, count: 9) + [.accept],
+                       "cap at 10 s of real time, though only 5 s of timestamps")
         XCTAssertFalse(gate.isRechecking)
     }
 

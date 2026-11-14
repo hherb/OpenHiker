@@ -106,8 +106,9 @@ final class iOSRouteGuidance: ObservableObject {
     /// with their simulated clock.
     var currentDate: () -> Date = Date.init
 
-    /// The monotonic time, used to spot a forward clock jump (#53). Tests replace it with their
-    /// simulated clock. Read once when navigation starts and builds the gate, so set it before that.
+    /// The monotonic time, used to spot a forward clock jump (#53) and to time the recheck cap
+    /// (#55). Tests replace it with their simulated clock. Read once when navigation starts and
+    /// builds the gate, so set it before that.
     var currentMonotonicTime: () -> TimeInterval = FixPlausibilityGate.monotonicTime
 
     /// Haptic feedback generators for iPhone.
