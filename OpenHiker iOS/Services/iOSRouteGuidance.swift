@@ -102,6 +102,10 @@ final class iOSRouteGuidance: ObservableObject {
     /// Abandons a recheck that gets no fixes in time, so the GPS cannot stay in burst mode.
     private var recheckTimeout: Task<Void, Never>?
 
+    /// The current time, used to drop fixes that are too old or future-dated. Tests replace it
+    /// with their simulated clock.
+    var currentDate: () -> Date = Date.init
+
     /// Haptic feedback generators for iPhone.
     private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactGenerator = UIImpactFeedbackGenerator(style: .heavy)
@@ -183,11 +187,11 @@ final class iOSRouteGuidance: ObservableObject {
     ///
     /// - Parameter location: The user's current GPS location.
     func updateLocation(_ location: CLLocation) {
-        // A cached fix minutes old would skew the plausibility gate's clock (#47).
+        // A cached fix minutes old or a future-dated fix would skew the plausibility gate's clock (#47, #49).
         guard isNavigating,
               let route = activeRoute,
               !route.coordinates.isEmpty,
-              !FixPlausibilityGate.isStale(location) else { return }
+              !FixPlausibilityGate.isStale(location, now: currentDate()) else { return }
 
         // 1. Find the point on the route, keeping continuity with progress so far (#44)
         //    and, until the leg is chosen, with the direction of travel (#46)
