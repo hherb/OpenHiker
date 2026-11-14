@@ -181,7 +181,8 @@ enum TurnInstructionProgress {
     ///
     /// True only when the current instruction is the last one and the user is within
     /// `arrivalThresholdMetres` of the route end. Requiring the last instruction stops
-    /// a loop route (start == end) from "arriving" at the start.
+    /// arrival firing before the final turns have been passed. It does not protect a
+    /// loop route whose start fix projects onto the route end (see #44).
     ///
     /// - Parameters:
     ///   - currentIndex: The index of the instruction currently shown.

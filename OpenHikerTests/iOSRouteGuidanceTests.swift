@@ -301,6 +301,25 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertLessThan(guidance.distanceToNextTurn ?? .infinity, RouteGuidanceConfig.atTurnDistanceMetres)
     }
 
+    /// Arrival is handled once per session: repeated fixes at the end do not re-fire it, and
+    /// restarting navigation resets it.
+    func testArrivalHandledOncePerSession() {
+        let guidance = iOSRouteGuidance()
+        let route = makeRoutWithTurn()
+        guidance.start(route: route)
+        XCTAssertFalse(guidance.arrivalHandled)
+
+        guidance.updateLocation(CLLocation(latitude: 0.001, longitude: 0.005)) // past the turn
+        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005)) // at the end
+        XCTAssertTrue(guidance.arrivalHandled)
+        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005))
+        XCTAssertTrue(guidance.arrivalHandled)
+
+        guidance.stop()
+        guidance.start(route: route)
+        XCTAssertFalse(guidance.arrivalHandled, "restart resets arrival")
+    }
+
     // MARK: - TurnInstructionProgress (pure functions)
 
     /// Instructions at cumulative distances 0 (start), 556 (left) and 1112 (arrive).
@@ -346,8 +365,10 @@ final class iOSRouteGuidanceTests: XCTestCase {
                 totalRouteDistance: 1112, arrivalThresholdMetres: 30)
         }
         XCTAssertTrue(arrived(2, 1090))
+        XCTAssertTrue(arrived(2, 1082), "exactly at the threshold")
+        XCTAssertFalse(arrived(2, 1081.9))
         XCTAssertFalse(arrived(2, 1000), "too far from the end")
-        XCTAssertFalse(arrived(1, 1112), "not on the last instruction (e.g. loop route at its start)")
+        XCTAssertFalse(arrived(1, 1112), "not on the last instruction")
     }
 
     // MARK: - Distance to Next Turn

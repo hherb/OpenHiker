@@ -81,7 +81,7 @@ final class RouteGuidance: ObservableObject {
     private var atTurnHapticFired: Bool = false
 
     /// Whether arrival feedback has fired for this navigation session, so it fires only once.
-    private var arrivalHandled: Bool = false
+    private(set) var arrivalHandled: Bool = false
 
     /// Precomputed cumulative distances along the route polyline at each coordinate index.
     ///
@@ -390,7 +390,9 @@ final class RouteGuidance: ObservableObject {
         }
 
         // At turn (30m)
-        if distToTurn <= RouteGuidanceConfig.atTurnDistanceMetres && !atTurnHapticFired {
+        // Skipped for .arrive: handleArrival() owns the arrival haptic, so it plays once.
+        if distToTurn <= RouteGuidanceConfig.atTurnDistanceMetres && !atTurnHapticFired
+            && instruction.direction != .arrive {
             atTurnHapticFired = true
             playDirectionHaptic(instruction.direction)
         }

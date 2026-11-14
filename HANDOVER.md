@@ -23,14 +23,15 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Last PRs:** #42 (2026-11-14, Android `RouteFollower` turn advance, `:core` tests green); #40 (2026-11-13,
   project config, CI fix, session skills). This branch fixes #41: Apple route guidance now advances to the next
   turn only once the turn is passed (shared `TurnInstructionProgress` in `Shared/Models/TurnInstruction.swift`),
-  and the arrival haptic fires once instead of on every GPS fix.
+  and the arrival haptic fires once instead of on every GPS fix. Loop and out-and-back routes can still project a
+  fix onto the wrong leg; deferred: #44.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **32/32 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **33/33 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 318/318, `:app` green) |
