@@ -150,7 +150,8 @@ struct FixPlausibilityGate {
     }
 
     /// Seconds on a clock that never jumps when the device clock is changed and keeps running while
-    /// the device sleeps (`CLOCK_MONOTONIC`): the gate's default `monotonicClock`.
+    /// the device sleeps (`CLOCK_MONOTONIC`): the gate's default `monotonicClock`. A clock that
+    /// paused in sleep, such as `CLOCK_UPTIME_RAW`, would make every sleep look like a forward jump.
     ///
     /// - Returns: Seconds since an arbitrary fixed point; only differences are meaningful.
     static func monotonicTime() -> TimeInterval {
@@ -240,8 +241,8 @@ struct FixPlausibilityGate {
 
     /// Clears any pending suspect and recheck. Callers use it when a recheck has had no fixes for
     /// ``RouteGuidanceConfig/maxRecheckDurationSeconds`` (so the GPS can leave burst mode) and
-    /// when navigation stops; the gate uses it after an accept and after a clock jump. The
-    /// next fix is judged against the last accepted fix.
+    /// when navigation stops; the gate uses it after an accept and after a clock jump (which also
+    /// clears the last accepted time). The next fix is judged against the last accepted fix.
     mutating func abandonRecheck() {
         suspect = nil
         confirmations = 0

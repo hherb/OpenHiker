@@ -865,7 +865,8 @@ final class iOSRouteGuidanceTests: XCTestCase {
     }
 
     /// After the device clock jumps forward an hour, a wild fix is still rechecked: no time really
-    /// passed, so neither the hour since the last accepted fix nor the 10 s recheck cap applies (#53).
+    /// passed, so the hour since the last accepted fix does not count. A second jump during the
+    /// recheck restarts it again rather than tripping the 10 s recheck cap (#53).
     func testGateRechecksWildFixAfterForwardClockJump() {
         var gate = makeGate()
         XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
@@ -874,8 +875,43 @@ final class iOSRouteGuidanceTests: XCTestCase {
                        "restarted: 1000 > 15, not judged on an hour's walk")
         clock += 3600
         XCTAssertEqual(gate.evaluate(fix(0, 0.02, after: 1), progressJump: 2000, now: clock), .recheck,
-                       "the clock step does not reach the recheck cap")
+                       "a second jump restarts the gate again, so the first recheck's cap never fires")
         XCTAssertTrue(gate.isRechecking)
+    }
+
+    /// After a forward clock jump the gate recovers: a rechecked fix is confirmed by agreeing fixes
+    /// once the clock runs normally again (#53).
+    func testGateConfirmsAfterForwardClockJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .accept,
+                       "two agreeing fixes confirm the suspect")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A clock set back, then corrected forward (as automatic time sync does), restarts the gate
+    /// both times: the backward restart still records the monotonic time (#51, #53).
+    func testGateRestartsOnClockCorrectionAfterBackwardJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock -= 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 1), progressJump: 0, now: clock), .accept,
+                       "backward restart")
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck,
+                       "forward correction restarts too: not judged on an hour's walk")
+    }
+
+    /// The default monotonic clock counts in seconds, not milliseconds or nanoseconds.
+    func testMonotonicTimeCountsSeconds() {
+        let start = FixPlausibilityGate.monotonicTime()
+        Thread.sleep(forTimeInterval: 0.2)
+        let elapsed = FixPlausibilityGate.monotonicTime() - start
+        XCTAssertGreaterThanOrEqual(elapsed, 0.19)
+        XCTAssertLessThan(elapsed, 5, "seconds, not a smaller unit")
     }
 
     /// Fix timestamps may outrun monotonic time by up to the 10 s age plus the 10 s lead that
@@ -942,6 +978,16 @@ final class iOSRouteGuidanceTests: XCTestCase {
         guidance.updateLocation(fix(0.004, 0.005, after: 1)) // on the second leg, ~1000 m on
         XCTAssertTrue(guidance.isRecheckingFix, "wild fix rechecked after the clock jump")
         XCTAssertEqual(guidance.progress, 0)
+    }
+
+    /// After the device clock jumps forward an hour, a nearby fix is still used at once (#53).
+    func testGuidanceSurvivesForwardClockJump() {
+        let guidance = makeGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        clock += 3600
+        guidance.updateLocation(fix(0, 0.0001, after: 1)) // ~11 m on, within the 15 m first-fix radius
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 11.0 / 1112, accuracy: 0.005, "fix after the clock jump is used")
     }
 
     /// A cached fix minutes old, as CoreLocation delivers when updates start, is ignored: it moves
