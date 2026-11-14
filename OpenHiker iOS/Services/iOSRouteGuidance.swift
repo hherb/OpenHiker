@@ -74,6 +74,9 @@ final class iOSRouteGuidance: ObservableObject {
     /// Whether the "at turn" haptic has fired for the current instruction.
     private var atTurnHapticFired: Bool = false
 
+    /// Whether arrival feedback has fired for this navigation session, so it fires only once.
+    private var arrivalHandled: Bool = false
+
     /// Precomputed cumulative distances along the route polyline at each coordinate index.
     private var cumulativeDistances: [Double] = []
 
@@ -102,6 +105,7 @@ final class iOSRouteGuidance: ObservableObject {
         currentInstructionIndex = 0
         approachingHapticFired = false
         atTurnHapticFired = false
+        arrivalHandled = false
 
         precomputeCumulativeDistances(route.coordinates)
 
@@ -315,23 +319,34 @@ final class iOSRouteGuidance: ObservableObject {
     }
 
     /// Advances the current turn instruction based on the user's distance along the route.
+    ///
+    /// Once the user has passed a turn point, the guidance advances to the next instruction;
+    /// arrival feedback fires once near the end. See ``TurnInstructionProgress``.
     private func updateCurrentInstruction(distanceAlongRoute: Double, route: PlannedRoute) {
         let instructions = route.turnInstructions
         guard currentInstructionIndex < instructions.count else { return }
 
-        let current = instructions[currentInstructionIndex]
+        let newIndex = TurnInstructionProgress.indexAfterPassedTurns(
+            from: currentInstructionIndex,
+            distanceAlongRoute: distanceAlongRoute,
+            instructions: instructions
+        )
+        if newIndex != currentInstructionIndex {
+            currentInstructionIndex = newIndex
+            currentInstruction = instructions[newIndex]
+            approachingHapticFired = false
+            atTurnHapticFired = false
+        }
 
-        if distanceAlongRoute >= current.cumulativeDistance - RouteGuidanceConfig.atTurnDistanceMetres {
-            if currentInstructionIndex + 1 < instructions.count {
-                currentInstructionIndex += 1
-                currentInstruction = instructions[currentInstructionIndex]
-                approachingHapticFired = false
-                atTurnHapticFired = false
-            } else {
-                if distanceAlongRoute >= totalRouteDistance - RouteGuidanceConfig.arrivedDistanceMetres {
-                    handleArrival()
-                }
-            }
+        if !arrivalHandled && TurnInstructionProgress.hasArrived(
+            currentIndex: currentInstructionIndex,
+            instructionCount: instructions.count,
+            distanceAlongRoute: distanceAlongRoute,
+            totalRouteDistance: totalRouteDistance,
+            arrivalThresholdMetres: RouteGuidanceConfig.arrivedDistanceMetres
+        ) {
+            arrivalHandled = true
+            handleArrival()
         }
     }
 

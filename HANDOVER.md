@@ -20,15 +20,17 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Android:** phases 1–5 merged (PRs #14, #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
   history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change:
   2026-11-14 (`RouteFollower` turn advance fix, 4 failing `:core` tests fixed).
-- **Last PRs:** #40 (2026-11-13, project config, CI fix, session skills); last code PR #39 (2026-06-16), Apple
-  and `Shared/` bug fixes from review (crashes, GPS and SpO2 accuracy, throttling, rate limiting).
+- **Last PRs:** #42 (2026-11-14, Android `RouteFollower` turn advance, `:core` tests green); #40 (2026-11-13,
+  project config, CI fix, session skills). This branch fixes #41: Apple route guidance now advances to the next
+  turn only once the turn is passed (shared `TurnInstructionProgress` in `Shared/Models/TurnInstruction.swift`),
+  and the arrival haptic fires once instead of on every GPS fix.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **25/25 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **32/32 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 318/318, `:app` green) |
@@ -47,7 +49,8 @@ all three Apple schemes. Add those capabilities back only together with code tha
 and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not the `1B…` convention; harmless.
 
 - **Still to do:** run the iOS app once on a device to confirm the location and HealthKit permission prompts
-  still appear.
+  still appear. On the same run, check #41 on device: simulate a route with an Xcode GPX file on iPhone and
+  watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic.
 
 ### CI
 
@@ -62,9 +65,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #30: missing unit tests for public functions from PR #26 (Android phase 3).
-- #41: Apple route guidance advances to the next turn 30 m early, so the at-turn direction haptic never
-  fires for the turn being approached (iOS and watchOS). Android had the same bug in `RouteFollower`, fixed
-  2026-11-14.
 
 ## Known stubs
 

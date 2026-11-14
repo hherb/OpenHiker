@@ -140,6 +140,70 @@ struct TurnInstruction: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Instruction Progress
+
+/// Pure functions that decide which turn instruction the user is heading for and
+/// whether they have arrived, given their distance along the route.
+///
+/// Shared by iOS (`iOSRouteGuidance`) and watchOS (`RouteGuidance`) so both
+/// platforms advance instructions identically. Mirrors Android's `RouteFollower`.
+enum TurnInstructionProgress {
+
+    /// Returns the index of the instruction the user is now heading for.
+    ///
+    /// Skips past every instruction whose turn point the user has already walked
+    /// beyond (`distanceAlongRoute >= cumulativeDistance`). It never moves backwards
+    /// and never goes past the last instruction. The index only moves once a turn
+    /// is *passed*, so the at-turn haptic (fired within
+    /// ``RouteGuidanceConfig/atTurnDistanceMetres`` *before* the turn) still sees
+    /// the turn being approached. A GPS gap that jumps over several turns is caught
+    /// up in one call.
+    ///
+    /// - Parameters:
+    ///   - currentIndex: The index of the instruction currently shown.
+    ///   - distanceAlongRoute: The user's distance from the route start in metres.
+    ///   - instructions: The route's turn instructions, ordered by cumulative distance.
+    /// - Returns: The new current index, which is `>= currentIndex` (or `currentIndex` unchanged
+    ///   if `instructions` is empty).
+    static func indexAfterPassedTurns(
+        from currentIndex: Int,
+        distanceAlongRoute: Double,
+        instructions: [TurnInstruction]
+    ) -> Int {
+        var index = currentIndex
+        while index < instructions.count - 1 && distanceAlongRoute >= instructions[index].cumulativeDistance {
+            index += 1
+        }
+        return index
+    }
+
+    /// Whether the user has arrived at the destination.
+    ///
+    /// True only when the current instruction is the last one and the user is within
+    /// `arrivalThresholdMetres` of the route end. Requiring the last instruction stops
+    /// a loop route (start == end) from "arriving" at the start.
+    ///
+    /// - Parameters:
+    ///   - currentIndex: The index of the instruction currently shown.
+    ///   - instructionCount: The number of turn instructions in the route.
+    ///   - distanceAlongRoute: The user's distance from the route start in metres.
+    ///   - totalRouteDistance: The length of the route in metres.
+    ///   - arrivalThresholdMetres: How close to the end counts as arrived; callers pass
+    ///     ``RouteGuidanceConfig/arrivedDistanceMetres`` (a parameter because macOS
+    ///     compiles this file but not `RouteGuidanceConfig.swift`).
+    /// - Returns: `true` if the arrival feedback should fire.
+    static func hasArrived(
+        currentIndex: Int,
+        instructionCount: Int,
+        distanceAlongRoute: Double,
+        totalRouteDistance: Double,
+        arrivalThresholdMetres: Double
+    ) -> Bool {
+        currentIndex == instructionCount - 1
+            && distanceAlongRoute >= totalRouteDistance - arrivalThresholdMetres
+    }
+}
+
 // MARK: - Bearing & Direction Helpers
 
 /// Pure-function helpers for computing bearings and turn directions from coordinates.
