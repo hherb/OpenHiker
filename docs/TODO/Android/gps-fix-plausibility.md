@@ -7,8 +7,8 @@ they could have walked (`Shared/Models/FixPlausibilityGate.swift`, PR #45). Guid
 index backwards, so one wild fix far ahead used to skip turns for good.
 
 Android has the same exposure in a different place. `RouteFollower` (`:core`) advances turns by the walked
-distance it is given, and `LocationProvider.cumulativeDistance` adds the full distance to every fix. A wild
-fix inflates the walked distance, and turns are skipped.
+distance it is given, and `LocationProvider.cumulativeDistance` adds the distance of every moving fix, with
+no jump filter. A wild fix inflates the walked distance, and turns are skipped.
 
 ## Rule (match Apple)
 
@@ -25,14 +25,20 @@ fix inflates the walked distance, and turns are skipped.
   (`Location.speed`) when `speedAccuracyMetersPerSecond` is 2 m/s or better. Real fast travel then passes
   at once, and a position jump without a matching speed does not.
 - **Cap:** a recheck lasts at most 10 s. The first fix at or after 10 s is accepted as it is. If no fix
-  arrives, a timer abandons the recheck and ends the GPS burst.
-- **First fix:** the first fix after navigation starts has no reference, so a first fix more than 15 m
-  along the route is rechecked like any other jump.
+  arrives for 10 s, a timer (restarted on every fix) abandons the recheck and ends the GPS burst.
+- **Stale fixes:** a fix whose timestamp is not newer than the newest one seen is ignored, so a
+  re-delivered suspect cannot confirm itself.
+- **First fix:** on Apple a first fix more than 15 m along the route is rechecked. Android starts with a
+  walked distance of 0, so the first fix is the reference and is accepted.
 
 ## What Needs to Be Done
 
 1. Add the pure gate to `:core` (`com.openhiker.core.navigation`), with constants in `RouteGuidanceConfig`.
-2. Apply it in `NavigationService` before `RouteFollower.update`. The progress to judge is the walked
-   distance since the last accepted fix, because Android does not project fixes onto the route.
+2. Gate the walked distance itself. `LocationProvider` adds each fix to `cumulativeDistance` before
+   `NavigationService` sees it, so gating only in `NavigationService` would still let a held-back fix
+   inflate the distance passed to `RouteFollower`. Either let the gate decide what `LocationProvider`
+   accumulates, or have `NavigationService` keep its own walked distance built from accepted fixes only.
+   The progress to judge is the distance from the last accepted fix, because Android does not project
+   fixes onto the route.
 3. Add a recheck mode to `LocationProvider` (a faster `LocationRequest`), toggled while a suspect is pending.
 4. Port the iOS gate tests (`OpenHikerTests/iOSRouteGuidanceTests.swift`, section `FixPlausibilityGate`).

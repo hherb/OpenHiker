@@ -96,10 +96,12 @@ class RouteFollower(
             currentInstructionIndex++
         }
 
-        // Arrival needs the last instruction too: on a loop or out-and-back route the destination is
-        // the trailhead, so being near it at the start must not count (#44).
+        // Arrival needs the last instruction and the route walked too: on a loop or out-and-back
+        // route the destination is the trailhead, so being near it at the start must not count (#44).
+        // The walked-distance check covers a loop with no turn between START and ARRIVE.
         val distToDestination = Haversine.distance(currentPos, destination)
         if (currentInstructionIndex == instructions.size - 1 &&
+            cumulativeDistance >= totalDistance - RouteGuidanceConfig.ARRIVED_DISTANCE_METRES &&
             distToDestination <= RouteGuidanceConfig.ARRIVED_DISTANCE_METRES
         ) {
             return NavigationState(

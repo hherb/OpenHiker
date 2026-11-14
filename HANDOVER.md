@@ -23,14 +23,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Last PRs:** #43 (2026-11-14, #41: Apple guidance advances a turn only once passed, single arrival haptic);
   #42 (2026-11-14, Android `RouteFollower` turn advance, `:core` tests green). This branch fixes #44: Apple
   guidance places each fix with the shared `RouteProjection` (`Shared/Models/RouteProjection.swift`, iOS and
-  watchOS targets only). Among segments within 20 m of the nearest one, it picks the one that best fits the
-  session's high-water mark of progress, so loop and out-and-back routes no longer jump to the wrong leg. Android
-  `RouteFollower` reports arrival only on the last instruction, so a loop does not arrive at the trailhead.
+  watchOS targets only). Among segments within 20 m of the nearest one or within the 50 m off-route threshold,
+  it picks the one that best fits the session's high-water mark of progress, so loop and out-and-back routes no
+  longer jump to the wrong leg. Android `RouteFollower` reports arrival only on the last instruction and once
+  the walked distance reaches the route's end, so a loop does not arrive at the trailhead.
   The same branch adds `FixPlausibilityGate` (`Shared/Models/FixPlausibilityGate.swift`). A fix further ahead
   than planned speed × 1.8 × elapsed time + 15 m is held back. The GPS switches to a best-accuracy burst
-  until two agreeing rechecks confirm the jump, or one disagreeing recheck drops it. A trusted measured
-  (Doppler) speed raises the limit, so car or bus travel is not held back. A recheck lasts at most 10 s, with
-  a timer for when no fixes arrive, so guidance cannot freeze. Android port:
+  until two agreeing rechecks confirm the jump, or a disagreeing recheck drops it and is judged afresh. A fix
+  no newer than one already seen is ignored. A trusted measured (Doppler) speed raises the limit, so car or
+  bus travel is not held back. A recheck lasts at most 10 s, with a timer (restarted on every fix) for when no
+  fixes arrive, so guidance cannot freeze. Android port:
   `docs/TODO/Android/gps-fix-plausibility.md`.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 

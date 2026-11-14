@@ -217,23 +217,20 @@ final class iOSRouteGuidance: ObservableObject {
 
     // MARK: - Private Helpers
 
-    /// Publishes the gate's recheck state and arms or cancels the recheck timeout.
+    /// Publishes the gate's recheck state and restarts the recheck timeout.
     ///
-    /// The timeout matters only when no fixes arrive: with fixes, the gate itself caps a recheck
-    /// at ``RouteGuidanceConfig/maxRecheckDurationSeconds``.
+    /// Called after every fix, so the timeout fires only when no fix arrives for
+    /// ``RouteGuidanceConfig/maxRecheckDurationSeconds``; while fixes arrive, the gate's own cap
+    /// ends a recheck.
     private func syncRecheckState() {
         isRecheckingFix = plausibilityGate.isRechecking
-        guard isRecheckingFix else {
-            recheckTimeout?.cancel()
-            recheckTimeout = nil
-            return
-        }
-        guard recheckTimeout == nil else { return }
+        recheckTimeout?.cancel()
+        recheckTimeout = nil
+        guard isRecheckingFix else { return }
         recheckTimeout = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(RouteGuidanceConfig.maxRecheckDurationSeconds))
             guard !Task.isCancelled, let self else { return }
             print("Route guidance: no GPS fix during recheck; ending the GPS burst")
-            self.recheckTimeout = nil
             self.plausibilityGate.abandonRecheck()
             self.syncRecheckState()
         }

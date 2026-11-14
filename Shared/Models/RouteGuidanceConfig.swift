@@ -46,7 +46,7 @@ enum RouteGuidanceConfig {
     /// legs of an out-and-back, both count. See ``RouteProjection``.
     static let projectionCandidateToleranceMetres: Double = 20.0
 
-    /// How much more a metre backwards along the route costs than a metre forwards when
+    /// How many times as much a metre backwards along the route costs as a metre forwards when
     /// ``RouteProjection`` picks between candidate segments. Hikers rarely walk a route backwards.
     static let projectionBacktrackPenalty: Double = 4.0
 

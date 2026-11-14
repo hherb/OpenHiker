@@ -244,6 +244,7 @@ final class LocationManager: NSObject, ObservableObject {
     /// Reduces accuracy and increases distance filter to minimize power consumption.
     /// The track is still recorded, but with coarser resolution.
     func switchToLowPowerMode() {
+        isFixRecheckActive = false // Low battery outranks a quick recheck.
         gpsMode = .lowPower
         print("Switched GPS to low-power mode for battery conservation")
     }

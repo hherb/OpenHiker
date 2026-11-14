@@ -63,17 +63,19 @@ enum RouteProjection {
     /// A loop route starts and ends at the same place, and an out-and-back route walks the same
     /// trail twice. There, a fix is about equally close to two parts of the route, and the plain
     /// nearest segment can be the wrong one (#44). So every segment within
-    /// ``RouteGuidanceConfig/projectionCandidateToleranceMetres`` of the nearest one is a
-    /// candidate, and the candidate that best fits `progressHighWaterMark` wins: going forward
-    /// from it costs its distance in metres, and going back costs
-    /// ``RouteGuidanceConfig/projectionBacktrackPenalty`` times as much.
+    /// ``RouteGuidanceConfig/projectionCandidateToleranceMetres`` of the nearest one, or within
+    /// ``RouteGuidanceConfig/offRouteThresholdMetres`` of the fix, is a candidate. The candidate
+    /// that best fits `progressHighWaterMark` wins: one ahead of the mark costs its distance ahead
+    /// in metres, and one behind costs ``RouteGuidanceConfig/projectionBacktrackPenalty`` × its
+    /// distance behind.
     ///
     /// - Parameters:
     ///   - coordinate: The GPS fix.
     ///   - route: The route polyline.
     ///   - cumulativeDistances: ``cumulativeDistances(_:)`` of `route`.
     ///   - progressHighWaterMark: The furthest `distanceAlong` reached so far this session (0 at start).
-    /// - Returns: The projection, or `nil` if `route` is empty.
+    /// - Returns: The projection, or `nil` if `route` is empty. A one-point route, or
+    ///   `cumulativeDistances` not matching `route`, gives the first point with `distanceAlong` 0.
     static func project(
         _ coordinate: CLLocationCoordinate2D,
         onto route: [CLLocationCoordinate2D],
@@ -96,8 +98,12 @@ enum RouteProjection {
 
         // Non-empty: route.count >= 2 gives at least one segment.
         let nearest = projections.map(\.distanceFromRoute).min()!
-        let maxCandidateDistance = nearest + RouteGuidanceConfig.projectionCandidateToleranceMetres
+        // Any segment close enough to count as on route is a candidate too, so a loop started
+        // well up its closing leg still begins on the first leg.
+        let maxCandidateDistance = max(nearest + RouteGuidanceConfig.projectionCandidateToleranceMetres,
+                                       RouteGuidanceConfig.offRouteThresholdMetres)
 
+        /// The cost of moving from the high-water mark to `result`: lower fits progress better.
         func continuityCost(_ result: Result) -> Double {
             let step = result.distanceAlong - progressHighWaterMark
             return step >= 0 ? step : -step * RouteGuidanceConfig.projectionBacktrackPenalty

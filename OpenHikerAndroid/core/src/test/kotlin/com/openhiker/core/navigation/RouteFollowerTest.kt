@@ -218,6 +218,16 @@ class RouteFollowerTest {
         assertTrue("Should arrive back at the trailhead", state.hasArrived)
     }
 
+    @Test
+    fun `loop route with no turn between start and arrive does not arrive at the trailhead`() {
+        val follower = RouteFollower(
+            loopCoordinates, listOf(loopInstructions[0], loopInstructions[2]), distToMid * 2
+        )
+        val state = follower.update(routeStart.latitude, routeStart.longitude, 0.0)
+
+        assertFalse("Must not arrive at the start of a loop", state.hasArrived)
+    }
+
     // ── Empty inputs ──────────────────────────────────────────────
 
     @Test

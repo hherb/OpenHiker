@@ -24,7 +24,8 @@ import CoreLocation
 ///
 /// Route guidance never moves its turn index or progress high-water mark backwards, so one wild
 /// fix far ahead would skip turns for good. Each fix's forward progress is compared with what is
-/// reachable since the last accepted fix: the route's planned speed ×
+/// reachable since the last accepted fix (no time at all for the first fix, so a first fix more
+/// than the certainty radius along the route is rechecked): the route's planned speed ×
 /// ``RouteGuidanceConfig/maxSpeedFactor`` × elapsed time, plus
 /// ``RouteGuidanceConfig/certaintyRadiusMetres`` for GPS noise. A fix beyond that becomes a
 /// *suspect*. It is accepted only after ``RouteGuidanceConfig/recheckConfirmationsRequired``
@@ -37,8 +38,8 @@ import CoreLocation
 ///   when its `speedAccuracy` is good (``measuredSpeed(of:)``). A position jump caused by a signal
 ///   reflection does not come with a matching measured speed.
 /// - A recheck lasts at most ``RouteGuidanceConfig/maxRecheckDurationSeconds``. A fix arriving
-///   after that is accepted as it is; if no fix arrives, the caller ends the recheck with
-///   ``abandonRecheck()``.
+///   after that is accepted as it is; if no fix arrives for that long, the caller ends the
+///   recheck with ``abandonRecheck()``.
 ///
 /// While ``isRechecking`` is true, callers should switch the GPS to fast, high-accuracy updates
 /// so the rechecks arrive within seconds (see `isFixRecheckActive` on the location managers).
@@ -51,7 +52,8 @@ struct FixPlausibilityGate {
     enum Decision: Equatable {
         /// Use the fix for guidance.
         case accept
-        /// Ignore the fix for now; more fixes are needed to confirm or reject a suspect jump.
+        /// Ignore the fix: more fixes are needed to confirm or reject a suspect jump, or the fix is
+        /// no newer than one already seen.
         case recheck
     }
 
@@ -60,6 +62,9 @@ struct FixPlausibilityGate {
 
     /// Timestamp of the last accepted fix, or `nil` before the first one.
     private var lastAcceptedTime: Date?
+
+    /// Timestamp of the newest fix evaluated, or `nil` before the first one.
+    private var newestFixTime: Date?
 
     /// The fix waiting for confirmation, if any.
     private var suspect: CLLocation?
@@ -129,8 +134,13 @@ struct FixPlausibilityGate {
     ///     (`distanceAlong - highWaterMark`; zero or negative means no forward jump).
     /// - Returns: ``Decision/accept`` to use the fix, ``Decision/recheck`` to ignore it for now.
     mutating func evaluate(_ fix: CLLocation, progressJump: Double) -> Decision {
+        // A re-delivered or out-of-order fix would confirm a suspect by itself or rewind the clock.
+        if let newest = newestFixTime, fix.timestamp <= newest { return .recheck }
+        newestFixTime = fix.timestamp
+
         if let started = recheckStartedAt,
            fix.timestamp.timeIntervalSince(started) >= RouteGuidanceConfig.maxRecheckDurationSeconds {
+            print("Route guidance: recheck cap reached; accepting fix \(Int(progressJump)) m ahead")
             return accept(fix) // Cap reached: accept rather than freeze guidance with the GPS in burst mode.
         }
 
@@ -150,15 +160,17 @@ struct FixPlausibilityGate {
         if progressJump <= reachableDistance(elapsed: sinceAccepted, measuredSpeed: speed) {
             return accept(fix)
         }
+        print("Route guidance: holding back fix \(Int(progressJump)) m ahead for recheck")
         suspect = fix
         confirmations = 0
         if recheckStartedAt == nil { recheckStartedAt = fix.timestamp }
         return .recheck
     }
 
-    /// Ends a recheck that has had no fixes for ``RouteGuidanceConfig/maxRecheckDurationSeconds``,
-    /// so the caller can switch the GPS out of burst mode. The next fix is judged against the last
-    /// accepted fix.
+    /// Clears any pending suspect and recheck. Callers use it when a recheck has had no fixes for
+    /// ``RouteGuidanceConfig/maxRecheckDurationSeconds`` (so the GPS can leave burst mode) and
+    /// when navigation stops; the gate uses it after an accept. The next fix is judged against the
+    /// last accepted fix.
     mutating func abandonRecheck() {
         suspect = nil
         confirmations = 0

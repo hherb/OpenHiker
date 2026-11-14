@@ -472,9 +472,57 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertLessThan(guidance.progress, 0.05)
         XCTAssertEqual(guidance.currentInstruction?.coordinate.longitude, 0.005, "heading for the first corner")
 
+        // Standing at the trailhead (fixes seconds apart, so a wrong projection onto the closing
+        // segment would be confirmed by the gate) still does not arrive.
+        for _ in 1...4 { guidance.updateLocation(fix(0.0001, 0.00001, after: 5)) }
+        XCTAssertFalse(guidance.arrivalHandled, "no arrival while waiting at the trailhead")
+        XCTAssertLessThan(guidance.progress, 0.05)
+
         walk(guidance, along: corners)
         XCTAssertTrue(guidance.arrivalHandled, "arrives back at the trailhead")
         XCTAssertEqual(guidance.currentInstruction?.direction, .arrive)
+    }
+
+    /// A loop started 33 m up its closing leg (beyond the 20 m candidate tolerance of the first leg)
+    /// still begins on the first leg instead of skipping every turn.
+    func testLoopRouteStartedUpClosingLegBeginsOnFirstLeg() {
+        let corners = [
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0.005),
+            CLLocationCoordinate2D(latitude: 0.005, longitude: 0.005),
+            CLLocationCoordinate2D(latitude: 0.005, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        ]
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(corners, middle: .left))
+        for _ in 1...4 { guidance.updateLocation(fix(0.0003, 0, after: 5)) }
+        XCTAssertFalse(guidance.arrivalHandled)
+        XCTAssertLessThan(guidance.progress, 0.05)
+        XCTAssertEqual(guidance.currentInstruction?.coordinate.longitude, 0.005, "heading for the first corner")
+    }
+
+    /// Starting guidance halfway along the route: the far first fix is rechecked, then accepted
+    /// once two more fixes agree, so guidance does not stay frozen.
+    func testGuidanceStartedMidRouteAcceptsConfirmedPosition() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoutWithTurn())
+        guidance.updateLocation(fix(0, 0.005, after: 1))
+        XCTAssertTrue(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0)
+        guidance.updateLocation(fix(0, 0.005, after: 1))
+        guidance.updateLocation(fix(0, 0.005, after: 1))
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0.5, accuracy: 0.01)
+    }
+
+    /// Stopping during a recheck ends it, so the GPS leaves burst mode.
+    func testStopDuringRecheckClearsIt() {
+        let guidance = iOSRouteGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        guidance.updateLocation(fix(0.004, 0.005, after: 1))
+        XCTAssertTrue(guidance.isRecheckingFix)
+        guidance.stop()
+        XCTAssertFalse(guidance.isRecheckingFix)
     }
 
     /// An out-and-back route retraces the same trail: on the way back the fix lies on both legs,
@@ -627,6 +675,31 @@ final class iOSRouteGuidanceTests: XCTestCase {
         }
         XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept])
         XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A suspect re-delivered with the same timestamp (CoreLocation does this when the accuracy
+    /// settings change) is not an independent confirmation.
+    func testGateIgnoresRedeliveredSuspect() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        let wild = fix(0, 0.01, after: 1)
+        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000), .recheck)
+        XCTAssertEqual(gate.evaluate(wild, progressJump: 1000), .recheck, "duplicate ignored")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01005, after: 1), progressJump: 1005), .recheck, "only 1st recheck")
+        XCTAssertEqual(gate.evaluate(fix(0, 0.0101, after: 1), progressJump: 1011), .accept, "2nd recheck")
+    }
+
+    /// A fix older than one already seen is ignored, so it cannot rewind the reference time and
+    /// widen the reachable distance for the next fix.
+    func testGateIgnoresOutOfOrderFix() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 100), progressJump: 0), .accept)
+        let stale = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0), altitude: 0, horizontalAccuracy: 5,
+            verticalAccuracy: 5, timestamp: clock - 50)
+        XCTAssertEqual(gate.evaluate(stale, progressJump: 0), .recheck, "older than the last fix")
+        XCTAssertFalse(gate.isRechecking)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100), .recheck, "100 > 1.8*1 + 15")
     }
 
     /// Abandoning a recheck clears it, so the GPS burst can end when no fixes arrive.
