@@ -69,18 +69,25 @@ enum RouteProjection {
     /// in metres, and one behind costs ``RouteGuidanceConfig/projectionBacktrackPenalty`` × its
     /// distance behind.
     ///
+    /// The high-water mark alone cannot tell which leg a user who starts guidance on the return
+    /// leg of an out-and-back is on (#46). So when the fix's `course` is known, candidates whose
+    /// segment points more than ``RouteGuidanceConfig/projectionMaxCourseDifferenceDegrees`` away
+    /// from it are skipped first, unless none is left (the user may be walking the route backwards).
+    ///
     /// - Parameters:
     ///   - coordinate: The GPS fix.
     ///   - route: The route polyline.
     ///   - cumulativeDistances: ``cumulativeDistances(_:)`` of `route`.
     ///   - progressHighWaterMark: The furthest `distanceAlong` reached so far this session (0 at start).
+    ///   - course: The user's direction of travel in degrees (``trustedCourse(of:)``), or `nil`.
     /// - Returns: The projection, or `nil` if `route` is empty. A one-point route, or
     ///   `cumulativeDistances` not matching `route`, gives the first point with `distanceAlong` 0.
     static func project(
         _ coordinate: CLLocationCoordinate2D,
         onto route: [CLLocationCoordinate2D],
         cumulativeDistances: [Double],
-        progressHighWaterMark: Double
+        progressHighWaterMark: Double,
+        course: CLLocationDirection? = nil
     ) -> Result? {
         guard let first = route.first else { return nil }
         guard route.count >= 2, cumulativeDistances.count == route.count else {
@@ -109,10 +116,30 @@ enum RouteProjection {
             return step >= 0 ? step : -step * RouteGuidanceConfig.projectionBacktrackPenalty
         }
 
+        let candidates = projections.filter { $0.distanceFromRoute <= maxCandidateDistance }
+        let alongCourse = course.map { course in
+            candidates.filter { candidate in
+                let segmentBearing = BearingCalculator.bearing(from: route[candidate.segment],
+                                                               to: route[candidate.segment + 1])
+                return abs(BearingCalculator.normalizeDelta(segmentBearing - course))
+                    <= RouteGuidanceConfig.projectionMaxCourseDifferenceDegrees
+            }
+        } ?? []
+
         // min(by:) keeps the first of equal costs, so ties go to the earlier segment.
-        return projections
-            .filter { $0.distanceFromRoute <= maxCandidateDistance }
+        return (alongCourse.isEmpty ? candidates : alongCourse)
             .min { continuityCost($0) < continuityCost($1) }
+    }
+
+    /// The fix's course in degrees, or `nil` if it is invalid or its `courseAccuracy` is worse than
+    /// ``RouteGuidanceConfig/courseMaxAccuracyDegrees`` (as when the user is standing still).
+    ///
+    /// - Parameter fix: The GPS fix.
+    /// - Returns: The course to pass to ``project(_:onto:cumulativeDistances:progressHighWaterMark:course:)``.
+    static func trustedCourse(of fix: CLLocation) -> CLLocationDirection? {
+        guard fix.course >= 0, fix.courseAccuracy >= 0,
+              fix.courseAccuracy <= RouteGuidanceConfig.courseMaxAccuracyDegrees else { return nil }
+        return fix.course
     }
 
     /// Projects a point onto a line segment, returning the closest point and its fraction.

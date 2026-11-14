@@ -175,16 +175,20 @@ final class RouteGuidance: ObservableObject {
     ///
     /// - Parameter location: The user's current GPS location.
     func updateLocation(_ location: CLLocation) {
+        // A cached fix minutes old would skew the plausibility gate's clock (#47).
         guard isNavigating,
               let route = activeRoute,
-              !route.coordinates.isEmpty else { return }
+              !route.coordinates.isEmpty,
+              !FixPlausibilityGate.isStale(location) else { return }
 
         // 1. Find the point on the route, keeping continuity with progress so far (#44)
+        //    and with the direction of travel (#46)
         guard let closest = RouteProjection.project(
             location.coordinate,
             onto: route.coordinates,
             cumulativeDistances: cumulativeDistances,
-            progressHighWaterMark: progressHighWaterMark
+            progressHighWaterMark: progressHighWaterMark,
+            course: RouteProjection.trustedCourse(of: location)
         ) else { return }
 
         // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
