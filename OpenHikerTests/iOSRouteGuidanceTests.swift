@@ -27,8 +27,16 @@ final class iOSRouteGuidanceTests: XCTestCase {
     // MARK: - Test Helpers
 
     /// Simulated clock for GPS fixes, so ``FixPlausibilityGate`` sees realistic elapsed time. It
-    /// starts now and only moves forward, so guidance never drops a fix as stale.
+    /// starts now (reset in ``setUp()``) and only moves forward, so guidance never drops a fix as
+    /// stale.
     private var clock = Date()
+
+    /// Restarts the clock per test: XCTest builds every test instance before running any, so the
+    /// property initialiser alone would let later tests' fixes go stale.
+    override func setUp() {
+        super.setUp()
+        clock = Date()
+    }
 
     /// A fix at (`lat`, `lon`), `seconds` after the previous one. The default of 10 minutes
     /// makes any jump on these test routes plausible; plausibility tests pass shorter gaps.
@@ -566,8 +574,24 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(guidance.progress, 0.75, accuracy: 0.01, "on the return leg")
         XCTAssertEqual(guidance.currentInstruction?.direction, .arrive)
 
+        guidance.updateLocation(fix(0, 0.0026, after: 5, course: 90, courseAccuracy: 10))
+        XCTAssertEqual(guidance.progress, 0.74, accuracy: 0.01, "a step back stays on the return leg")
+
         guidance.updateLocation(fix(0, 0.0001, course: 270, courseAccuracy: 10))
         XCTAssertTrue(guidance.arrivalHandled, "arrives back at the start")
+    }
+
+    /// Once the leg is chosen, turning back briefly on the outbound leg does not jump guidance to
+    /// the return leg and past the u-turn: the course picks the leg only at the start (#46).
+    func testOutAndBackTurnBackMidOutboundStaysOnOutboundLeg() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
+        guidance.updateLocation(fix(0, 0.0005, course: 90, courseAccuracy: 10))
+        guidance.updateLocation(fix(0, 0.001, after: 60, course: 90, courseAccuracy: 10))
+        for _ in 1...3 { guidance.updateLocation(fix(0, 0.00098, after: 5, course: 270, courseAccuracy: 10)) }
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0.10, accuracy: 0.01, "still on the outbound leg")
+        XCTAssertEqual(guidance.currentInstruction?.direction, .uTurn, "u-turn not skipped")
     }
 
     /// Guidance started standing still on the return leg lands on the outbound leg (no course to go
@@ -600,6 +624,25 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(along(225) ?? 0, 834, accuracy: 1, "within 90 degrees of west")
     }
 
+    /// The course filter wraps around north: on a south-then-north out-and-back, a course of 350
+    /// or 10 degrees fits the northbound return leg.
+    func testProjectCourseWrapsAroundNorth() {
+        let route = [
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            CLLocationCoordinate2D(latitude: -0.005, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        ]
+        let cumulative = RouteProjection.cumulativeDistances(route)
+        func along(_ course: CLLocationDirection) -> Double? {
+            RouteProjection.project(CLLocationCoordinate2D(latitude: -0.0025, longitude: 0), onto: route,
+                                    cumulativeDistances: cumulative, progressHighWaterMark: 0,
+                                    course: course)?.distanceAlong
+        }
+        XCTAssertEqual(along(350) ?? 0, 834, accuracy: 1)
+        XCTAssertEqual(along(10) ?? 0, 834, accuracy: 1)
+        XCTAssertEqual(along(170) ?? 0, 278, accuracy: 1)
+    }
+
     /// When no candidate fits the course (walking a one-leg route backwards), all stay candidates.
     func testProjectKeepsCandidatesWhenNoneFitsCourse() {
         let route = makeStraightRoute().coordinates
@@ -615,6 +658,8 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0)), "invalid course")
         XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: -1)))
         XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: 31)))
+        XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: -1, courseAccuracy: 10)))
+        XCTAssertEqual(RouteProjection.trustedCourse(of: fix(0, 0, course: 0, courseAccuracy: 0)), 0)
         XCTAssertEqual(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: 30)), 90)
     }
 

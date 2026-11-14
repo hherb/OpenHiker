@@ -26,7 +26,9 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     the 50 m off-route threshold, it picks the one that best fits the session's high-water mark of progress,
     so loop and out-and-back routes do not jump to the wrong leg (#44, PR #45). When the fix has a trusted
     course (`courseAccuracy` ≤ 30°), candidates pointing more than 90° away from it are skipped first, so
-    guidance started on an out-and-back's return leg follows that leg (#46, this branch).
+    guidance started on an out-and-back's return leg follows that leg (#46, this branch). The course
+    picks the leg only until the first fix with a trusted course is accepted, so a short turn-back later
+    cannot jump guidance to the other leg.
   - `FixPlausibilityGate` holds back a fix further ahead than planned speed × 1.8 × elapsed time + 15 m,
     with a best-accuracy GPS burst until two agreeing rechecks confirm it. A trusted Doppler speed raises
     the limit, and a recheck lasts at most 10 s (PR #45). Guidance drops fixes older than 10 s, such as
@@ -41,7 +43,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **61/61 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **63/63 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 321/321, `:app` green) |
@@ -63,7 +65,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   still appear. On the same run, check #41 on device: simulate a route with an Xcode GPX file on iPhone and
   watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic. Repeat
   with a loop route and an out-and-back route (#44): no arrival at the start, arrival back at the trailhead.
-  Start guidance while walking the return leg of an out-and-back (#46): it should follow the return leg. Watch
+  Start guidance while walking the return leg of an out-and-back (#46): it should follow the return leg.
+  Then, on the outbound leg, turn back for 20 m: guidance should stay on the outbound leg. Watch
   the GPS indicator for the recheck burst. Check that it ends within a few seconds and does not get stuck
   on, which would drain the battery. Also log `speed` and `speedAccuracy` on the watch in low-power mode: the
   measured-speed safeguard needs `speedAccuracy` ≤ 2 m/s to apply.
