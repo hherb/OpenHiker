@@ -31,7 +31,7 @@ no jump filter. A wild fix inflates the walked distance, and turns are skipped.
 - **Old fixes:** a fix more than `MAX_FIX_AGE_SECONDS` (10) older than the current time is ignored before
   the gate sees it (Apple: `FixPlausibilityGate.isStale`, #47). A cached last-known location delivered
   when updates start would otherwise put the gate's clock minutes back and let the next wild fix pass.
-- **Future-dated fixes:** a fix more than `MAX_FIX_LEAD_SECONDS` (2) after the current time is also ignored
+- **Future-dated fixes:** a fix more than `MAX_FIX_LEAD_SECONDS` (10) after the current time is also ignored
   (#49). Stored as the newest fix, it would make every real fix look out of order until the clock caught
   up, and guidance would freeze. On Android, compare `Location.time` with `System.currentTimeMillis()`.
 - **First fix:** on Apple a first fix more than 15 m along the route is rechecked. Android starts with a

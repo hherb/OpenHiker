@@ -119,6 +119,7 @@ struct FixPlausibilityGate {
     /// ``RouteGuidanceConfig/maxFixLeadSeconds`` (#49). Callers drop such fixes before
     /// ``evaluate(_:progressJump:)``. A cached first fix would set the gate's clock minutes back,
     /// and a future-dated fix would make every real fix look out of order until the clock caught up.
+    /// Each rejected fix is logged, so a clock offset that drops every fix shows up in the logs.
     ///
     /// - Parameters:
     ///   - fix: The GPS fix.
@@ -126,7 +127,11 @@ struct FixPlausibilityGate {
     /// - Returns: `true` if the fix should be ignored.
     static func isStale(_ fix: CLLocation, now: Date = Date()) -> Bool {
         let age = now.timeIntervalSince(fix.timestamp)
-        return age > RouteGuidanceConfig.maxFixAgeSeconds || -age > RouteGuidanceConfig.maxFixLeadSeconds
+        let stale = age > RouteGuidanceConfig.maxFixAgeSeconds || -age > RouteGuidanceConfig.maxFixLeadSeconds
+        if stale {
+            print("Route guidance: ignoring fix timestamped \(Int(-age)) s from now")
+        }
+        return stale
     }
 
     /// The distance in metres the user could plausibly cover in `elapsed` seconds, plus GPS noise.

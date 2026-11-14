@@ -824,7 +824,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100), .recheck, "100 > 1.8*1 + 15")
     }
 
-    /// A fix more than 10 s old (#47) or more than 2 s in the future (#49) is stale.
+    /// A fix more than 10 s old (#47) or more than 10 s in the future (#49) is stale.
     func testGateIsStale() {
         let now = Date()
         func fixAt(_ time: Date) -> CLLocation {
@@ -834,8 +834,8 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now), now: now))
         XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now - 10), now: now))
         XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now - 10.1), now: now))
-        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now + 2), now: now))
-        XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now + 2.1), now: now))
+        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now + 10), now: now))
+        XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now + 10.1), now: now))
     }
 
     /// A fix timestamped a minute ahead is ignored, so the next real fix is not taken as out of
@@ -847,10 +847,12 @@ final class iOSRouteGuidanceTests: XCTestCase {
             coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0.001), altitude: 0,
             horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: clock + 60))
         XCTAssertEqual(guidance.progress, 0, "future-dated fix not applied")
+        XCTAssertFalse(guidance.isRecheckingFix, "future-dated fix dropped, not rechecked")
 
         guidance.updateLocation(fix(0, 0.0002, after: 20)) // ~22 m on, reachable in 20 s
         XCTAssertFalse(guidance.isRecheckingFix)
-        XCTAssertGreaterThan(guidance.progress, 0, "real fix after the future-dated one is used")
+        XCTAssertEqual(guidance.progress, 22.0 / 1112, accuracy: 0.005,
+                       "real fix after the future-dated one is used")
     }
 
     /// A cached fix minutes old, as CoreLocation delivers when updates start, is ignored: it moves
@@ -860,7 +862,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         guidance.start(route: makeRoutWithTurn())
         guidance.updateLocation(CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0.005), altitude: 0,
-            horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: Date() - 300))
+            horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: clock - 300))
         XCTAssertFalse(guidance.isRecheckingFix, "stale fix not even rechecked")
         XCTAssertEqual(guidance.progress, 0)
 

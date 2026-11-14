@@ -32,7 +32,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   - `FixPlausibilityGate` holds back a fix further ahead than planned speed × 1.8 × elapsed time + 15 m,
     with a best-accuracy GPS burst until two agreeing rechecks confirm it. A trusted Doppler speed raises
     the limit, and a recheck lasts at most 10 s (PR #45). Guidance drops fixes older than 10 s, such as
-    CoreLocation's cached first fix (#47, PR #48), and fixes more than 2 s in the future, which would
+    CoreLocation's cached first fix (#47, PR #48), and fixes more than 10 s in the future, which would
     freeze the gate until the clock caught up (#49, this branch). `iOSRouteGuidance.currentDate` is the
     clock seam the tests use for this.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
