@@ -24,8 +24,10 @@ no jump filter. A wild fix inflates the walked distance, and turns are skipped.
 - **Measured speed:** use the larger of the planned speed and the fix's Doppler-measured speed
   (`Location.speed`) when `speedAccuracyMetersPerSecond` is 2 m/s or better. Real fast travel then passes
   at once, and a position jump without a matching speed does not.
-- **Cap:** a recheck lasts at most 10 s. The first fix at or after 10 s is accepted as it is. If no fix
-  arrives for 10 s, a timer (restarted on every fix) abandons the recheck and ends the GPS burst.
+- **Cap:** a recheck lasts at most 10 s, measured on the monotonic clock (see "Forward clock jump"), so a
+  clock step too small to count as a jump cannot shorten it (#55). The first fix at or after 10 s is
+  accepted as it is. If no fix arrives for 10 s, a timer (restarted on every fix) abandons the recheck and
+  ends the GPS burst.
 - **Stale fixes:** a fix whose timestamp is not newer than the newest one seen is ignored, so a
   re-delivered suspect cannot confirm itself.
 - **Old fixes:** a fix more than `MAX_FIX_AGE_SECONDS` (10) older than the current time is ignored before
