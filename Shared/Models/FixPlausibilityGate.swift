@@ -42,7 +42,9 @@ import CoreLocation
 ///   recheck with ``abandonRecheck()``.
 ///
 /// If the device clock jumps back mid-session, every fix would look older than the newest one
-/// seen. ``evaluate(_:progressJump:now:)`` detects that and starts afresh as for a first fix (#51).
+/// seen. If it jumps forward, the next fix would look as though it followed a long GPS gap and pass
+/// however far ahead it lands. ``evaluate(_:progressJump:now:)`` detects either jump
+/// and starts afresh as for a first fix (#51, #53).
 ///
 /// While ``isRechecking`` is true, callers should switch the GPS to fast, high-accuracy updates
 /// so the rechecks arrive within seconds (see `isFixRecheckActive` on the location managers).
@@ -69,6 +71,12 @@ struct FixPlausibilityGate {
     /// Timestamp of the newest fix evaluated, or `nil` before the first one.
     private var newestFixTime: Date?
 
+    /// `monotonicClock` when the newest fix was evaluated, to spot a forward clock jump (#53).
+    private var newestFixMonotonicTime: TimeInterval?
+
+    /// A clock that the device clock setting cannot move, normally ``monotonicTime()``.
+    private let monotonicClock: () -> TimeInterval
+
     /// The fix waiting for confirmation, if any.
     private var suspect: CLLocation?
 
@@ -84,9 +92,13 @@ struct FixPlausibilityGate {
 
     /// Creates a gate for one navigation session.
     ///
-    /// - Parameter speedMetresPerSecond: The expected average speed, usually ``plannedSpeed(for:)``.
-    init(speedMetresPerSecond: Double) {
+    /// - Parameters:
+    ///   - speedMetresPerSecond: The expected average speed, usually ``plannedSpeed(for:)``.
+    ///   - monotonicClock: Seconds on a clock that does not jump when the device clock is changed.
+    ///     Tests pass a simulated one.
+    init(speedMetresPerSecond: Double, monotonicClock: @escaping () -> TimeInterval = monotonicTime) {
         self.speedMetresPerSecond = speedMetresPerSecond
+        self.monotonicClock = monotonicClock
     }
 
     /// The route's planned average speed in metres per second.
@@ -137,6 +149,14 @@ struct FixPlausibilityGate {
         return stale
     }
 
+    /// Seconds on a clock that never jumps when the device clock is changed and keeps running while
+    /// the device sleeps (`CLOCK_MONOTONIC`): the gate's default `monotonicClock`.
+    ///
+    /// - Returns: Seconds since an arbitrary fixed point; only differences are meaningful.
+    static func monotonicTime() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000
+    }
+
     /// The distance in metres the user could plausibly cover in `elapsed` seconds, plus GPS noise.
     ///
     /// - Parameters:
@@ -150,6 +170,10 @@ struct FixPlausibilityGate {
     }
 
     /// Decides whether to use a fix.
+    ///
+    /// If fix timestamps have advanced more than `monotonicClock` since the newest fix, beyond what
+    /// fix ages allow, the device clock has jumped forward, and the gate starts afresh as for a
+    /// first fix (#53).
     ///
     /// - Parameters:
     ///   - fix: The GPS fix (its `timestamp` is used for elapsed time).
@@ -170,7 +194,20 @@ struct FixPlausibilityGate {
 
         // A re-delivered or out-of-order fix would confirm a suspect by itself or rewind the clock.
         if let newest = newestFixTime, fix.timestamp <= newest { return .recheck }
+
+        // After a forward clock jump the fix would look as though it followed a long GPS gap (#53).
+        // Fix ages within the isStale limits can make timestamps outrun real time by at most their sum.
+        let monotonicNow = monotonicClock()
+        if let newest = newestFixTime, let newestMonotonic = newestFixMonotonicTime {
+            let clockStep = fix.timestamp.timeIntervalSince(newest) - (monotonicNow - newestMonotonic)
+            if clockStep > RouteGuidanceConfig.maxFixAgeSeconds + RouteGuidanceConfig.maxFixLeadSeconds {
+                print("Route guidance: clock moved forward \(Int(clockStep)) s; restarting fix checks")
+                lastAcceptedTime = nil
+                abandonRecheck()
+            }
+        }
         newestFixTime = fix.timestamp
+        newestFixMonotonicTime = monotonicNow
 
         if let started = recheckStartedAt,
            fix.timestamp.timeIntervalSince(started) >= RouteGuidanceConfig.maxRecheckDurationSeconds {
@@ -203,7 +240,7 @@ struct FixPlausibilityGate {
 
     /// Clears any pending suspect and recheck. Callers use it when a recheck has had no fixes for
     /// ``RouteGuidanceConfig/maxRecheckDurationSeconds`` (so the GPS can leave burst mode) and
-    /// when navigation stops; the gate uses it after an accept and after a backward clock jump. The
+    /// when navigation stops; the gate uses it after an accept and after a clock jump. The
     /// next fix is judged against the last accepted fix.
     mutating func abandonRecheck() {
         suspect = nil
