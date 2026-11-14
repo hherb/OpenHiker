@@ -60,4 +60,12 @@ enum RouteGuidanceConfig {
 
     /// How many agreeing rechecks a suspect fix needs before it is accepted.
     static let recheckConfirmationsRequired: Int = 2
+
+    /// A GPS fix's Doppler-measured speed is trusted for the plausibility check only when its
+    /// `speedAccuracy` is this good or better (metres per second).
+    static let measuredSpeedMaxAccuracyMetresPerSecond: Double = 2.0
+
+    /// The longest a recheck burst may last, in seconds. After that the next fix is accepted as it
+    /// is, or, if no fix arrives, the recheck is abandoned, so guidance cannot stay frozen.
+    static let maxRecheckDurationSeconds: TimeInterval = 10.0
 }

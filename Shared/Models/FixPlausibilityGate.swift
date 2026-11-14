@@ -31,6 +31,15 @@ import CoreLocation
 /// further fixes agree with it, each within the certainty radius plus the distance reachable
 /// since the suspect. A fix that disagrees drops the suspect and is judged afresh.
 ///
+/// Two safeguards stop real fast travel (a car or bus ride with guidance on) from freezing
+/// guidance with the GPS stuck in burst mode:
+/// - The speed used is the larger of the planned speed and the fix's own Doppler-measured speed,
+///   when its `speedAccuracy` is good (``measuredSpeed(of:)``). A position jump caused by a signal
+///   reflection does not come with a matching measured speed.
+/// - A recheck lasts at most ``RouteGuidanceConfig/maxRecheckDurationSeconds``. A fix arriving
+///   after that is accepted as it is; if no fix arrives, the caller ends the recheck with
+///   ``abandonRecheck()``.
+///
 /// While ``isRechecking`` is true, callers should switch the GPS to fast, high-accuracy updates
 /// so the rechecks arrive within seconds (see `isFixRecheckActive` on the location managers).
 ///
@@ -57,6 +66,10 @@ struct FixPlausibilityGate {
 
     /// How many fixes have agreed with ``suspect`` so far.
     private var confirmations = 0
+
+    /// Timestamp of the fix that started the current recheck. A disagreeing recheck that becomes
+    /// the new suspect does not reset it, so a chain of suspects is still capped.
+    private var recheckStartedAt: Date?
 
     /// Whether a suspect fix is waiting for confirmation.
     var isRechecking: Bool { suspect != nil }
@@ -85,12 +98,26 @@ struct FixPlausibilityGate {
         }
     }
 
+    /// The fix's Doppler-measured speed in metres per second, or `nil` if it is invalid or its
+    /// `speedAccuracy` is worse than ``RouteGuidanceConfig/measuredSpeedMaxAccuracyMetresPerSecond``.
+    ///
+    /// - Parameter fix: The GPS fix.
+    /// - Returns: The measured speed, or `nil` if it should not be trusted.
+    static func measuredSpeed(of fix: CLLocation) -> Double? {
+        guard fix.speed >= 0, fix.speedAccuracy >= 0,
+              fix.speedAccuracy <= RouteGuidanceConfig.measuredSpeedMaxAccuracyMetresPerSecond else { return nil }
+        return fix.speed
+    }
+
     /// The distance in metres the user could plausibly cover in `elapsed` seconds, plus GPS noise.
     ///
-    /// - Parameter elapsed: Seconds since the reference fix; negative values count as 0.
+    /// - Parameters:
+    ///   - elapsed: Seconds since the reference fix; negative values count as 0.
+    ///   - measuredSpeed: A trusted measured speed (``measuredSpeed(of:)``); the planned speed is
+    ///     used when it is `nil` or lower.
     /// - Returns: The reachable distance in metres.
-    func reachableDistance(elapsed: TimeInterval) -> Double {
-        speedMetresPerSecond * RouteGuidanceConfig.maxSpeedFactor * max(0, elapsed)
+    func reachableDistance(elapsed: TimeInterval, measuredSpeed: Double? = nil) -> Double {
+        max(speedMetresPerSecond, measuredSpeed ?? 0) * RouteGuidanceConfig.maxSpeedFactor * max(0, elapsed)
             + RouteGuidanceConfig.certaintyRadiusMetres
     }
 
@@ -102,9 +129,15 @@ struct FixPlausibilityGate {
     ///     (`distanceAlong - highWaterMark`; zero or negative means no forward jump).
     /// - Returns: ``Decision/accept`` to use the fix, ``Decision/recheck`` to ignore it for now.
     mutating func evaluate(_ fix: CLLocation, progressJump: Double) -> Decision {
+        if let started = recheckStartedAt,
+           fix.timestamp.timeIntervalSince(started) >= RouteGuidanceConfig.maxRecheckDurationSeconds {
+            return accept(fix) // Cap reached: accept rather than freeze guidance with the GPS in burst mode.
+        }
+
+        let speed = Self.measuredSpeed(of: fix)
         if let suspect {
             let sinceSuspect = fix.timestamp.timeIntervalSince(suspect.timestamp)
-            if fix.distance(from: suspect) <= reachableDistance(elapsed: sinceSuspect) {
+            if fix.distance(from: suspect) <= reachableDistance(elapsed: sinceSuspect, measuredSpeed: speed) {
                 confirmations += 1
                 return confirmations >= RouteGuidanceConfig.recheckConfirmationsRequired ? accept(fix) : .recheck
             }
@@ -114,19 +147,28 @@ struct FixPlausibilityGate {
         }
 
         let sinceAccepted = lastAcceptedTime.map { fix.timestamp.timeIntervalSince($0) } ?? 0
-        if progressJump <= reachableDistance(elapsed: sinceAccepted) {
+        if progressJump <= reachableDistance(elapsed: sinceAccepted, measuredSpeed: speed) {
             return accept(fix)
         }
         suspect = fix
         confirmations = 0
+        if recheckStartedAt == nil { recheckStartedAt = fix.timestamp }
         return .recheck
+    }
+
+    /// Ends a recheck that has had no fixes for ``RouteGuidanceConfig/maxRecheckDurationSeconds``,
+    /// so the caller can switch the GPS out of burst mode. The next fix is judged against the last
+    /// accepted fix.
+    mutating func abandonRecheck() {
+        suspect = nil
+        confirmations = 0
+        recheckStartedAt = nil
     }
 
     /// Records `fix` as accepted and clears any suspect.
     private mutating func accept(_ fix: CLLocation) -> Decision {
         lastAcceptedTime = fix.timestamp
-        suspect = nil
-        confirmations = 0
+        abandonRecheck()
         return .accept
     }
 }

@@ -102,6 +102,9 @@ final class RouteGuidance: ObservableObject {
     /// Holds back fixes that jump further along the route than the user could have walked.
     private var plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: 0)
 
+    /// Abandons a recheck that gets no fixes in time, so the GPS cannot stay in burst mode.
+    private var recheckTimeout: Task<Void, Never>?
+
     // MARK: - Public API
 
     /// Starts active navigation along the given planned route.
@@ -125,7 +128,7 @@ final class RouteGuidance: ObservableObject {
         totalRouteDistance = cumulativeDistances.last ?? 0
         progressHighWaterMark = 0
         plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
-        isRecheckingFix = false
+        syncRecheckState()
 
         // Set initial instruction
         if !route.turnInstructions.isEmpty {
@@ -154,7 +157,8 @@ final class RouteGuidance: ObservableObject {
         cumulativeDistances = []
         totalRouteDistance = 0
         progressHighWaterMark = 0
-        isRecheckingFix = false
+        plausibilityGate.abandonRecheck()
+        syncRecheckState()
 
         print("Route guidance stopped")
     }
@@ -185,7 +189,7 @@ final class RouteGuidance: ObservableObject {
 
         // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
         let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
-        isRecheckingFix = plausibilityGate.isRechecking
+        syncRecheckState()
         guard decision == .accept else { return }
 
         let distanceAlongRoute = closest.distanceAlong
@@ -211,6 +215,28 @@ final class RouteGuidance: ObservableObject {
     }
 
     // MARK: - Private Helpers
+
+    /// Publishes the gate's recheck state and arms or cancels the recheck timeout.
+    ///
+    /// The timeout matters only when no fixes arrive: with fixes, the gate itself caps a recheck
+    /// at ``RouteGuidanceConfig/maxRecheckDurationSeconds``.
+    private func syncRecheckState() {
+        isRecheckingFix = plausibilityGate.isRechecking
+        guard isRecheckingFix else {
+            recheckTimeout?.cancel()
+            recheckTimeout = nil
+            return
+        }
+        guard recheckTimeout == nil else { return }
+        recheckTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(RouteGuidanceConfig.maxRecheckDurationSeconds))
+            guard !Task.isCancelled, let self else { return }
+            print("Route guidance: no GPS fix during recheck; ending the GPS burst")
+            self.recheckTimeout = nil
+            self.plausibilityGate.abandonRecheck()
+            self.syncRecheckState()
+        }
+    }
 
     /// Updates the off-route flag and triggers/clears haptic feedback.
     ///

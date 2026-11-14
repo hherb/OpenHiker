@@ -21,6 +21,11 @@ fix inflates the walked distance, and turns are skipped.
 - **Confirm:** two rechecks, each within the certainty radius plus the distance reachable since the
   suspect, accept the jump.
 - **Reject:** a recheck that disagrees drops the suspect, and that recheck is judged on its own.
+- **Measured speed:** use the larger of the planned speed and the fix's Doppler-measured speed
+  (`Location.speed`) when `speedAccuracyMetersPerSecond` is 2 m/s or better. Real fast travel then passes
+  at once, and a position jump without a matching speed does not.
+- **Cap:** a recheck lasts at most 10 s. The first fix at or after 10 s is accepted as it is. If no fix
+  arrives, a timer abandons the recheck and ends the GPS burst.
 - **First fix:** the first fix after navigation starts has no reference, so a first fix more than 15 m
   along the route is rechecked like any other jump.
 

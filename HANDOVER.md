@@ -28,7 +28,9 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `RouteFollower` reports arrival only on the last instruction, so a loop does not arrive at the trailhead.
   The same branch adds `FixPlausibilityGate` (`Shared/Models/FixPlausibilityGate.swift`). A fix further ahead
   than planned speed × 1.8 × elapsed time + 15 m is held back. The GPS switches to a best-accuracy burst
-  until two agreeing rechecks confirm the jump, or one disagreeing recheck drops it. Android port:
+  until two agreeing rechecks confirm the jump, or one disagreeing recheck drops it. A trusted measured
+  (Doppler) speed raises the limit, so car or bus travel is not held back. A recheck lasts at most 10 s, with
+  a timer for when no fixes arrive, so guidance cannot freeze. Android port:
   `docs/TODO/Android/gps-fix-plausibility.md`.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
@@ -36,7 +38,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **45/45 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **49/49 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 320/320, `:app` green) |
@@ -59,7 +61,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic. Repeat
   with a loop route and an out-and-back route (#44): no arrival at the start, arrival back at the trailhead. Watch
   the GPS indicator for the recheck burst. Check that it ends within a few seconds and does not get stuck
-  on, which would drain the battery.
+  on, which would drain the battery. Also log `speed` and `speedAccuracy` on the watch in low-power mode: the
+  measured-speed safeguard needs `speedAccuracy` ≤ 2 m/s to apply.
 
 ### CI
 

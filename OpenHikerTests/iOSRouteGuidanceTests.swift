@@ -31,11 +31,16 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     /// A fix at (`lat`, `lon`), `seconds` after the previous one. The default of 10 minutes
     /// makes any jump on these test routes plausible; plausibility tests pass shorter gaps.
-    private func fix(_ lat: Double, _ lon: Double, after seconds: TimeInterval = 600) -> CLLocation {
+    /// `speed` and `speedAccuracy` default to -1 (invalid), as when no measured speed is known.
+    private func fix(
+        _ lat: Double, _ lon: Double, after seconds: TimeInterval = 600,
+        speed: Double = -1, speedAccuracy: Double = -1
+    ) -> CLLocation {
         clock += seconds
         return CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-            altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: clock)
+            altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: -1, courseAccuracy: -1,
+            speed: speed, speedAccuracy: speedAccuracy, timestamp: clock)
     }
 
     /// Creates a simple straight-line route from (0,0) to (0,0.01) with two
@@ -587,6 +592,50 @@ final class iOSRouteGuidanceTests: XCTestCase {
             estimatedDuration: 0, elevationGain: 0, elevationLoss: 0)
         XCTAssertEqual(FixPlausibilityGate.plannedSpeed(for: noDuration),
                        RoutingCostConfig.hikingBaseSpeedMetresPerSecond)
+    }
+
+    /// Longitude degrees per metre at the equator, for building fixes a known distance apart.
+    private let degreesPerMetre = 0.01 / 1111.95
+
+    /// A measured speed is trusted only when it is valid and its accuracy is good enough.
+    func testMeasuredSpeedNeedsGoodAccuracy() {
+        XCTAssertEqual(FixPlausibilityGate.measuredSpeed(of: fix(0, 0, speed: 25, speedAccuracy: 1)), 25)
+        XCTAssertNil(FixPlausibilityGate.measuredSpeed(of: fix(0, 0, speed: 25, speedAccuracy: 3)), "too inaccurate")
+        XCTAssertNil(FixPlausibilityGate.measuredSpeed(of: fix(0, 0, speed: -1, speedAccuracy: 1)), "no speed")
+        XCTAssertNil(FixPlausibilityGate.measuredSpeed(of: fix(0, 0, speed: 25, speedAccuracy: -1)), "no accuracy")
+    }
+
+    /// Real fast travel comes with a matching measured speed, so its fixes are accepted at once.
+    func testGateUsesTrustedMeasuredSpeed() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(
+            fix(0, 25 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 1), progressJump: 25), .accept,
+            "25 <= 25*1.8*1 + 15")
+        XCTAssertEqual(gate.evaluate(
+            fix(0, 50 * degreesPerMetre, after: 1, speed: 25, speedAccuracy: 5), progressJump: 25), .recheck,
+            "untrusted speed: 25 > 1*1.8*1 + 15")
+    }
+
+    /// Steady travel too fast to confirm still ends the recheck after the cap: the first fix at or
+    /// past 10 s since the recheck began is accepted.
+    func testGateCapsRecheckDuration() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        let decisions = (1...11).map { i in
+            gate.evaluate(fix(0, Double(25 * i) * degreesPerMetre, after: 1), progressJump: Double(25 * i))
+        }
+        XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept])
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// Abandoning a recheck clears it, so the GPS burst can end when no fixes arrive.
+    func testGateAbandonRecheck() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000), .recheck)
+        gate.abandonRecheck()
+        XCTAssertFalse(gate.isRechecking)
     }
 
     /// One wild fix far ahead during navigation neither skips the turn nor moves progress; the GPS
