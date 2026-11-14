@@ -831,6 +831,30 @@ final class iOSRouteGuidanceTests: XCTestCase {
                        "100 > 1.8*1 + 15")
     }
 
+    /// A backward clock jump during a recheck restarts it on the new clock, so the 10 s cap still
+    /// ends a chain of suspects instead of waiting for the clock to catch up with the old start (#51).
+    func testGateRestartsRecheckAfterBackwardClockJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        clock -= 60
+        let decisions = (1...11).map { i in
+            gate.evaluate(fix(0, Double(25 * i) * degreesPerMetre, after: 1), progressJump: Double(25 * i), now: clock)
+        }
+        XCTAssertEqual(decisions, Array(repeating: .recheck, count: 10) + [.accept], "cap reached on the new clock")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A newest fix exactly ``RouteGuidanceConfig/maxFixLeadSeconds`` ahead passed `isStale`, so it is
+    /// not taken as a clock jump; only a larger lead restarts the gate (#51).
+    func testGateClockJumpThreshold() {
+        var gate = makeGate()
+        let ahead = fix(0, 0, after: 10)
+        XCTAssertEqual(gate.evaluate(ahead, progressJump: 0, now: clock - 10), .accept)
+        XCTAssertEqual(gate.evaluate(ahead, progressJump: 0, now: clock - 10), .recheck, "10 s lead: no restart")
+        XCTAssertEqual(gate.evaluate(ahead, progressJump: 0, now: clock - 10.1), .accept, "over 10 s: restart")
+    }
+
     /// A fix more than 10 s old (#47) or more than 10 s in the future (#49) is stale.
     func testGateIsStale() {
         let now = Date()

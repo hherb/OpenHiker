@@ -68,6 +68,8 @@ enum RouteGuidanceConfig {
     /// as out of order until the clock caught up, freezing guidance (#49). As large as
     /// ``maxFixAgeSeconds``: a fix let through freezes guidance for at most this long, and a small
     /// clock offset between the GPS and the device must not make every fix look future-dated.
+    /// The gate also uses it to detect a backward clock jump: a newest fix more than this far ahead
+    /// of the current time restarts the gate (#51).
     static let maxFixLeadSeconds: TimeInterval = 10.0
 
     /// How many times the route's planned speed counts as still reachable when judging whether a
