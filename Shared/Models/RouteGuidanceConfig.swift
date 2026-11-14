@@ -34,8 +34,8 @@ enum RouteGuidanceConfig {
     /// Distance in metres from a turn point at which the "approaching" haptic fires.
     static let approachingTurnDistanceMetres: Double = 100.0
 
-    /// Distance in metres from a turn point at which the "at turn" haptic fires and
-    /// the instruction advances to the next one.
+    /// Distance in metres from a turn point at which the "at turn" haptic fires. The
+    /// instruction itself advances only once the turn is passed.
     static let atTurnDistanceMetres: Double = 30.0
 
     /// Distance in metres from the final destination to trigger "arrived" notification.

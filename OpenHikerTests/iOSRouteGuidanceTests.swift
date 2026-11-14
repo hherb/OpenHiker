@@ -288,6 +288,89 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(guidance.currentInstruction?.direction, .arrive)
     }
 
+    /// Regression test for #41: within the at-turn radius (30 m before the turn) the turn
+    /// being approached must still be current, so its at-turn direction haptic can fire.
+    func testInstructionDoesNotAdvanceBeforeTurnIsPassed() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoutWithTurn())
+
+        // ~11 m before the turn at (0, 0.005)
+        guidance.updateLocation(CLLocation(latitude: 0, longitude: 0.0049))
+
+        XCTAssertEqual(guidance.currentInstruction?.direction, .left)
+        XCTAssertLessThan(guidance.distanceToNextTurn ?? .infinity, RouteGuidanceConfig.atTurnDistanceMetres)
+    }
+
+    /// Arrival is handled once per session: repeated fixes at the end do not re-fire it, and
+    /// restarting navigation resets it.
+    func testArrivalHandledOncePerSession() {
+        let guidance = iOSRouteGuidance()
+        let route = makeRoutWithTurn()
+        guidance.start(route: route)
+        XCTAssertFalse(guidance.arrivalHandled)
+
+        guidance.updateLocation(CLLocation(latitude: 0.001, longitude: 0.005)) // past the turn
+        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005)) // at the end
+        XCTAssertTrue(guidance.arrivalHandled)
+        guidance.updateLocation(CLLocation(latitude: 0.005, longitude: 0.005))
+        XCTAssertTrue(guidance.arrivalHandled)
+
+        guidance.stop()
+        guidance.start(route: route)
+        XCTAssertFalse(guidance.arrivalHandled, "restart resets arrival")
+    }
+
+    // MARK: - TurnInstructionProgress (pure functions)
+
+    /// Instructions at cumulative distances 0 (start), 556 (left) and 1112 (arrive).
+    private var turnInstructions: [TurnInstruction] { makeRoutWithTurn().turnInstructions }
+
+    /// The index stays put while the user is short of the turn, including inside the at-turn radius.
+    func testIndexStaysBeforeTurnIsPassed() {
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 1, distanceAlongRoute: 100, instructions: turnInstructions), 1)
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 1, distanceAlongRoute: 540, instructions: turnInstructions), 1)
+    }
+
+    /// The index advances once the turn point is reached or passed.
+    func testIndexAdvancesOnceTurnIsPassed() {
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 1, distanceAlongRoute: 556, instructions: turnInstructions), 2)
+    }
+
+    /// A GPS gap that jumps over several turns is caught up in one call, stopping at the last instruction.
+    func testIndexSkipsSeveralTurnsButNotPastLast() {
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 0, distanceAlongRoute: 5000, instructions: turnInstructions), 2)
+    }
+
+    /// The index never moves backwards when the user walks back along the route.
+    func testIndexNeverMovesBackwards() {
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 2, distanceAlongRoute: 0, instructions: turnInstructions), 2)
+    }
+
+    /// An empty instruction list leaves the index unchanged.
+    func testIndexWithNoInstructions() {
+        XCTAssertEqual(TurnInstructionProgress.indexAfterPassedTurns(
+            from: 0, distanceAlongRoute: 100, instructions: []), 0)
+    }
+
+    /// Arrival needs both the last instruction and the user within the threshold of the end.
+    func testHasArrived() {
+        func arrived(_ index: Int, _ distance: Double) -> Bool {
+            TurnInstructionProgress.hasArrived(
+                currentIndex: index, instructionCount: 3, distanceAlongRoute: distance,
+                totalRouteDistance: 1112, arrivalThresholdMetres: 30)
+        }
+        XCTAssertTrue(arrived(2, 1090))
+        XCTAssertTrue(arrived(2, 1082), "exactly at the threshold")
+        XCTAssertFalse(arrived(2, 1081.9))
+        XCTAssertFalse(arrived(2, 1000), "too far from the end")
+        XCTAssertFalse(arrived(1, 1112), "not on the last instruction")
+    }
+
     // MARK: - Distance to Next Turn
 
     /// Verifies that ``distanceToNextTurn`` decreases as the user approaches.
