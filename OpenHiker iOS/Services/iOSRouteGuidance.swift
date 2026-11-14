@@ -91,6 +91,11 @@ final class iOSRouteGuidance: ObservableObject {
     /// ``RouteProjection`` pick the right leg of a loop or out-and-back route.
     private var progressHighWaterMark: Double = 0
 
+    /// Whether a fix with a trusted course has been accepted this session. Until then the course
+    /// picks the leg of an out-and-back (#46); after it, continuity with progress alone decides, so
+    /// a short turn-back cannot jump guidance to the other leg.
+    private var legChosenByCourse = false
+
     /// Holds back fixes that jump further along the route than the user could have walked.
     private var plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: 0)
 
@@ -124,6 +129,7 @@ final class iOSRouteGuidance: ObservableObject {
         cumulativeDistances = RouteProjection.cumulativeDistances(route.coordinates)
         totalRouteDistance = cumulativeDistances.last ?? 0
         progressHighWaterMark = 0
+        legChosenByCourse = false
         plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
         syncRecheckState()
 
@@ -158,6 +164,7 @@ final class iOSRouteGuidance: ObservableObject {
         cumulativeDistances = []
         totalRouteDistance = 0
         progressHighWaterMark = 0
+        legChosenByCourse = false
         plausibilityGate.abandonRecheck()
         syncRecheckState()
 
@@ -176,22 +183,28 @@ final class iOSRouteGuidance: ObservableObject {
     ///
     /// - Parameter location: The user's current GPS location.
     func updateLocation(_ location: CLLocation) {
+        // A cached fix minutes old would skew the plausibility gate's clock (#47).
         guard isNavigating,
               let route = activeRoute,
-              !route.coordinates.isEmpty else { return }
+              !route.coordinates.isEmpty,
+              !FixPlausibilityGate.isStale(location) else { return }
 
         // 1. Find the point on the route, keeping continuity with progress so far (#44)
+        //    and, until the leg is chosen, with the direction of travel (#46)
+        let course = legChosenByCourse ? nil : RouteProjection.trustedCourse(of: location)
         guard let closest = RouteProjection.project(
             location.coordinate,
             onto: route.coordinates,
             cumulativeDistances: cumulativeDistances,
-            progressHighWaterMark: progressHighWaterMark
+            progressHighWaterMark: progressHighWaterMark,
+            course: course
         ) else { return }
 
         // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
         let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
         syncRecheckState()
         guard decision == .accept else { return }
+        if course != nil { legChosenByCourse = true }
 
         let distanceAlongRoute = closest.distanceAlong
         progressHighWaterMark = max(progressHighWaterMark, distanceAlongRoute)

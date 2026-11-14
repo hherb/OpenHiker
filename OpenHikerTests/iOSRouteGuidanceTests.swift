@@ -26,20 +26,30 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
     // MARK: - Test Helpers
 
-    /// Simulated clock for GPS fixes, so ``FixPlausibilityGate`` sees realistic elapsed time.
-    private var clock = Date(timeIntervalSince1970: 0)
+    /// Simulated clock for GPS fixes, so ``FixPlausibilityGate`` sees realistic elapsed time. It
+    /// starts now (reset in ``setUp()``) and only moves forward, so guidance never drops a fix as
+    /// stale.
+    private var clock = Date()
+
+    /// Restarts the clock per test: XCTest builds every test instance before running any, so the
+    /// property initialiser alone would let later tests' fixes go stale.
+    override func setUp() {
+        super.setUp()
+        clock = Date()
+    }
 
     /// A fix at (`lat`, `lon`), `seconds` after the previous one. The default of 10 minutes
     /// makes any jump on these test routes plausible; plausibility tests pass shorter gaps.
-    /// `speed` and `speedAccuracy` default to -1 (invalid), as when no measured speed is known.
+    /// `speed`, `speedAccuracy`, `course` and `courseAccuracy` default to -1 (invalid), as when no
+    /// measured speed or direction of travel is known.
     private func fix(
         _ lat: Double, _ lon: Double, after seconds: TimeInterval = 600,
-        speed: Double = -1, speedAccuracy: Double = -1
+        speed: Double = -1, speedAccuracy: Double = -1, course: Double = -1, courseAccuracy: Double = -1
     ) -> CLLocation {
         clock += seconds
         return CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-            altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: -1, courseAccuracy: -1,
+            altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: course, courseAccuracy: courseAccuracy,
             speed: speed, speedAccuracy: speedAccuracy, timestamp: clock)
     }
 
@@ -547,7 +557,111 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertTrue(guidance.arrivalHandled, "arrives back at the start")
     }
 
+    /// The out-and-back route used by the #46 tests: east 556 m, then back west to the start.
+    private let outAndBack = [
+        CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        CLLocationCoordinate2D(latitude: 0, longitude: 0.005),
+        CLLocationCoordinate2D(latitude: 0, longitude: 0),
+    ]
+
+    /// Guidance started while walking the return leg of an out-and-back (#46): the westward course
+    /// puts the fix on the return leg, the gate confirms the jump, and the route finishes.
+    func testOutAndBackStartedOnReturnLegFollowsCourse() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
+        for _ in 1...3 { guidance.updateLocation(fix(0, 0.0025, after: 1, course: 270, courseAccuracy: 10)) }
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0.75, accuracy: 0.01, "on the return leg")
+        XCTAssertEqual(guidance.currentInstruction?.direction, .arrive)
+
+        guidance.updateLocation(fix(0, 0.0026, after: 5, course: 90, courseAccuracy: 10))
+        XCTAssertEqual(guidance.progress, 0.74, accuracy: 0.01, "a step back stays on the return leg")
+
+        guidance.updateLocation(fix(0, 0.0001, course: 270, courseAccuracy: 10))
+        XCTAssertTrue(guidance.arrivalHandled, "arrives back at the start")
+    }
+
+    /// Once the leg is chosen, turning back briefly on the outbound leg does not jump guidance to
+    /// the return leg and past the u-turn: the course picks the leg only at the start (#46).
+    func testOutAndBackTurnBackMidOutboundStaysOnOutboundLeg() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
+        guidance.updateLocation(fix(0, 0.0005, course: 90, courseAccuracy: 10))
+        guidance.updateLocation(fix(0, 0.001, after: 60, course: 90, courseAccuracy: 10))
+        for _ in 1...3 { guidance.updateLocation(fix(0, 0.00098, after: 5, course: 270, courseAccuracy: 10)) }
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0.10, accuracy: 0.01, "still on the outbound leg")
+        XCTAssertEqual(guidance.currentInstruction?.direction, .uTurn, "u-turn not skipped")
+    }
+
+    /// Guidance started standing still on the return leg lands on the outbound leg (no course to go
+    /// by), but switches to the return leg once the user walks and the course is known (#46).
+    func testOutAndBackRecoversReturnLegOnceMoving() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(outAndBack, middle: .uTurn))
+        for _ in 1...3 { guidance.updateLocation(fix(0, 0.0025, after: 1)) }
+        XCTAssertEqual(guidance.progress, 0.25, accuracy: 0.01, "no course: earliest leg")
+
+        for _ in 1...3 { guidance.updateLocation(fix(0, 0.0024, after: 5, course: 270, courseAccuracy: 10)) }
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 0.76, accuracy: 0.01, "switched to the return leg")
+    }
+
     // MARK: - RouteProjection (pure functions)
+
+    /// With a course, candidates pointing against it are skipped; without one, the high-water mark
+    /// alone decides (#46).
+    func testProjectSkipsCandidatesAgainstCourse() {
+        let cumulative = RouteProjection.cumulativeDistances(outAndBack)
+        let midpoint = CLLocationCoordinate2D(latitude: 0, longitude: 0.0025)
+        func along(_ course: CLLocationDirection?) -> Double? {
+            RouteProjection.project(midpoint, onto: outAndBack, cumulativeDistances: cumulative,
+                                    progressHighWaterMark: 0, course: course)?.distanceAlong
+        }
+        XCTAssertEqual(along(nil) ?? 0, 278, accuracy: 1)
+        XCTAssertEqual(along(90) ?? 0, 278, accuracy: 1, "heading east: outbound leg")
+        XCTAssertEqual(along(270) ?? 0, 834, accuracy: 1, "heading west: return leg")
+        XCTAssertEqual(along(225) ?? 0, 834, accuracy: 1, "within 90 degrees of west")
+    }
+
+    /// The course filter wraps around north: on a south-then-north out-and-back, a course of 350
+    /// or 10 degrees fits the northbound return leg.
+    func testProjectCourseWrapsAroundNorth() {
+        let route = [
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            CLLocationCoordinate2D(latitude: -0.005, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        ]
+        let cumulative = RouteProjection.cumulativeDistances(route)
+        func along(_ course: CLLocationDirection) -> Double? {
+            RouteProjection.project(CLLocationCoordinate2D(latitude: -0.0025, longitude: 0), onto: route,
+                                    cumulativeDistances: cumulative, progressHighWaterMark: 0,
+                                    course: course)?.distanceAlong
+        }
+        XCTAssertEqual(along(350) ?? 0, 834, accuracy: 1)
+        XCTAssertEqual(along(10) ?? 0, 834, accuracy: 1)
+        XCTAssertEqual(along(170) ?? 0, 278, accuracy: 1)
+    }
+
+    /// When no candidate fits the course (walking a one-leg route backwards), all stay candidates.
+    func testProjectKeepsCandidatesWhenNoneFitsCourse() {
+        let route = makeStraightRoute().coordinates
+        let result = RouteProjection.project(
+            CLLocationCoordinate2D(latitude: 0, longitude: 0.005), onto: route,
+            cumulativeDistances: RouteProjection.cumulativeDistances(route), progressHighWaterMark: 0,
+            course: 270)
+        XCTAssertEqual(result?.distanceAlong ?? 0, 556, accuracy: 1)
+    }
+
+    /// A course is trusted only when valid and accurate to 30 degrees or better.
+    func testTrustedCourse() {
+        XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0)), "invalid course")
+        XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: -1)))
+        XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: 31)))
+        XCTAssertNil(RouteProjection.trustedCourse(of: fix(0, 0, course: -1, courseAccuracy: 10)))
+        XCTAssertEqual(RouteProjection.trustedCourse(of: fix(0, 0, course: 0, courseAccuracy: 0)), 0)
+        XCTAssertEqual(RouteProjection.trustedCourse(of: fix(0, 0, course: 90, courseAccuracy: 30)), 90)
+    }
 
     /// Cumulative distances start at 0 and grow by each segment length; empty input gives [].
     func testCumulativeDistances() {
@@ -700,6 +814,37 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(gate.evaluate(stale, progressJump: 0), .recheck, "older than the last fix")
         XCTAssertFalse(gate.isRechecking)
         XCTAssertEqual(gate.evaluate(fix(0, 0.001, after: 1), progressJump: 100), .recheck, "100 > 1.8*1 + 15")
+    }
+
+    /// A fix more than 10 s old is stale; a current or future one is not (#47).
+    func testGateIsStale() {
+        let now = Date()
+        func fixAt(_ time: Date) -> CLLocation {
+            CLLocation(coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0), altitude: 0,
+                       horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: time)
+        }
+        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now), now: now))
+        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now - 10), now: now))
+        XCTAssertTrue(FixPlausibilityGate.isStale(fixAt(now - 10.1), now: now))
+        XCTAssertFalse(FixPlausibilityGate.isStale(fixAt(now + 5), now: now))
+    }
+
+    /// A cached fix minutes old, as CoreLocation delivers when updates start, is ignored: it moves
+    /// nothing and does not become the gate's reference fix (#47).
+    func testGuidanceIgnoresStaleCachedFix() {
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoutWithTurn())
+        guidance.updateLocation(CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0.005), altitude: 0,
+            horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: Date() - 300))
+        XCTAssertFalse(guidance.isRecheckingFix, "stale fix not even rechecked")
+        XCTAssertEqual(guidance.progress, 0)
+
+        // The first fresh fix is judged as a first fix: 15 m reachable, so a wild one is rechecked.
+        guidance.updateLocation(fix(0, 0, after: 1))
+        XCTAssertEqual(guidance.progress, 0)
+        guidance.updateLocation(fix(0.004, 0.005, after: 1))
+        XCTAssertTrue(guidance.isRecheckingFix, "wild fix rechecked, not passed by a stale reference")
     }
 
     /// Abandoning a recheck clears it, so the GPS burst can end when no fixes arrive.

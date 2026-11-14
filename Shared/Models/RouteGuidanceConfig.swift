@@ -50,6 +50,19 @@ enum RouteGuidanceConfig {
     /// ``RouteProjection`` picks between candidate segments. Hikers rarely walk a route backwards.
     static let projectionBacktrackPenalty: Double = 4.0
 
+    /// A fix's course is trusted for picking a route leg only when its `courseAccuracy` is this
+    /// good or better (degrees). See ``RouteProjection/trustedCourse(of:)``.
+    static let courseMaxAccuracyDegrees: Double = 30.0
+
+    /// ``RouteProjection`` skips a candidate segment that points more than this many degrees away
+    /// from the user's trusted course, unless that would skip every candidate. Puts a fix on the
+    /// return leg of an out-and-back route when the user is walking it (#46).
+    static let projectionMaxCourseDifferenceDegrees: Double = 90.0
+
+    /// Guidance ignores a GPS fix older than this many seconds. CoreLocation often delivers a cached
+    /// fix minutes old when updates start, which would skew ``FixPlausibilityGate``'s clock (#47).
+    static let maxFixAgeSeconds: TimeInterval = 10.0
+
     /// How many times the route's planned speed counts as still reachable when judging whether a
     /// GPS fix is plausible. See ``FixPlausibilityGate``.
     static let maxSpeedFactor: Double = 1.8
