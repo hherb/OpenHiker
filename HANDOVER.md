@@ -19,22 +19,31 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   watch, periodic route sync, and a watchOS toolbar below the map.
 - **Android:** phases 1–5 merged (PRs #14, #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
   history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change:
-  2026-11-14 (`RouteFollower` turn advance fix, 4 failing `:core` tests fixed).
-- **Last PRs:** #42 (2026-11-14, Android `RouteFollower` turn advance, `:core` tests green); #40 (2026-11-13,
-  project config, CI fix, session skills). This branch fixes #41: Apple route guidance now advances to the next
-  turn only once the turn is passed (shared `TurnInstructionProgress` in `Shared/Models/TurnInstruction.swift`),
-  and the arrival haptic fires once instead of on every GPS fix. Loop and out-and-back routes can still project a
-  fix onto the wrong leg; deferred: #44.
+  2026-11-14 (`RouteFollower` arrival gated on the last instruction, #44).
+- **Last PRs:** #43 (2026-11-14, #41: Apple guidance advances a turn only once passed, single arrival haptic);
+  #42 (2026-11-14, Android `RouteFollower` turn advance, `:core` tests green). This branch fixes #44: Apple
+  guidance places each fix with the shared `RouteProjection` (`Shared/Models/RouteProjection.swift`, iOS and
+  watchOS targets only). Among segments within 20 m of the nearest one or within the 50 m off-route threshold,
+  it picks the one that best fits the session's high-water mark of progress, so loop and out-and-back routes no
+  longer jump to the wrong leg. Android `RouteFollower` reports arrival only on the last instruction and once
+  the walked distance reaches the route's end, so a loop does not arrive at the trailhead.
+  The same branch adds `FixPlausibilityGate` (`Shared/Models/FixPlausibilityGate.swift`). A fix further ahead
+  than planned speed × 1.8 × elapsed time + 15 m is held back. The GPS switches to a best-accuracy burst
+  until two agreeing rechecks confirm the jump, or a disagreeing recheck drops it and is judged afresh. A fix
+  no newer than one already seen is ignored. A trusted measured (Doppler) speed raises the limit, so car or
+  bus travel is not held back. A recheck lasts at most 10 s, with a timer (restarted on every fix) for when no
+  fixes arrive, so guidance cannot freeze. Android port:
+  `docs/TODO/Android/gps-fix-plausibility.md`.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **33/33 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **54/54 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 318/318, `:app` green) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 321/321, `:app` green) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -51,7 +60,11 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - **Still to do:** run the iOS app once on a device to confirm the location and HealthKit permission prompts
   still appear. On the same run, check #41 on device: simulate a route with an Xcode GPX file on iPhone and
-  watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic.
+  watch, and feel for the direction haptic about 30 m before each turn and a single arrival haptic. Repeat
+  with a loop route and an out-and-back route (#44): no arrival at the start, arrival back at the trailhead. Watch
+  the GPS indicator for the recheck burst. Check that it ends within a few seconds and does not get stuck
+  on, which would drain the battery. Also log `speed` and `speedAccuracy` on the watch in low-power mode: the
+  measured-speed safeguard needs `speedAccuracy` ≤ 2 m/s to apply.
 
 ### CI
 

@@ -71,6 +71,16 @@ final class LocationManager: NSObject, ObservableObject {
         }
     }
 
+    /// While true, the GPS runs at best accuracy with no distance filter, overriding ``gpsMode``,
+    /// so route guidance can recheck a suspect fix within seconds. Track recording still applies
+    /// the mode's own distance filter to the points it stores.
+    var isFixRecheckActive = false {
+        didSet {
+            guard isFixRecheckActive != oldValue else { return }
+            updateLocationManagerSettings()
+        }
+    }
+
     // MARK: - GPS Modes
 
     /// Defines the GPS accuracy presets available for hiking.
@@ -138,10 +148,11 @@ final class LocationManager: NSObject, ObservableObject {
         updateLocationManagerSettings()
     }
 
-    /// Applies the current GPS mode's accuracy and distance filter settings.
+    /// Applies the current GPS mode's accuracy and distance filter settings, or best accuracy with
+    /// no distance filter while ``isFixRecheckActive``.
     private func updateLocationManagerSettings() {
-        locationManager.desiredAccuracy = gpsMode.desiredAccuracy
-        locationManager.distanceFilter = gpsMode.distanceFilter
+        locationManager.desiredAccuracy = isFixRecheckActive ? kCLLocationAccuracyBest : gpsMode.desiredAccuracy
+        locationManager.distanceFilter = isFixRecheckActive ? kCLDistanceFilterNone : gpsMode.distanceFilter
     }
 
     // MARK: - Public Methods
@@ -233,6 +244,7 @@ final class LocationManager: NSObject, ObservableObject {
     /// Reduces accuracy and increases distance filter to minimize power consumption.
     /// The track is still recorded, but with coarser resolution.
     func switchToLowPowerMode() {
+        isFixRecheckActive = false // Low battery outranks a quick recheck.
         gpsMode = .lowPower
         print("Switched GPS to low-power mode for battery conservation")
     }

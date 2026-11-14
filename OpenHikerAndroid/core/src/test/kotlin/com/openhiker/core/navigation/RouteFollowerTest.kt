@@ -185,6 +185,49 @@ class RouteFollowerTest {
         assertTrue("isApproachingTurn should also be true when at turn", state.isApproachingTurn)
     }
 
+    // ── Loop routes (#44) ─────────────────────────────────────────
+
+    /** A loop out to [routeMid] and back to [routeStart]: the destination is the trailhead. */
+    private val loopCoordinates = listOf(routeStart, routeMid, routeStart)
+
+    /** START, U_TURN at [routeMid], ARRIVE back at [routeStart]. */
+    private val loopInstructions = listOf(
+        instructions[0],
+        instructions[1].copy(direction = TurnDirection.U_TURN, description = "Turn around"),
+        instructions[2].copy(
+            coordinate = routeStart,
+            distanceFromPrevious = distToMid,
+            cumulativeDistance = distToMid * 2
+        )
+    )
+
+    @Test
+    fun `loop route does not arrive at the trailhead before it is walked`() {
+        val follower = RouteFollower(loopCoordinates, loopInstructions, distToMid * 2)
+        val state = follower.update(routeStart.latitude, routeStart.longitude, 0.0)
+
+        assertFalse("Must not arrive at the start of a loop", state.hasArrived)
+        assertEquals(TurnDirection.U_TURN, state.currentInstruction?.direction)
+    }
+
+    @Test
+    fun `loop route arrives back at the trailhead once walked`() {
+        val follower = RouteFollower(loopCoordinates, loopInstructions, distToMid * 2)
+        val state = follower.update(routeStart.latitude, routeStart.longitude, distToMid * 2)
+
+        assertTrue("Should arrive back at the trailhead", state.hasArrived)
+    }
+
+    @Test
+    fun `loop route with no turn between start and arrive does not arrive at the trailhead`() {
+        val follower = RouteFollower(
+            loopCoordinates, listOf(loopInstructions[0], loopInstructions[2]), distToMid * 2
+        )
+        val state = follower.update(routeStart.latitude, routeStart.longitude, 0.0)
+
+        assertFalse("Must not arrive at the start of a loop", state.hasArrived)
+    }
+
     // ── Empty inputs ──────────────────────────────────────────────
 
     @Test

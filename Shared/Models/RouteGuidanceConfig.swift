@@ -40,4 +40,32 @@ enum RouteGuidanceConfig {
 
     /// Distance in metres from the final destination to trigger "arrived" notification.
     static let arrivedDistanceMetres: Double = 30.0
+
+    /// How much further than the nearest route segment (in metres) another segment may be and
+    /// still be considered for a GPS fix. Covers GPS error, so a loop's start and end, or the two
+    /// legs of an out-and-back, both count. See ``RouteProjection``.
+    static let projectionCandidateToleranceMetres: Double = 20.0
+
+    /// How many times as much a metre backwards along the route costs as a metre forwards when
+    /// ``RouteProjection`` picks between candidate segments. Hikers rarely walk a route backwards.
+    static let projectionBacktrackPenalty: Double = 4.0
+
+    /// How many times the route's planned speed counts as still reachable when judging whether a
+    /// GPS fix is plausible. See ``FixPlausibilityGate``.
+    static let maxSpeedFactor: Double = 1.8
+
+    /// GPS noise allowance in metres: added to the reachable distance, and the radius within which
+    /// rechecks must agree with a suspect fix (plus any plausible movement since it).
+    static let certaintyRadiusMetres: Double = 15.0
+
+    /// How many agreeing rechecks a suspect fix needs before it is accepted.
+    static let recheckConfirmationsRequired: Int = 2
+
+    /// A GPS fix's Doppler-measured speed is trusted for the plausibility check only when its
+    /// `speedAccuracy` is this good or better (metres per second).
+    static let measuredSpeedMaxAccuracyMetresPerSecond: Double = 2.0
+
+    /// The longest a recheck burst may last, in seconds. After that the next fix is accepted as it
+    /// is, or, if no fix arrives, the recheck is abandoned, so guidance cannot stay frozen.
+    static let maxRecheckDurationSeconds: TimeInterval = 10.0
 }

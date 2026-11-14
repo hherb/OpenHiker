@@ -149,6 +149,8 @@ struct MapView: View {
             configureLowBatteryCallback()
         }
         .onDisappear {
+            // Nothing observes the recheck while the view is gone; don't leave the GPS in burst mode.
+            locationManager.isFixRecheckActive = false
             stopAutoSaveTimer()
             autoRecenterTimer?.invalidate()
             autoRecenterTimer = nil
@@ -156,6 +158,9 @@ struct MapView: View {
             // unless a hike is being recorded (stopLocationUpdates is a no-op
             // when isTracking is true).
             locationManager.stopLocationUpdates()
+        }
+        .onChange(of: routeGuidance.isRecheckingFix, initial: true) { _, rechecking in
+            locationManager.isFixRecheckActive = rechecking
         }
         .onChange(of: routeGuidance.isNavigating) { _, isNavigating in
             // Start continuous updates when navigation begins so the map follows

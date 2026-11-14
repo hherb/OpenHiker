@@ -302,6 +302,8 @@ struct iOSNavigationView: View {
                 autoSelectMapStyleIfNeeded()
             }
             .onDisappear {
+                // Nothing observes the recheck while the view is gone; don't leave the GPS in burst mode.
+                locationManager.isFixRecheckActive = false
                 if !locationManager.isTracking {
                     locationManager.stopLocationUpdates()
                 }
@@ -310,6 +312,9 @@ struct iOSNavigationView: View {
                 guard let location = newLocation else { return }
                 routeGuidance.updateLocation(location)
                 autoSelectMapStyleIfNeeded()
+            }
+            .onChange(of: routeGuidance.isRecheckingFix, initial: true) { _, rechecking in
+                locationManager.isFixRecheckActive = rechecking
             }
         }
     }

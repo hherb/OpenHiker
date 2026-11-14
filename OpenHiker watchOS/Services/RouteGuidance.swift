@@ -63,6 +63,10 @@ final class RouteGuidance: ObservableObject {
     /// from the nearest point on the route polyline.
     @Published var isOffRoute: Bool = false
 
+    /// Whether a suspect GPS fix is being rechecked. Observers should switch the GPS to fast,
+    /// high-accuracy updates while this is true. See ``FixPlausibilityGate``.
+    @Published private(set) var isRecheckingFix: Bool = false
+
     /// Whether active navigation is in progress.
     @Published var isNavigating: Bool = false
 
@@ -91,6 +95,16 @@ final class RouteGuidance: ObservableObject {
     /// Total length of the route polyline in metres.
     private var totalRouteDistance: Double = 0
 
+    /// The furthest distance along the route reached this session, in metres. Lets
+    /// ``RouteProjection`` pick the right leg of a loop or out-and-back route.
+    private var progressHighWaterMark: Double = 0
+
+    /// Holds back fixes that jump further along the route than the user could have walked.
+    private var plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: 0)
+
+    /// Abandons a recheck that gets no fixes in time, so the GPS cannot stay in burst mode.
+    private var recheckTimeout: Task<Void, Never>?
+
     // MARK: - Public API
 
     /// Starts active navigation along the given planned route.
@@ -110,8 +124,11 @@ final class RouteGuidance: ObservableObject {
         atTurnHapticFired = false
         arrivalHandled = false
 
-        // Precompute cumulative distances for the polyline
-        precomputeCumulativeDistances(route.coordinates)
+        cumulativeDistances = RouteProjection.cumulativeDistances(route.coordinates)
+        totalRouteDistance = cumulativeDistances.last ?? 0
+        progressHighWaterMark = 0
+        plausibilityGate = FixPlausibilityGate(speedMetresPerSecond: FixPlausibilityGate.plannedSpeed(for: route))
+        syncRecheckState()
 
         // Set initial instruction
         if !route.turnInstructions.isEmpty {
@@ -139,6 +156,9 @@ final class RouteGuidance: ObservableObject {
         currentInstructionIndex = 0
         cumulativeDistances = []
         totalRouteDistance = 0
+        progressHighWaterMark = 0
+        plausibilityGate.abandonRecheck()
+        syncRecheckState()
 
         print("Route guidance stopped")
     }
@@ -159,20 +179,26 @@ final class RouteGuidance: ObservableObject {
               let route = activeRoute,
               !route.coordinates.isEmpty else { return }
 
-        let userCoord = location.coordinate
+        // 1. Find the point on the route, keeping continuity with progress so far (#44)
+        guard let closest = RouteProjection.project(
+            location.coordinate,
+            onto: route.coordinates,
+            cumulativeDistances: cumulativeDistances,
+            progressHighWaterMark: progressHighWaterMark
+        ) else { return }
 
-        // 1. Find closest point on route
-        let closest = closestPointOnRoute(from: userCoord, route: route.coordinates)
-        let distanceFromRoute = haversineDistance(
-            lat1: userCoord.latitude, lon1: userCoord.longitude,
-            lat2: closest.point.latitude, lon2: closest.point.longitude
-        )
+        // Hold back a fix further ahead than the user could have walked until rechecks confirm it.
+        let decision = plausibilityGate.evaluate(location, progressJump: closest.distanceAlong - progressHighWaterMark)
+        syncRecheckState()
+        guard decision == .accept else { return }
+
+        let distanceAlongRoute = closest.distanceAlong
+        progressHighWaterMark = max(progressHighWaterMark, distanceAlongRoute)
 
         // 2. Off-route detection
-        updateOffRouteStatus(distanceFromRoute: distanceFromRoute)
+        updateOffRouteStatus(distanceFromRoute: closest.distanceFromRoute)
 
         // 3. Progress and remaining distance
-        let distanceAlongRoute = closest.distanceAlong
         progress = totalRouteDistance > 0 ? min(1.0, distanceAlongRoute / totalRouteDistance) : 0
         remainingDistance = max(0, totalRouteDistance - distanceAlongRoute)
 
@@ -188,135 +214,25 @@ final class RouteGuidance: ObservableObject {
         checkHapticTriggers(distanceAlongRoute: distanceAlongRoute)
     }
 
-    // MARK: - Position on Route
-
-    /// Finds the closest point on a polyline to a given coordinate.
-    ///
-    /// For each segment of the polyline, projects the coordinate onto the segment
-    /// and finds the minimum distance. Returns the closest point, the segment index,
-    /// and the distance along the polyline from the start to that point.
-    ///
-    /// - Parameters:
-    ///   - coordinate: The user's current position.
-    ///   - route: The polyline coordinates.
-    /// - Returns: A tuple of (closest point, segment index, distance along route).
-    func closestPointOnRoute(
-        from coordinate: CLLocationCoordinate2D,
-        route: [CLLocationCoordinate2D]
-    ) -> (point: CLLocationCoordinate2D, segment: Int, distanceAlong: Double) {
-        guard route.count >= 2 else {
-            let point = route.first ?? coordinate
-            return (point: point, segment: 0, distanceAlong: 0)
-        }
-
-        var bestPoint = route[0]
-        var bestSegment = 0
-        var bestDistance = Double.infinity
-        var bestDistanceAlong: Double = 0
-
-        for i in 0..<(route.count - 1) {
-            let segStart = route[i]
-            let segEnd = route[i + 1]
-
-            let projected = projectPointOntoSegment(
-                point: coordinate,
-                segStart: segStart,
-                segEnd: segEnd
-            )
-
-            let dist = haversineDistance(
-                lat1: coordinate.latitude, lon1: coordinate.longitude,
-                lat2: projected.point.latitude, lon2: projected.point.longitude
-            )
-
-            if dist < bestDistance {
-                bestDistance = dist
-                bestPoint = projected.point
-                bestSegment = i
-
-                // Distance along = distance to segment start + fraction of segment
-                let segLength = cumulativeDistanceForSegment(i)
-                bestDistanceAlong = (cumulativeDistances.count > i ? cumulativeDistances[i] : 0)
-                    + projected.fraction * segLength
-            }
-        }
-
-        return (point: bestPoint, segment: bestSegment, distanceAlong: bestDistanceAlong)
-    }
-
     // MARK: - Private Helpers
 
-    /// Precomputes cumulative distances along the route polyline.
+    /// Publishes the gate's recheck state and restarts the recheck timeout.
     ///
-    /// - Parameter coordinates: The route polyline coordinates.
-    private func precomputeCumulativeDistances(_ coordinates: [CLLocationCoordinate2D]) {
-        cumulativeDistances = [0]
-        var cumulative: Double = 0
-
-        for i in 1..<coordinates.count {
-            let dist = haversineDistance(
-                lat1: coordinates[i - 1].latitude, lon1: coordinates[i - 1].longitude,
-                lat2: coordinates[i].latitude, lon2: coordinates[i].longitude
-            )
-            cumulative += dist
-            cumulativeDistances.append(cumulative)
+    /// Called after every fix, so the timeout fires only when no fix arrives for
+    /// ``RouteGuidanceConfig/maxRecheckDurationSeconds``; while fixes arrive, the gate's own cap
+    /// ends a recheck.
+    private func syncRecheckState() {
+        isRecheckingFix = plausibilityGate.isRechecking
+        recheckTimeout?.cancel()
+        recheckTimeout = nil
+        guard isRecheckingFix else { return }
+        recheckTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(RouteGuidanceConfig.maxRecheckDurationSeconds))
+            guard !Task.isCancelled, let self else { return }
+            print("Route guidance: no GPS fix during recheck; ending the GPS burst")
+            self.plausibilityGate.abandonRecheck()
+            self.syncRecheckState()
         }
-
-        totalRouteDistance = cumulative
-    }
-
-    /// Returns the length of a single polyline segment.
-    ///
-    /// - Parameter index: The segment index (0-based, from coordinate[index] to coordinate[index+1]).
-    /// - Returns: The segment length in metres.
-    private func cumulativeDistanceForSegment(_ index: Int) -> Double {
-        guard index + 1 < cumulativeDistances.count else { return 0 }
-        return cumulativeDistances[index + 1] - cumulativeDistances[index]
-    }
-
-    /// Projects a point onto a line segment, returning the closest point and its fraction along the segment.
-    ///
-    /// Uses a simplified planar projection (adequate for short hiking distances).
-    ///
-    /// - Parameters:
-    ///   - point: The coordinate to project.
-    ///   - segStart: The segment start coordinate.
-    ///   - segEnd: The segment end coordinate.
-    /// - Returns: The projected point and the fraction (0-1) along the segment.
-    private func projectPointOntoSegment(
-        point: CLLocationCoordinate2D,
-        segStart: CLLocationCoordinate2D,
-        segEnd: CLLocationCoordinate2D
-    ) -> (point: CLLocationCoordinate2D, fraction: Double) {
-        // Convert to a local planar coordinate system for projection. Longitude
-        // degrees are scaled by cos(latitude) so 1 unit east ~= 1 unit north in
-        // metres; without this, the fraction is computed in a distorted space and
-        // distance-along-route is skewed on diagonal segments (the error grows with
-        // latitude, e.g. ~0.68x at 47 degrees).
-        let lonScale = cos(segStart.latitude * .pi / 180)
-        let dx = (segEnd.longitude - segStart.longitude) * lonScale
-        let dy = segEnd.latitude - segStart.latitude
-        let px = (point.longitude - segStart.longitude) * lonScale
-        let py = point.latitude - segStart.latitude
-
-        let segLengthSquared = dx * dx + dy * dy
-
-        guard segLengthSquared > 0 else {
-            return (point: segStart, fraction: 0)
-        }
-
-        // Fraction along the segment (clamped to 0-1)
-        let t = max(0, min(1, (px * dx + py * dy) / segLengthSquared))
-
-        // Interpolate the position with the original (unscaled) coordinates; the
-        // fraction t is metric-agnostic, so linear interpolation in lat/lon is exact.
-        let projectedLat = segStart.latitude + t * (segEnd.latitude - segStart.latitude)
-        let projectedLon = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
-
-        return (
-            point: CLLocationCoordinate2D(latitude: projectedLat, longitude: projectedLon),
-            fraction: t
-        )
     }
 
     /// Updates the off-route flag and triggers/clears haptic feedback.
