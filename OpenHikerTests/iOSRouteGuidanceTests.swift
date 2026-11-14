@@ -31,11 +31,16 @@ final class iOSRouteGuidanceTests: XCTestCase {
     /// stale.
     private var clock = Date()
 
+    /// Simulated monotonic time: `fix(_:_:after:)` advances it with ``clock``, but a simulated
+    /// device clock change (moving ``clock`` alone) does not.
+    private var monotonicClock: TimeInterval = 0
+
     /// Restarts the clock per test: XCTest builds every test instance before running any, so the
     /// property initialiser alone would let later tests' fixes go stale.
     override func setUp() {
         super.setUp()
         clock = Date()
+        monotonicClock = 0
     }
 
     /// A guidance whose current time is the test clock, so fixes from `fix(_:_:after:)` are never
@@ -43,6 +48,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
     private func makeGuidance() -> iOSRouteGuidance {
         let guidance = iOSRouteGuidance()
         guidance.currentDate = { [unowned self] in self.clock }
+        guidance.currentMonotonicTime = { [unowned self] in self.monotonicClock }
         return guidance
     }
 
@@ -55,6 +61,7 @@ final class iOSRouteGuidanceTests: XCTestCase {
         speed: Double = -1, speedAccuracy: Double = -1, course: Double = -1, courseAccuracy: Double = -1
     ) -> CLLocation {
         clock += seconds
+        monotonicClock += seconds
         return CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
             altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: course, courseAccuracy: courseAccuracy,
@@ -706,7 +713,9 @@ final class iOSRouteGuidanceTests: XCTestCase {
     // MARK: - FixPlausibilityGate
 
     /// 1 m/s, so the reachable distance is 1.8 m per second plus the 15 m certainty radius.
-    private func makeGate() -> FixPlausibilityGate { FixPlausibilityGate(speedMetresPerSecond: 1) }
+    private func makeGate() -> FixPlausibilityGate {
+        FixPlausibilityGate(speedMetresPerSecond: 1, monotonicClock: { [unowned self] in self.monotonicClock })
+    }
 
     /// A forward step within the reachable distance is accepted at once.
     func testGateAcceptsPlausibleFix() {
@@ -855,6 +864,69 @@ final class iOSRouteGuidanceTests: XCTestCase {
         XCTAssertEqual(gate.evaluate(ahead, progressJump: 0, now: clock - 10.1), .accept, "over 10 s: restart")
     }
 
+    /// After the device clock jumps forward an hour, a wild fix is still rechecked: no time really
+    /// passed, so the hour since the last accepted fix does not count. A second jump during the
+    /// recheck restarts it again rather than tripping the 10 s recheck cap (#53).
+    func testGateRechecksWildFixAfterForwardClockJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck,
+                       "restarted: 1000 > 15, not judged on an hour's walk")
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.02, after: 1), progressJump: 2000, now: clock), .recheck,
+                       "a second jump restarts the gate again, so the first recheck's cap never fires")
+        XCTAssertTrue(gate.isRechecking)
+    }
+
+    /// After a forward clock jump the gate recovers: a rechecked fix is confirmed by agreeing fixes
+    /// once the clock runs normally again (#53).
+    func testGateConfirmsAfterForwardClockJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck)
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .accept,
+                       "two agreeing fixes confirm the suspect")
+        XCTAssertFalse(gate.isRechecking)
+    }
+
+    /// A clock set back, then corrected forward (as automatic time sync does), restarts the gate
+    /// both times: the backward restart still records the monotonic time (#51, #53).
+    func testGateRestartsOnClockCorrectionAfterBackwardJump() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock -= 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 1), progressJump: 0, now: clock), .accept,
+                       "backward restart")
+        clock += 3600
+        XCTAssertEqual(gate.evaluate(fix(0, 0.01, after: 1), progressJump: 1000, now: clock), .recheck,
+                       "forward correction restarts too: not judged on an hour's walk")
+    }
+
+    /// The default monotonic clock counts in seconds, not milliseconds or nanoseconds.
+    func testMonotonicTimeCountsSeconds() {
+        let start = FixPlausibilityGate.monotonicTime()
+        Thread.sleep(forTimeInterval: 0.2)
+        let elapsed = FixPlausibilityGate.monotonicTime() - start
+        XCTAssertGreaterThanOrEqual(elapsed, 0.19)
+        XCTAssertLessThan(elapsed, 5, "seconds, not a smaller unit")
+    }
+
+    /// Fix timestamps may outrun monotonic time by up to the 10 s age plus the 10 s lead that
+    /// `isStale` allows, so only a larger step restarts the gate (#53).
+    func testGateForwardClockJumpThreshold() {
+        var gate = makeGate()
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 0), progressJump: 0, now: clock), .accept)
+        clock += 19.9
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 1), progressJump: 50, now: clock), .accept,
+                       "19.9 s step: no restart, 50 <= 1.8*20.9 + 15")
+        clock += 20.1
+        XCTAssertEqual(gate.evaluate(fix(0, 0, after: 1), progressJump: 50, now: clock), .recheck,
+                       "20.1 s step: restart, 50 > 15")
+    }
+
     /// A fix more than 10 s old (#47) or more than 10 s in the future (#49) is stale.
     func testGateIsStale() {
         let now = Date()
@@ -892,6 +964,27 @@ final class iOSRouteGuidanceTests: XCTestCase {
         let guidance = makeGuidance()
         startAtTrailhead(guidance, makeRoutWithTurn())
         clock -= 60
+        guidance.updateLocation(fix(0, 0.0001, after: 1)) // ~11 m on, within the 15 m first-fix radius
+        XCTAssertFalse(guidance.isRecheckingFix)
+        XCTAssertEqual(guidance.progress, 11.0 / 1112, accuracy: 0.005, "fix after the clock jump is used")
+    }
+
+    /// After the device clock jumps forward an hour, a wild fix far along the route is rechecked
+    /// rather than taken as following an hour-long GPS gap (#53).
+    func testGuidanceRechecksWildFixAfterForwardClockJump() {
+        let guidance = makeGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        clock += 3600
+        guidance.updateLocation(fix(0.004, 0.005, after: 1)) // on the second leg, ~1000 m on
+        XCTAssertTrue(guidance.isRecheckingFix, "wild fix rechecked after the clock jump")
+        XCTAssertEqual(guidance.progress, 0)
+    }
+
+    /// After the device clock jumps forward an hour, a nearby fix is still used at once (#53).
+    func testGuidanceSurvivesForwardClockJump() {
+        let guidance = makeGuidance()
+        startAtTrailhead(guidance, makeRoutWithTurn())
+        clock += 3600
         guidance.updateLocation(fix(0, 0.0001, after: 1)) // ~11 m on, within the 15 m first-fix radius
         XCTAssertFalse(guidance.isRecheckingFix)
         XCTAssertEqual(guidance.progress, 11.0 / 1112, accuracy: 0.005, "fix after the clock jump is used")
