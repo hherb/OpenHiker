@@ -18,10 +18,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   sync, the native macOS app). Since then: P2P sharing, mapless trail display, on-demand tile requests from the
   watch, periodic route sync, and a watchOS toolbar below the map.
 - **Android:** phases 1–5 merged (PRs #14, #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
-  history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change: `9cb9251`
-  (2026-02-12).
-- **Last code PR overall:** #39 (2026-06-16), Apple and `Shared/` bug fixes from review (crashes, GPS and SpO2
-  accuracy, throttling, rate limiting).
+  history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change:
+  2026-11-14 (`RouteFollower` turn advance fix, 4 failing `:core` tests fixed).
+- **Last PRs:** #40 (2026-11-13, project config, CI fix, session skills); last code PR #39 (2026-06-16), Apple
+  and `Shared/` bug fixes from review (crashes, GPS and SpO2 accuracy, throttling, rate limiting).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
@@ -31,7 +31,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **25/25 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | `:app` passes; **`:core` 318 run, 4 fail** |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 318/318, `:app` green) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -39,37 +39,15 @@ runtimes: `iPhone 17,OS=27.0` and `Apple Watch Ultra 3 (49mm),OS=26.5` (watchOS 
 
 ## In flight
 
-### Project config changes (PR from `chore/session-skills-handover`)
+### Device check after PR #40 (merged 2026-11-13)
 
-These were staged before the 2026-11-14 session, never committed, and are now in that PR's second commit:
+PR #40 moved the Info.plist usage strings into `INFOPLIST_KEY_*` build settings, dropped the unused iOS
+background modes (`processing`, `fetch`) and the watchOS HealthKit background-delivery entitlement, and shared
+all three Apple schemes. Add those capabilities back only together with code that uses them. The HealthKit
+and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not the `1B…` convention; harmless.
 
-- **Info.plist keys moved to build settings.** Location and HealthKit usage strings,
-  `LSSupportsOpeningDocumentsInPlace` and `WKWatchOnly` went from `Info.plist` into `INFOPLIST_KEY_*` in
-  `project.pbxproj`. Most of the watchOS `Info.plist` is gone. The HealthKit and WeatherKit framework build
-  files got Xcode-generated IDs (`6F81…`), which breaks the `1B…` convention in CLAUDE.md. That is harmless
-  but inconsistent.
-- **Removed in finalcheck:** iOS background modes `processing` and `fetch`, and the watchOS entitlement
-  `com.apple.developer.healthkit.background-delivery`. Nothing used them: no BGTaskScheduler code, no
-  `BGTaskSchedulerPermittedIdentifiers` (an App Store upload fails without it), no `enableBackgroundDelivery`.
-  Add them back together with the code that needs them.
-- **Shared schemes** `OpenHiker`, `OpenHiker Watch App` and (added in finalcheck) `OpenHiker macOS`.
-- `Screenshots/` (9 iPhone PNGs, about 14 MB) and `report.md` (code statistics, 2026-02-10).
-- **Verify:** all three Apple gates above pass with these changes staged (checked 2026-11-14). Also run the iOS
-  app once on a device to confirm the location and HealthKit permission prompts still appear.
-
-### Android `:core` test failures (pre-existing)
-
-Found 2026-11-14. These are not tracked in an issue yet:
-
-- `TileCoordinateTest` › *fromLatLon converts Innsbruck … zoom 14*: expected x ≈ 8725, got 8710. The code
-  is right: floor((11.39 + 180) / 360 · 2^14) = 8710. Fix the test's expectation.
-- `RouteFollowerTest` › *approaching turn …* (line 158) and *isAtTurn …* (line 184): the thresholds and the
-  test geometry disagree.
-- `OsmXmlParserTest` › *parse handles long way with many nodes* (line 266): `SAXParseException` "processing
-  instruction target matching [xX][mM][lL] is not allowed". The test builds XML with leading whitespace before
-  `<?xml`. Most likely a `trimIndent()` or raw-string problem in the test, not in the parser.
-
-**Verify:** `cd OpenHikerAndroid && ./gradlew :core:test --rerun-tasks`.
+- **Still to do:** run the iOS app once on a device to confirm the location and HealthKit permission prompts
+  still appear.
 
 ### CI
 
@@ -84,6 +62,9 @@ Found 2026-11-14. These are not tracked in an issue yet:
 
 - #23: Android service and ViewModel test coverage.
 - #30: missing unit tests for public functions from PR #26 (Android phase 3).
+- #41: Apple route guidance advances to the next turn 30 m early, so the at-turn direction haptic never
+  fires for the turn being approached (iOS and watchOS). Android had the same bug in `RouteFollower`, fixed
+  2026-11-14.
 
 ## Known stubs
 

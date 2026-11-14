@@ -10,8 +10,8 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 
 | Item | What | Where |
 |---|---|---|
-| **Android tests green** | Fix the 4 failing `:core` tests (see HANDOVER) | `OpenHikerAndroid/core/src/test` |
 | **Android test coverage** | Service and ViewModel tests; tests for phase 3's public functions | #23, #30 |
+| **Turn haptics (Apple)** | Fix the early instruction advance; share a tested pure function | #41 |
 | **CI coverage** | Add jobs that build watchOS and macOS; add a `./gradlew test` job for Android | `.github/workflows/` |
 | **README** | Bring the Android status table and "What's Next" up to date | `README.md` |
 

@@ -261,7 +261,7 @@ class OsmXmlParserTest {
                 <tag k="highway" v="track"/>
               </way>
             </osm>
-        """.trimIndent()
+        """.trim() // trimIndent() is a no-op here: the interpolated lines have no indent
 
         val data = OsmXmlParser.parse(xml)
         assertEquals(100, data.nodes.size)
