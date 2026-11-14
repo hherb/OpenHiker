@@ -34,6 +34,11 @@ no jump filter. A wild fix inflates the walked distance, and turns are skipped.
 - **Future-dated fixes:** a fix more than `MAX_FIX_LEAD_SECONDS` (10) after the current time is also ignored
   (#49). Stored as the newest fix, it would make every real fix look out of order until the clock caught
   up, and guidance would freeze. On Android, compare `Location.time` with `System.currentTimeMillis()`.
+- **Backward clock jump:** if the newest fix the gate has seen is more than `MAX_FIX_LEAD_SECONDS` after the
+  current time, the device clock has moved back (a manual change or an NTP correction). The gate then
+  forgets its newest-fix time, last accepted time and any recheck, and judges the next fix as a first fix
+  (#51). Otherwise every later fix would look out of order and guidance would freeze for the size of the
+  jump. Pass the current time into the gate's evaluate function (Apple: `now:`).
 - **First fix:** on Apple a first fix more than 15 m along the route is rechecked. Android starts with a
   walked distance of 0, so the first fix is the reference and is accepted.
 

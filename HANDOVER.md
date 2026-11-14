@@ -33,19 +33,20 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     with a best-accuracy GPS burst until two agreeing rechecks confirm it. A trusted Doppler speed raises
     the limit, and a recheck lasts at most 10 s (PR #45). Guidance drops fixes older than 10 s, such as
     CoreLocation's cached first fix (#47, PR #48), and fixes more than 10 s in the future, which would
-    freeze the gate until the clock caught up (#49, this branch). `iOSRouteGuidance.currentDate` is the
+    freeze the gate until the clock caught up (#49, PR #50). If the device clock jumps back mid-session,
+    the gate starts afresh as for a first fix (#51, this branch). `iOSRouteGuidance.currentDate` is the
     clock seam the tests use for this.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
     onto the route, so the leg choice does not apply there.
-- **Last PRs:** #48 (2026-11-14, #46 and #47, guidance start), #45 (#44 and the plausibility gate),
-  #43 (#41, turn advance once passed).
+- **Last PRs:** #50 (2026-11-14, #49, future-dated fixes), #48 (#46 and #47, guidance start), #45 (#44
+  and the plausibility gate).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-14, Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **64/64 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **67/67 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 321/321, `:app` green) |
@@ -86,8 +87,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #30: missing unit tests for public functions from PR #26 (Android phase 3).
-- #51: a backward device clock jump during guidance freezes the plausibility gate (the case #49 does not
-  cover). The issue has a suggested fix and test.
+- #53: a forward device clock jump lets the next wild fix past the plausibility gate (found in the #52
+  review). The issue suggests a monotonic-clock fix and a test.
 
 ## Known stubs
 

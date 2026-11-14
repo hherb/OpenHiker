@@ -41,6 +41,9 @@ import CoreLocation
 ///   after that is accepted as it is; if no fix arrives for that long, the caller ends the
 ///   recheck with ``abandonRecheck()``.
 ///
+/// If the device clock jumps back mid-session, every fix would look older than the newest one
+/// seen. ``evaluate(_:progressJump:now:)`` detects that and starts afresh as for a first fix (#51).
+///
 /// While ``isRechecking`` is true, callers should switch the GPS to fast, high-accuracy updates
 /// so the rechecks arrive within seconds (see `isFixRecheckActive` on the location managers).
 ///
@@ -117,7 +120,7 @@ struct FixPlausibilityGate {
     /// Whether a fix's timestamp is too far from `now` for guidance to use: older than
     /// ``RouteGuidanceConfig/maxFixAgeSeconds`` (#47) or later than
     /// ``RouteGuidanceConfig/maxFixLeadSeconds`` (#49). Callers drop such fixes before
-    /// ``evaluate(_:progressJump:)``. A cached first fix would set the gate's clock minutes back,
+    /// ``evaluate(_:progressJump:now:)``. A cached first fix would set the gate's clock minutes back,
     /// and a future-dated fix would make every real fix look out of order until the clock caught up.
     /// Each rejected fix is logged, so a clock offset that drops every fix shows up in the logs.
     ///
@@ -152,8 +155,19 @@ struct FixPlausibilityGate {
     ///   - fix: The GPS fix (its `timestamp` is used for elapsed time).
     ///   - progressJump: How far the fix lies beyond the progress high-water mark, in metres
     ///     (`distanceAlong - highWaterMark`; zero or negative means no forward jump).
+    ///   - now: The current time. If the newest fix seen is more than
+    ///     ``RouteGuidanceConfig/maxFixLeadSeconds`` after it, the device clock has jumped back, and
+    ///     the gate starts afresh as for a first fix (#51).
     /// - Returns: ``Decision/accept`` to use the fix, ``Decision/recheck`` to ignore it for now.
-    mutating func evaluate(_ fix: CLLocation, progressJump: Double) -> Decision {
+    mutating func evaluate(_ fix: CLLocation, progressJump: Double, now: Date) -> Decision {
+        // After a backward clock jump every fix would look older than the stored newest one (#51).
+        if let newest = newestFixTime, newest.timeIntervalSince(now) > RouteGuidanceConfig.maxFixLeadSeconds {
+            print("Route guidance: clock moved back \(Int(newest.timeIntervalSince(now))) s; restarting fix checks")
+            newestFixTime = nil
+            lastAcceptedTime = nil
+            abandonRecheck()
+        }
+
         // A re-delivered or out-of-order fix would confirm a suspect by itself or rewind the clock.
         if let newest = newestFixTime, fix.timestamp <= newest { return .recheck }
         newestFixTime = fix.timestamp
@@ -189,8 +203,8 @@ struct FixPlausibilityGate {
 
     /// Clears any pending suspect and recheck. Callers use it when a recheck has had no fixes for
     /// ``RouteGuidanceConfig/maxRecheckDurationSeconds`` (so the GPS can leave burst mode) and
-    /// when navigation stops; the gate uses it after an accept. The next fix is judged against the
-    /// last accepted fix.
+    /// when navigation stops; the gate uses it after an accept and after a backward clock jump. The
+    /// next fix is judged against the last accepted fix.
     mutating func abandonRecheck() {
         suspect = nil
         confirmations = 0
