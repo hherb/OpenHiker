@@ -86,6 +86,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #30: missing unit tests for public functions from PR #26 (Android phase 3).
+- #51: a backward device clock jump during guidance freezes the plausibility gate (the case #49 does not
+  cover). The issue has a suggested fix and test.
 
 ## Known stubs
 
