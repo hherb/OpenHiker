@@ -87,18 +87,6 @@ class RouteFollower(
         val currentPos = Coordinate(latitude, longitude)
         val destination = routeCoordinates.last()
 
-        // Check arrival
-        val distToDestination = Haversine.distance(currentPos, destination)
-        if (distToDestination <= RouteGuidanceConfig.ARRIVED_DISTANCE_METRES) {
-            return NavigationState(
-                currentInstruction = instructions.lastOrNull(),
-                distanceToNextTurn = 0.0,
-                progress = 1.0f,
-                remainingDistance = 0.0,
-                hasArrived = true
-            )
-        }
-
         // Advance past every turn the user has already walked beyond. Judged by distance along the
         // route, not proximity, so a missed GPS fix near a turn (or starting away from the START
         // point) cannot leave the follower stuck; advancing only once passed keeps isAtTurn reachable.
@@ -106,6 +94,21 @@ class RouteFollower(
             cumulativeDistance >= instructions[currentInstructionIndex].cumulativeDistance
         ) {
             currentInstructionIndex++
+        }
+
+        // Arrival needs the last instruction too: on a loop or out-and-back route the destination is
+        // the trailhead, so being near it at the start must not count (#44).
+        val distToDestination = Haversine.distance(currentPos, destination)
+        if (currentInstructionIndex == instructions.size - 1 &&
+            distToDestination <= RouteGuidanceConfig.ARRIVED_DISTANCE_METRES
+        ) {
+            return NavigationState(
+                currentInstruction = instructions.lastOrNull(),
+                distanceToNextTurn = 0.0,
+                progress = 1.0f,
+                remainingDistance = 0.0,
+                hasArrived = true
+            )
         }
 
         val currentInstruction = instructions.getOrNull(currentInstructionIndex)

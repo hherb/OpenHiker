@@ -83,6 +83,10 @@ final class iOSRouteGuidance: ObservableObject {
     /// Total length of the route polyline in metres.
     private var totalRouteDistance: Double = 0
 
+    /// The furthest distance along the route reached this session, in metres. Lets
+    /// ``RouteProjection`` pick the right leg of a loop or out-and-back route.
+    private var progressHighWaterMark: Double = 0
+
     /// Haptic feedback generators for iPhone.
     private let impactGenerator = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactGenerator = UIImpactFeedbackGenerator(style: .heavy)
@@ -107,7 +111,9 @@ final class iOSRouteGuidance: ObservableObject {
         atTurnHapticFired = false
         arrivalHandled = false
 
-        precomputeCumulativeDistances(route.coordinates)
+        cumulativeDistances = RouteProjection.cumulativeDistances(route.coordinates)
+        totalRouteDistance = cumulativeDistances.last ?? 0
+        progressHighWaterMark = 0
 
         // Prepare haptic generators for low-latency feedback
         impactGenerator.prepare()
@@ -139,6 +145,7 @@ final class iOSRouteGuidance: ObservableObject {
         currentInstructionIndex = 0
         cumulativeDistances = []
         totalRouteDistance = 0
+        progressHighWaterMark = 0
 
         print("iOS route guidance stopped")
     }
@@ -159,20 +166,20 @@ final class iOSRouteGuidance: ObservableObject {
               let route = activeRoute,
               !route.coordinates.isEmpty else { return }
 
-        let userCoord = location.coordinate
-
-        // 1. Find closest point on route
-        let closest = closestPointOnRoute(from: userCoord, route: route.coordinates)
-        let distanceFromRoute = haversineDistance(
-            lat1: userCoord.latitude, lon1: userCoord.longitude,
-            lat2: closest.point.latitude, lon2: closest.point.longitude
-        )
+        // 1. Find the point on the route, keeping continuity with progress so far (#44)
+        guard let closest = RouteProjection.project(
+            location.coordinate,
+            onto: route.coordinates,
+            cumulativeDistances: cumulativeDistances,
+            progressHighWaterMark: progressHighWaterMark
+        ) else { return }
+        let distanceAlongRoute = closest.distanceAlong
+        progressHighWaterMark = max(progressHighWaterMark, distanceAlongRoute)
 
         // 2. Off-route detection
-        updateOffRouteStatus(distanceFromRoute: distanceFromRoute)
+        updateOffRouteStatus(distanceFromRoute: closest.distanceFromRoute)
 
         // 3. Progress and remaining distance
-        let distanceAlongRoute = closest.distanceAlong
         progress = totalRouteDistance > 0 ? min(1.0, distanceAlongRoute / totalRouteDistance) : 0
         remainingDistance = max(0, totalRouteDistance - distanceAlongRoute)
 
@@ -188,119 +195,7 @@ final class iOSRouteGuidance: ObservableObject {
         checkHapticTriggers(distanceAlongRoute: distanceAlongRoute)
     }
 
-    // MARK: - Position on Route
-
-    /// Finds the closest point on a polyline to a given coordinate.
-    ///
-    /// - Parameters:
-    ///   - coordinate: The user's current position.
-    ///   - route: The polyline coordinates.
-    /// - Returns: A tuple of (closest point, segment index, distance along route).
-    private func closestPointOnRoute(
-        from coordinate: CLLocationCoordinate2D,
-        route: [CLLocationCoordinate2D]
-    ) -> (point: CLLocationCoordinate2D, segment: Int, distanceAlong: Double) {
-        guard route.count >= 2 else {
-            let point = route.first ?? coordinate
-            return (point: point, segment: 0, distanceAlong: 0)
-        }
-
-        var bestPoint = route[0]
-        var bestSegment = 0
-        var bestDistance = Double.infinity
-        var bestDistanceAlong: Double = 0
-
-        for i in 0..<(route.count - 1) {
-            let segStart = route[i]
-            let segEnd = route[i + 1]
-
-            let projected = projectPointOntoSegment(
-                point: coordinate,
-                segStart: segStart,
-                segEnd: segEnd
-            )
-
-            let dist = haversineDistance(
-                lat1: coordinate.latitude, lon1: coordinate.longitude,
-                lat2: projected.point.latitude, lon2: projected.point.longitude
-            )
-
-            if dist < bestDistance {
-                bestDistance = dist
-                bestPoint = projected.point
-                bestSegment = i
-
-                let segLength = cumulativeDistanceForSegment(i)
-                bestDistanceAlong = (cumulativeDistances.count > i ? cumulativeDistances[i] : 0)
-                    + projected.fraction * segLength
-            }
-        }
-
-        return (point: bestPoint, segment: bestSegment, distanceAlong: bestDistanceAlong)
-    }
-
     // MARK: - Private Helpers
-
-    /// Precomputes cumulative distances along the route polyline.
-    private func precomputeCumulativeDistances(_ coordinates: [CLLocationCoordinate2D]) {
-        cumulativeDistances = [0]
-        var cumulative: Double = 0
-
-        for i in 1..<coordinates.count {
-            let dist = haversineDistance(
-                lat1: coordinates[i - 1].latitude, lon1: coordinates[i - 1].longitude,
-                lat2: coordinates[i].latitude, lon2: coordinates[i].longitude
-            )
-            cumulative += dist
-            cumulativeDistances.append(cumulative)
-        }
-
-        totalRouteDistance = cumulative
-    }
-
-    /// Returns the length of a single polyline segment.
-    private func cumulativeDistanceForSegment(_ index: Int) -> Double {
-        guard index + 1 < cumulativeDistances.count else { return 0 }
-        return cumulativeDistances[index + 1] - cumulativeDistances[index]
-    }
-
-    /// Projects a point onto a line segment, returning the closest point and its fraction.
-    ///
-    /// Uses a planar (Euclidean) approximation treating latitude/longitude as Cartesian
-    /// coordinates. This is accurate enough for hiking-scale segments (tens of metres)
-    /// at non-polar latitudes, but would need a proper geodesic projection for segments
-    /// spanning many kilometres or near the poles.
-    private func projectPointOntoSegment(
-        point: CLLocationCoordinate2D,
-        segStart: CLLocationCoordinate2D,
-        segEnd: CLLocationCoordinate2D
-    ) -> (point: CLLocationCoordinate2D, fraction: Double) {
-        // Longitude degrees are scaled by cos(latitude) so the projection is computed
-        // in an isotropic (metric) space; otherwise distance-along-route is skewed on
-        // diagonal segments, with the error growing toward higher latitudes.
-        let lonScale = cos(segStart.latitude * .pi / 180)
-        let dx = (segEnd.longitude - segStart.longitude) * lonScale
-        let dy = segEnd.latitude - segStart.latitude
-        let px = (point.longitude - segStart.longitude) * lonScale
-        let py = point.latitude - segStart.latitude
-
-        let segLengthSquared = dx * dx + dy * dy
-
-        guard segLengthSquared > 0 else {
-            return (point: segStart, fraction: 0)
-        }
-
-        let t = max(0, min(1, (px * dx + py * dy) / segLengthSquared))
-
-        // Interpolate with the original (unscaled) coordinates; t is metric-agnostic.
-        let projectedLat = segStart.latitude + t * (segEnd.latitude - segStart.latitude)
-        let projectedLon = segStart.longitude + t * (segEnd.longitude - segStart.longitude)
-
-        return (
-            point: CLLocationCoordinate2D(latitude: projectedLat, longitude: projectedLon),
-            fraction: t
-        )
-    }
 
     /// Updates the off-route flag and triggers/clears haptic feedback.
     private func updateOffRouteStatus(distanceFromRoute: Double) {

@@ -40,4 +40,13 @@ enum RouteGuidanceConfig {
 
     /// Distance in metres from the final destination to trigger "arrived" notification.
     static let arrivedDistanceMetres: Double = 30.0
+
+    /// How much further than the nearest route segment (in metres) another segment may be and
+    /// still be considered for a GPS fix. Covers GPS error, so a loop's start and end, or the two
+    /// legs of an out-and-back, both count. See ``RouteProjection``.
+    static let projectionCandidateToleranceMetres: Double = 20.0
+
+    /// How much more a metre backwards along the route costs than a metre forwards when
+    /// ``RouteProjection`` picks between candidate segments. Hikers rarely walk a route backwards.
+    static let projectionBacktrackPenalty: Double = 4.0
 }

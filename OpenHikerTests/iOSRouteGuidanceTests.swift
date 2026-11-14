@@ -391,4 +391,121 @@ final class iOSRouteGuidanceTests: XCTestCase {
 
         XCTAssertGreaterThan(distFar, distClose, "Distance should decrease as user approaches turn")
     }
+
+    // MARK: - Loop and Out-and-Back Routes (#44)
+
+    /// Builds a route through `points` with a turn instruction at every point: `.start` first,
+    /// `.arrive` last, and `middle` directions in between.
+    private func makeRoute(_ points: [CLLocationCoordinate2D], middle: TurnDirection) -> PlannedRoute {
+        let cumulative = RouteProjection.cumulativeDistances(points)
+        let instructions = points.indices.map { i in
+            TurnInstruction(
+                coordinate: points[i],
+                direction: i == 0 ? .start : (i == points.count - 1 ? .arrive : middle),
+                bearing: 0,
+                distanceFromPrevious: i == 0 ? 0 : cumulative[i] - cumulative[i - 1],
+                cumulativeDistance: cumulative[i],
+                trailName: nil,
+                description: "Step \(i)"
+            )
+        }
+        return PlannedRoute(
+            name: "Test", mode: .hiking, startCoordinate: points[0], endCoordinate: points[points.count - 1],
+            coordinates: points, turnInstructions: instructions, totalDistance: cumulative.last ?? 0,
+            estimatedDuration: 600, elevationGain: 0, elevationLoss: 0
+        )
+    }
+
+    /// Feeds fixes every tenth of a segment along `points`, skipping the very first point.
+    private func walk(_ guidance: iOSRouteGuidance, along points: [CLLocationCoordinate2D]) {
+        for i in 1..<points.count {
+            for step in 1...10 {
+                let t = Double(step) / 10
+                guidance.updateLocation(CLLocation(
+                    latitude: points[i - 1].latitude + t * (points[i].latitude - points[i - 1].latitude),
+                    longitude: points[i - 1].longitude + t * (points[i].longitude - points[i - 1].longitude)
+                ))
+            }
+        }
+    }
+
+    /// A square loop: the first fix near the trailhead is nearer the closing segment than the first
+    /// one, but must still count as the start, and arrival fires only back at the trailhead.
+    func testLoopRouteStartsAtStartAndArrivesAtEnd() {
+        let corners = [
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0.005),
+            CLLocationCoordinate2D(latitude: 0.005, longitude: 0.005),
+            CLLocationCoordinate2D(latitude: 0.005, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        ]
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(corners, middle: .left))
+
+        // ~11 m north of the trailhead, ~1 m east of it: nearest is the closing segment.
+        guidance.updateLocation(CLLocation(latitude: 0.0001, longitude: 0.00001))
+        XCTAssertFalse(guidance.arrivalHandled, "no arrival at the trailhead")
+        XCTAssertLessThan(guidance.progress, 0.05)
+        XCTAssertEqual(guidance.currentInstruction?.coordinate.longitude, 0.005, "heading for the first corner")
+
+        walk(guidance, along: corners)
+        XCTAssertTrue(guidance.arrivalHandled, "arrives back at the trailhead")
+        XCTAssertEqual(guidance.currentInstruction?.direction, .arrive)
+    }
+
+    /// An out-and-back route retraces the same trail: on the way back the fix lies on both legs,
+    /// and must be placed on the return leg so the route finishes.
+    func testOutAndBackRouteFollowsReturnLeg() {
+        let points = [
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0.005),
+            CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        ]
+        let guidance = iOSRouteGuidance()
+        guidance.start(route: makeRoute(points, middle: .uTurn))
+
+        walk(guidance, along: Array(points[0...1]))
+        XCTAssertEqual(guidance.currentInstruction?.direction, .arrive, "u-turn passed")
+
+        guidance.updateLocation(CLLocation(latitude: 0, longitude: 0.0025))
+        XCTAssertEqual(guidance.progress, 0.75, accuracy: 0.01, "on the return leg, not the outbound one")
+        XCTAssertFalse(guidance.arrivalHandled)
+
+        walk(guidance, along: Array(points[1...2]))
+        XCTAssertTrue(guidance.arrivalHandled, "arrives back at the start")
+    }
+
+    // MARK: - RouteProjection (pure functions)
+
+    /// Cumulative distances start at 0 and grow by each segment length; empty input gives [].
+    func testCumulativeDistances() {
+        XCTAssertEqual(RouteProjection.cumulativeDistances([]), [])
+        let d = RouteProjection.cumulativeDistances(makeRoutWithTurn().coordinates)
+        XCTAssertEqual(d.count, 3)
+        XCTAssertEqual(d[0], 0)
+        XCTAssertEqual(d[1], 556, accuracy: 1)
+        XCTAssertEqual(d[2], 1112, accuracy: 2)
+    }
+
+    /// An empty route has no projection; a one-point route projects onto that point.
+    func testProjectDegenerateRoutes() {
+        let fix = CLLocationCoordinate2D(latitude: 0.001, longitude: 0)
+        XCTAssertNil(RouteProjection.project(fix, onto: [], cumulativeDistances: [], progressHighWaterMark: 0))
+        let single = RouteProjection.project(
+            fix, onto: [CLLocationCoordinate2D(latitude: 0, longitude: 0)], cumulativeDistances: [0],
+            progressHighWaterMark: 0)
+        XCTAssertEqual(single?.distanceAlong, 0)
+        XCTAssertEqual(single?.distanceFromRoute ?? 0, 111, accuracy: 1)
+    }
+
+    /// With only one segment nearby, a walk back along the route is still followed: the high-water
+    /// mark breaks ties between legs, it does not pin the user to it.
+    func testProjectFollowsGenuineBacktrack() {
+        let route = makeRoutWithTurn().coordinates
+        let result = RouteProjection.project(
+            CLLocationCoordinate2D(latitude: 0, longitude: 0.001), onto: route,
+            cumulativeDistances: RouteProjection.cumulativeDistances(route), progressHighWaterMark: 1000)
+        XCTAssertEqual(result?.segment, 0)
+        XCTAssertEqual(result?.distanceAlong ?? 0, 111, accuracy: 1)
+    }
 }
