@@ -35,7 +35,7 @@ class SyncStateStoreTest {
 
     private var now = 1_000_000_000_000L
     private val file: File get() = File(folder.root, "sync_state.json")
-    private fun store() = SyncStateStore(file) { now }
+    private fun store() = SyncStateStore(file, { now }, logError = { _, _ -> })
 
     @Test
     fun `missing file loads a fresh state`() = runTest {
@@ -89,5 +89,15 @@ class SyncStateStoreTest {
         store.completeSync(emptySet(), lastSyncTimestamp = 42L)
         store.completeSync(emptySet(), lastSyncTimestamp = null)
         assertEquals(42L, store.load().lastSyncTimestamp)
+    }
+
+    @Test
+    fun `corrupt file is moved aside and deleting still works`() = runTest {
+        file.writeText("{garbage")
+        val store = store()
+        assertEquals(SyncState(), store.load())
+        assertEquals("{garbage", File(folder.root, "sync_state.json.corrupt").readText())
+        store.recordDeletion("a")
+        assertEquals(listOf(Tombstone("a", now)), store().load().pendingTombstones)
     }
 }

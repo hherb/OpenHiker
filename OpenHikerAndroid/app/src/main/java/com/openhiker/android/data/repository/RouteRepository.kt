@@ -82,7 +82,8 @@ class RouteRepository @Inject constructor(
      * @param id The route UUID to delete.
      */
     suspend fun delete(id: String) {
-        routeDao.deleteById(id)
+        // Tombstone first: if the delete then fails, the next sync deletes the row anyway.
         syncState.recordDeletion(id)
+        routeDao.deleteById(id)
     }
 }

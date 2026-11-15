@@ -92,7 +92,8 @@ class WaypointRepository @Inject constructor(
      * @param id The waypoint UUID to delete.
      */
     suspend fun delete(id: String) {
-        waypointDao.deleteById(id)
+        // Tombstone first: if the delete then fails, the next sync deletes the row anyway.
         syncState.recordDeletion(id)
+        waypointDao.deleteById(id)
     }
 }

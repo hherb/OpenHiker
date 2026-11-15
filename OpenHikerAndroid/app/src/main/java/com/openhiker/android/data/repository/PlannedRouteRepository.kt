@@ -141,11 +141,12 @@ class PlannedRouteRepository @Inject constructor(
      * @param id The route UUID to delete.
      */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        // Tombstone first: if the delete then fails, the next sync deletes the file anyway.
+        syncState.recordDeletion(id)
         if (!File(storageDirectory, "$id.json").delete()) {
             Log.w(TAG, "Failed to delete route file for route $id")
         }
         _routes.value = _routes.value.filterNot { it.id == id }
-        syncState.recordDeletion(id)
     }
 
     companion object {

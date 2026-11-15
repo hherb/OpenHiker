@@ -24,7 +24,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   waypoints (photo and thumbnail Base64), one `SyncChannel` per type. `SyncStateStore`
   (`data/sync/`) keeps this device's last-sync time and the deletions not yet in the manifest. The
   repositories record a tombstone on every delete. The manifest's own timestamp is informational only.
-  Decisions are pure functions in `SyncRules.kt`. `SyncWorker` reads the folder URI from
+  Decisions are pure functions in `SyncRules.kt`: when an item exists both locally and in the cloud, the
+  newer copy wins (`reconcile`), so an old last-sync time never overwrites a newer edit (#69). A manifest
+  that exists but cannot be read stops the sync, so other devices' tombstones are never lost. A mutex
+  serialises "Sync now" and the worker. `SyncWorker` reads the folder URI from
   `UserPreferencesRepository`. Before this fix it read an unused SharedPreferences file, so background
   sync never ran. Only Android reads this folder; Apple platforms sync through iCloud.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
@@ -55,7 +58,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #70 (#61 plus Android sync of saved routes and waypoints), #67
+- **Last PRs:** #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
   (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63), #62 (Android #59).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
@@ -66,7 +69,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **90/90 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 162/162 per variant) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 167/167 per variant) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -107,8 +110,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #68: Android `PlannedRouteRepository.save` logs and swallows write errors, so callers report success.
-- #69: Android sync uploads a changed local item without checking the cloud copy, so the last device to
-  sync wins even with an older edit.
+- #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
+- #72: Android background sync errors are only logged, never shown to the user.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example

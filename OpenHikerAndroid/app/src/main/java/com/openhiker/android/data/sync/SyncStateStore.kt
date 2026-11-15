@@ -28,6 +28,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -56,11 +57,14 @@ data class SyncState(
  *
  * @param file The JSON file holding the state.
  * @param clock Returns the current epoch milliseconds; replaceable in tests.
+ * @param logError Logs an error with its cause; replaceable in tests, where `android.util.Log`
+ *   is not available.
  */
 @Singleton
 class SyncStateStore internal constructor(
     private val file: File,
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val logError: (String, Throwable) -> Unit = { msg, e -> Log.e(TAG, msg, e) }
 ) {
     /**
      * Creates the store in the app's files directory.
@@ -78,6 +82,7 @@ class SyncStateStore internal constructor(
      * Reads the current state.
      *
      * @return The stored state, or a fresh [SyncState] if none is stored or the file is corrupt.
+     * @throws java.io.IOException if the file exists but cannot be read.
      */
     suspend fun load(): SyncState = mutex.withLock { read() }
 
@@ -119,14 +124,21 @@ class SyncStateStore internal constructor(
             )
         }
 
-    /** Reads the state file; the caller holds [mutex]. */
+    /**
+     * Reads the state file; the caller holds [mutex].
+     *
+     * A corrupt file is moved aside to `sync_state.json.corrupt` and a fresh state returned:
+     * that costs a full sync and may let deleted items return, but never blocks deleting.
+     * A read error is thrown instead, so a passing I/O fault cannot wipe pending deletions.
+     */
     private suspend fun read(): SyncState = withContext(Dispatchers.IO) {
         if (!file.exists()) return@withContext SyncState()
+        val text = file.readText()
         try {
-            json.decodeFromString<SyncState>(file.readText())
-        } catch (e: Exception) {
-            // Losing the state only costs a full re-upload and may let deleted items return.
-            Log.w(TAG, "Corrupt sync state, starting fresh", e)
+            json.decodeFromString<SyncState>(text)
+        } catch (e: SerializationException) {
+            logError("Corrupt sync state, moved aside; starting fresh", e)
+            file.renameTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"))
             SyncState()
         }
     }
@@ -143,5 +155,6 @@ class SyncStateStore internal constructor(
     private companion object {
         const val TAG = "SyncStateStore"
         const val FILE_NAME = "sync_state.json"
+        const val CORRUPT_SUFFIX = ".corrupt"
     }
 }

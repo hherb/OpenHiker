@@ -68,7 +68,7 @@ class SyncWorker @AssistedInject constructor(
      */
     override suspend fun doWork(): Result {
         val folderUri = getSyncFolderUri() ?: run {
-            Log.d(TAG, "No sync folder configured, skipping")
+            Log.d(TAG, "Sync disabled or no folder configured, skipping")
             return Result.success()
         }
 

@@ -51,31 +51,43 @@ class SyncRulesTest {
         assertTrue(shouldUpload("yesterday", t0Millis))
     }
 
-    // ── shouldDownload ───────────────────────────────────────────
+    // ── reconcile ────────────────────────────────────────────────
+
+    private val later = "2026-11-15T10:00:01Z"
+    private val earlier = "2026-11-15T09:59:59Z"
 
     @Test
-    fun `downloads when there is no local copy or it has no time`() {
-        assertTrue(shouldDownload(null, null, existsLocally = false))
-        assertTrue(shouldDownload(t0, null, existsLocally = true))
+    fun `the strictly newer copy wins in either direction`() {
+        assertEquals(SyncAction.UPLOAD, reconcile(later, t0))
+        assertEquals(SyncAction.DOWNLOAD, reconcile(earlier, t0))
+        assertEquals(SyncAction.NONE, reconcile(t0, t0))
     }
 
     @Test
-    fun `does not download a cloud copy without a time over a timed local copy`() {
-        assertFalse(shouldDownload(null, t0, existsLocally = true))
+    fun `an old local copy never overwrites a newer cloud copy`() {
+        // The device's last sync is irrelevant: only the two copies' times decide.
+        assertEquals(SyncAction.DOWNLOAD, reconcile(t0, later))
     }
 
     @Test
-    fun `downloads only a strictly newer cloud copy`() {
-        assertTrue(shouldDownload("2026-11-15T10:00:01Z", t0, existsLocally = true))
-        assertFalse(shouldDownload(t0, t0, existsLocally = true))
-        assertFalse(shouldDownload("2026-11-15T09:59:59Z", t0, existsLocally = true))
+    fun `a copy with a time beats one without`() {
+        assertEquals(SyncAction.DOWNLOAD, reconcile(null, t0))
+        assertEquals(SyncAction.UPLOAD, reconcile(t0, null))
+        assertEquals(SyncAction.NONE, reconcile(null, null))
     }
 
     @Test
     fun `compares times as instants, not text`() {
         // As text, "…00.500Z" sorts before "…00Z"; as instants it is half a second later.
-        assertTrue(shouldDownload("2026-11-15T10:00:00.500Z", t0, existsLocally = true))
-        assertFalse(shouldDownload("2026-11-15T10:00:00.000Z", t0, existsLocally = true))
+        assertEquals(SyncAction.DOWNLOAD, reconcile(t0, "2026-11-15T10:00:00.500Z"))
+        assertEquals(SyncAction.NONE, reconcile(t0, "2026-11-15T10:00:00.000Z"))
+    }
+
+    @Test
+    fun `unparseable times fall back to text comparison`() {
+        assertEquals(SyncAction.UPLOAD, reconcile("b", "a"))
+        // One unparseable time is enough to compare as text: "n" sorts after "2".
+        assertEquals(SyncAction.UPLOAD, reconcile("not-a-time", t0))
     }
 
     // ── mergeTombstones ──────────────────────────────────────────

@@ -30,7 +30,10 @@ import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.core.formats.SyncManifest
 import com.openhiker.core.model.PlannedRoute
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.encodeToString
@@ -66,8 +69,9 @@ data class SyncResult(
  *
  * The cloud folder's `manifest.json` ([SyncManifest]) holds the tombstones (deletion records)
  * of all devices. Each device keeps its own last-sync time and unpublished deletions in
- * [SyncStateStore]: only entities changed since this device's last error-free sync are
- * uploaded.
+ * [SyncStateStore]. When an entity exists both locally and in the cloud, the newer copy wins
+ * ([reconcile]). An entity with no cloud copy is uploaded if it changed since this device's
+ * last error-free sync or has no recorded change time ([shouldUpload]).
  *
  * File layout in cloud folder:
  * ```
@@ -99,6 +103,9 @@ class CloudDriveSyncEngine @Inject constructor(
         prettyPrint = true
         ignoreUnknownKeys = true
     }
+
+    /** Serialises "Sync now" and the background worker, which share this singleton. */
+    private val syncMutex = Mutex()
 
     /**
      * How the engine lists, reads, stores and deletes one entity type.
@@ -171,23 +178,31 @@ class CloudDriveSyncEngine @Inject constructor(
      *
      * Steps:
      * 1. Read the cloud manifest and merge this device's pending deletions into its tombstones.
-     * 2. For each entity type: delete local entities that have a tombstone, upload local
-     *    entities changed since this device's last sync, delete tombstoned cloud files, and
-     *    download cloud entities that are new or newer than the local copy.
+     * 2. For each entity type: delete local entities and cloud files that have a tombstone, keep
+     *    the newer copy of entities found in both places, download cloud-only entities, and
+     *    upload local-only entities changed since this device's last sync.
      * 3. Write the manifest with the merged, pruned tombstones.
      * 4. Mark the published deletions as done; advance the last-sync time only if there
      *    were no errors, so a failed upload is retried next time.
      *
+     * A manifest that exists but cannot be read stops the sync before anything is written, so
+     * other devices' tombstones are never lost.
+     *
      * @param cloudFolderUri The SAF URI of the cloud sync directory.
      * @return A [SyncResult] describing the outcome.
      */
-    suspend fun sync(cloudFolderUri: Uri): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun sync(cloudFolderUri: Uri): SyncResult = syncMutex.withLock {
+        withContext(Dispatchers.IO) { syncLocked(cloudFolderUri) }
+    }
+
+    /** Body of [sync]; the caller holds [syncMutex] and runs on [Dispatchers.IO]. */
+    private suspend fun syncLocked(cloudFolderUri: Uri): SyncResult {
         val errors = mutableListOf<String>()
         var total = SyncResult()
 
         try {
             val cloudFolder = DocumentFile.fromTreeUri(context, cloudFolderUri)
-                ?: return@withContext SyncResult(errors = listOf("Cannot access cloud folder"))
+                ?: return SyncResult(errors = listOf("Cannot access cloud folder"))
 
             val currentTime = System.currentTimeMillis()
             val manifest = readManifest(cloudFolder) ?: SyncManifest()
@@ -226,12 +241,14 @@ class CloudDriveSyncEngine @Inject constructor(
                 publishedUuids = deletedIds,
                 lastSyncTimestamp = if (errors.isEmpty()) currentTime else null
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed", e)
             errors.add("Sync failed: ${e.message}")
         }
 
-        total.copy(errors = errors)
+        return total.copy(errors = errors)
     }
 
     /**
@@ -257,12 +274,12 @@ class CloudDriveSyncEngine @Inject constructor(
         var deleted = 0
 
         val local: Map<String, String?>
-        val cloudFiles: Map<String, DocumentFile>
+        val cloudFiles: List<DocumentFile>
         try {
             local = channel.localStamps().associate { it.id to it.modifiedAt }
-            cloudFiles = dir.listFiles()
-                .filter { it.name?.endsWith(JSON_SUFFIX) == true }
-                .associateBy { it.name!!.removeSuffix(JSON_SUFFIX) }
+            cloudFiles = dir.listFiles().filter { it.name?.endsWith(JSON_SUFFIX) == true }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "${channel.label}: cannot list entities", e)
             return SyncResult(errors = listOf("${channel.label}: ${e.message}"))
@@ -272,50 +289,90 @@ class CloudDriveSyncEngine @Inject constructor(
             try {
                 channel.deleteLocal(id)
                 deleted++
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "${channel.label}: cannot apply deletion of $id", e)
                 errors.add("${channel.label} delete $id: ${e.message}")
             }
         }
 
-        val uploadedIds = mutableSetOf<String>()
-        for ((id, modifiedAt) in local) {
-            if (id in deletedIds || !shouldUpload(modifiedAt, lastSync)) continue
+        /** Writes the local entity [id] into [existing], or into a new file if null. */
+        suspend fun upload(id: String, existing: DocumentFile?) {
             try {
-                val item = channel.loadLocal(id) ?: continue
+                val item = channel.loadLocal(id) ?: return
                 writeJsonToCloud(
-                    dir, cloudFiles[id], "$id$JSON_SUFFIX",
+                    dir, existing, "$id$JSON_SUFFIX",
                     json.encodeToString(channel.serializer, item)
                 )
-                uploadedIds.add(id)
                 uploaded++
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "${channel.label}: cannot upload $id", e)
                 errors.add("${channel.label} upload $id: ${e.message}")
             }
         }
 
+        /** Deletes a cloud file whose entity has a tombstone. */
+        fun deleteCloudFile(file: DocumentFile) {
+            if (!file.delete()) {
+                Log.e(TAG, "${channel.label}: cannot delete cloud file ${file.name}")
+                errors.add("${channel.label}: cannot delete cloud file ${file.name}")
+            }
+        }
+
+        // Ids with a cloud file, readable or not: never create a second file for them, and
+        // never overwrite a file that could not be read.
+        val inCloud = mutableSetOf<String>()
         // shortcut: reads every cloud file on each sync; skip unchanged files by
         // DocumentFile.lastModified() if large photo-heavy folders make sync slow.
-        for ((id, file) in cloudFiles) {
-            if (id in deletedIds) {
-                if (!file.delete()) {
-                    Log.w(TAG, "${channel.label}: cannot delete cloud file ${file.name}")
-                }
+        for (file in cloudFiles) {
+            val fileId = file.name!!.removeSuffix(JSON_SUFFIX)
+            inCloud.add(fileId)
+            if (fileId in deletedIds) {
+                deleteCloudFile(file)
                 continue
             }
-            if (id in uploadedIds) continue
-            val text = readFileFromCloud(file) ?: continue
-            try {
-                val item = json.decodeFromString(channel.serializer, text)
-                val itemId = channel.idOf(item)
-                if (shouldDownload(channel.modifiedAtOf(item), local[itemId], itemId in local)) {
+            val item = try {
+                json.decodeFromString(channel.serializer, readFileFromCloud(file))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "${channel.label}: cannot read cloud file ${file.name}", e)
+                errors.add("${channel.label}: cannot read cloud file ${file.name}: ${e.message}")
+                continue
+            }
+            // A provider may name a duplicate "<uuid> (1).json"; the record's own id decides.
+            val itemId = channel.idOf(item)
+            inCloud.add(itemId)
+            if (itemId in deletedIds) {
+                deleteCloudFile(file)
+                continue
+            }
+            val action = if (itemId in local) {
+                reconcile(local[itemId], channel.modifiedAtOf(item))
+            } else {
+                SyncAction.DOWNLOAD
+            }
+            when (action) {
+                SyncAction.UPLOAD -> upload(itemId, file)
+                SyncAction.NONE -> Unit
+                SyncAction.DOWNLOAD -> try {
                     channel.saveLocal(item)
                     downloaded++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "${channel.label}: cannot store $itemId", e)
+                    errors.add("${channel.label} download $itemId: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "${channel.label}: skipping corrupted cloud file ${file.name}", e)
             }
+        }
+
+        for ((id, modifiedAt) in local) {
+            if (id in deletedIds || id in inCloud || !shouldUpload(modifiedAt, lastSync)) continue
+            upload(id, null)
         }
 
         return SyncResult(uploaded, downloaded, deleted, errors)
@@ -338,16 +395,20 @@ class CloudDriveSyncEngine @Inject constructor(
      * Reads the sync manifest from the cloud folder.
      *
      * @param cloudFolder The root cloud sync directory.
-     * @return The deserialized manifest, or null if not found or corrupted.
+     * @return The deserialized manifest, or null if there is none yet.
+     * @throws IOException if the manifest exists but cannot be read or parsed; writing a fresh
+     *   one would drop every other device's tombstones.
      */
     private fun readManifest(cloudFolder: DocumentFile): SyncManifest? {
         val manifestFile = cloudFolder.findFile(MANIFEST_FILENAME) ?: return null
-        val content = readFileFromCloud(manifestFile) ?: return null
         return try {
-            json.decodeFromString<SyncManifest>(content)
+            json.decodeFromString<SyncManifest>(readFileFromCloud(manifestFile))
         } catch (e: Exception) {
-            Log.w(TAG, "Corrupted manifest, starting fresh", e)
-            null
+            throw IOException(
+                "Cannot read $MANIFEST_FILENAME, sync stopped so no deletions are lost: " +
+                    e.message,
+                e
+            )
         }
     }
 
@@ -370,17 +431,13 @@ class CloudDriveSyncEngine @Inject constructor(
      * Reads the text content of a DocumentFile.
      *
      * @param file The DocumentFile to read.
-     * @return The file content as a string, or null on failure.
+     * @return The file content as a string.
+     * @throws IOException if the provider cannot open or read the file.
      */
-    private fun readFileFromCloud(file: DocumentFile): String? {
-        return try {
-            context.contentResolver.openInputStream(file.uri)?.use { stream ->
-                stream.bufferedReader().readText()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to read cloud file: ${file.name}", e)
-            null
-        }
+    private fun readFileFromCloud(file: DocumentFile): String {
+        val stream = context.contentResolver.openInputStream(file.uri)
+            ?: throw IOException("Cannot open ${file.name}")
+        return stream.use { it.bufferedReader().readText() }
     }
 
     /**
