@@ -304,6 +304,7 @@ class HikeTrackingService : Service() {
 
                     val now = System.currentTimeMillis()
                     val fixAltitude = if (location.hasAltitude()) location.altitude else null
+                    // Resolve before updating lastKnownAltitude: the backfill needs it still null.
                     val altitude = resolveTrackAltitude(trackPoints, fixAltitude, lastKnownAltitude)
                     if (fixAltitude != null) lastKnownAltitude = fixAltitude
 

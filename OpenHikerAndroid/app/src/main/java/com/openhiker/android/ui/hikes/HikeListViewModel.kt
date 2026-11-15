@@ -357,7 +357,10 @@ internal fun filterByQuery(items: List<HikeListItem>, query: String): List<HikeL
  */
 internal fun sortItems(items: List<HikeListItem>, option: HikeSortOption): List<HikeListItem> {
     return when (option) {
-        HikeSortOption.DATE -> items.sortedByDescending { parseStartTime(it.startTime) }
+        // Parse once per item; the sort calls its key on every comparison.
+        HikeSortOption.DATE -> items.map { it to parseStartTime(it.startTime) }
+            .sortedByDescending { it.second }
+            .map { it.first }
         HikeSortOption.DISTANCE -> items.sortedByDescending { it.totalDistance }
         HikeSortOption.ELEVATION -> items.sortedByDescending { it.elevationGain }
         HikeSortOption.DURATION -> items.sortedByDescending { it.durationSeconds }
