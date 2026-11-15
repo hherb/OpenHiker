@@ -40,10 +40,11 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
     onto the route, so the leg choice does not apply there.
-- **Last PRs:** #58 (2026-11-15, Android tests for #30 items 1–5: live gain/loss via `ElevationAccumulator`,
-  `recordingElapsedSeconds`, `ElevationProfile.fromTrackPoints`, hike-list filter/sort, file names), #57
-  (watchOS, macOS and Android CI jobs), #56 (#55, recheck cap on the monotonic clock). This session: #30
-  items 6–8 (GPX elevation values and XML parsing, `calculateAverageSpeed`, waypoint category filter).
+- **Last PRs:** #60 (2026-11-15, Android tests for #30 items 6–8; closes #30), #58 (#30 items 1–5), #57
+  (watchOS, macOS and Android CI jobs). This session fixes #59 on Android: a fix without altitude stores the
+  last known altitude, and the first altitude backfills the points before it (`resolveTrackAltitude`). The
+  resume arithmetic is the pure `pausedMsAfterResume`, and the DATE sort parses `startTime`
+  (`parseStartTime`), so unparseable dates go last.
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -53,7 +54,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **76/76 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 336/336, `:app` 124/124 per variant) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 336/336, `:app` 137/137 per variant) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -93,15 +94,11 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 ## Open GitHub issues
 
 - #23: Android service and ViewModel test coverage.
-- #59: follow-ups from the PR #58 review. Fixes without altitude are saved as 0 m track points
-  (`HikeTrackingService.startLocationCollection`), the pause bookkeeping in `resumeRecording` is untested,
-  and the hike-list DATE sort compares ISO strings.
 - #61: Android stores waypoint categories as the enum name (`WATER_SOURCE`), not the shared raw value
   (`waterSource`), so camelCase categories from iOS or sync would be dropped by the filter. Latent until
   waypoint sync lands.
-- #30 is closed by this session's PR: all eight items are tested. The pure functions sit top-level and
-  `internal` next to their callers (`calculateAverageSpeed` in `PDFExporter.kt`, `toggledCategories` and
-  `filterByCategories` in `WaypointViewModel.kt`).
+- Android pure functions under test sit top-level and `internal` next to their callers (for example
+  `calculateAverageSpeed` in `PDFExporter.kt`, `pausedMsAfterResume` in `HikeTrackingService.kt`).
 
 ## Known stubs
 

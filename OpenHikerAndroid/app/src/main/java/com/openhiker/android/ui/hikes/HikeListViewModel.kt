@@ -32,6 +32,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 import javax.inject.Inject
 
 /**
@@ -343,7 +346,10 @@ internal fun filterByQuery(items: List<HikeListItem>, query: String): List<HikeL
  * Sorts hike items according to the specified criterion.
  *
  * All sort orders are descending (largest/newest first), matching
- * the typical user expectation for hike history screens.
+ * the typical user expectation for hike history screens. DATE sorts by
+ * the parsed start time ([parseStartTime]), so timestamps with offsets
+ * or different fractional seconds order correctly; hikes whose start
+ * time cannot be parsed go last.
  *
  * @param items The list of hike display items to sort.
  * @param option The sort criterion to apply.
@@ -351,9 +357,22 @@ internal fun filterByQuery(items: List<HikeListItem>, query: String): List<HikeL
  */
 internal fun sortItems(items: List<HikeListItem>, option: HikeSortOption): List<HikeListItem> {
     return when (option) {
-        HikeSortOption.DATE -> items.sortedByDescending { it.startTime }
+        HikeSortOption.DATE -> items.sortedByDescending { parseStartTime(it.startTime) }
         HikeSortOption.DISTANCE -> items.sortedByDescending { it.totalDistance }
         HikeSortOption.ELEVATION -> items.sortedByDescending { it.elevationGain }
         HikeSortOption.DURATION -> items.sortedByDescending { it.durationSeconds }
     }
+}
+
+/**
+ * Parses an ISO-8601 hike start time such as `2026-03-01T08:00:00Z` or
+ * `2026-03-01T10:00:00.5+02:00` into an [Instant].
+ *
+ * @param startTime ISO-8601 timestamp with a `Z` or numeric UTC offset.
+ * @return The instant, or null if the text is not such a timestamp.
+ */
+internal fun parseStartTime(startTime: String): Instant? = try {
+    OffsetDateTime.parse(startTime).toInstant()
+} catch (e: DateTimeParseException) {
+    null
 }
