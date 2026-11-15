@@ -401,3 +401,19 @@ internal fun filterByCategories(
         categoryNames.any { name -> name.equals(waypoint.category, ignoreCase = true) }
     }
 }
+
+/**
+ * Altitude to store for a waypoint taken from a GPS fix.
+ *
+ * `android.location.Location.altitude` is 0.0 when the fix has no altitude,
+ * so storing it unchecked would record 0 m. This uses the same
+ * `hasAltitude()` test as the hike tracker and, like Apple's
+ * `Waypoint.fromLocation`, stores null for such a fix. Valid altitudes
+ * below sea level are kept (#65).
+ *
+ * @param hasAltitude `Location.hasAltitude()` of the fix.
+ * @param altitude `Location.altitude` of the fix, in metres.
+ * @return [altitude], or null if the fix has no altitude.
+ */
+internal fun waypointAltitude(hasAltitude: Boolean, altitude: Double): Double? =
+    if (hasAltitude) altitude else null

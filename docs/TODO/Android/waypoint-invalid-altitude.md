@@ -16,4 +16,5 @@ invalid (`verticalAccuracy < 0`), and keeps valid altitudes below sea level (PR 
 
 ## Status
 
-Not started.
+Done (#65). `waypointAltitude` in `WaypointViewModel.kt` makes the choice and is tested in
+`WaypointAltitudeTest`. `AddWaypointScreen.kt` calls it.
