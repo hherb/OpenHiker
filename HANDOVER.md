@@ -68,8 +68,9 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
-  (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63), #62 (Android #59).
+- **Last PRs:** #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and
+  waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63), #62
+  (Android #59).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -121,6 +122,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #23: Android service and ViewModel test coverage.
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
 - #72: Android background sync errors are only logged, never shown to the user.
+- #77: Android sync never clears the error for a broken local planned-route file that has a tombstone
+  or no cloud copy, and the app cannot delete it.
 - #75: Apple `PlannedRouteStore.loadAllFromDisk` returns `[]` on a directory error, so iCloud sync can
   overwrite local edits; unreadable files are only printed.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
