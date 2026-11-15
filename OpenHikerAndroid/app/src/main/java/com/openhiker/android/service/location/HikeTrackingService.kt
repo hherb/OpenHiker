@@ -144,6 +144,7 @@ class HikeTrackingService : Service() {
     private var lastPauseTime: Instant? = null
     private var totalPausedMs: Long = 0L
     private var elevation = ElevationAccumulator()
+    private var lastKnownAltitude: Double? = null
     private var lastPointTime: Long = 0L
     private var currentMaxSpeed: Double = 0.0
     private var totalMovingTime: Double = 0.0
@@ -205,6 +206,7 @@ class HikeTrackingService : Service() {
         lastPauseTime = null
         totalPausedMs = 0L
         elevation = ElevationAccumulator()
+        lastKnownAltitude = null
         lastPointTime = 0L
         currentMaxSpeed = 0.0
         totalMovingTime = 0.0
@@ -241,9 +243,11 @@ class HikeTrackingService : Service() {
     fun resumeRecording() {
         if (_recordingState.value != HikeRecordingState.PAUSED) return
 
-        lastPauseTime?.let { pauseStart ->
-            totalPausedMs += Instant.now().toEpochMilli() - pauseStart.toEpochMilli()
-        }
+        totalPausedMs = pausedMsAfterResume(
+            totalPausedMs = totalPausedMs,
+            pauseStartMs = lastPauseTime?.toEpochMilli(),
+            nowMs = Instant.now().toEpochMilli()
+        )
         lastPauseTime = null
 
         _recordingState.value = HikeRecordingState.RECORDING
@@ -299,7 +303,10 @@ class HikeTrackingService : Service() {
                     if (_recordingState.value != HikeRecordingState.RECORDING) return@collect
 
                     val now = System.currentTimeMillis()
-                    val altitude = if (location.hasAltitude()) location.altitude else 0.0
+                    val fixAltitude = if (location.hasAltitude()) location.altitude else null
+                    // Resolve before updating lastKnownAltitude: the backfill needs it still null.
+                    val altitude = resolveTrackAltitude(trackPoints, fixAltitude, lastKnownAltitude)
+                    if (fixAltitude != null) lastKnownAltitude = fixAltitude
 
                     val trackPoint = TrackPoint(
                         latitude = location.latitude,
@@ -310,8 +317,8 @@ class HikeTrackingService : Service() {
 
                     trackPoints.add(trackPoint)
 
-                    // A fix without altitude would count as a drop to 0 m and back.
-                    if (location.hasAltitude()) updateElevation(altitude)
+                    // A fix without altitude carries no new elevation information.
+                    fixAltitude?.let { updateElevation(it) }
 
                     // Update speed statistics
                     if (lastPointTime > 0L && trackPoints.size >= 2) {
@@ -717,4 +724,56 @@ internal fun recordingElapsedSeconds(
 ): Double {
     val currentPauseMs = currentPauseStartMs?.let { nowMs - it } ?: 0L
     return (nowMs - startMs - totalPausedMs - currentPauseMs) / MILLIS_PER_SECOND
+}
+
+/**
+ * Adds a just-finished pause to the running total of paused time.
+ *
+ * Called when a paused recording resumes. A negative pause, which a
+ * wall-clock step backwards during the pause would produce, counts as
+ * zero so it cannot add recording time that never happened.
+ *
+ * @param totalPausedMs Sum of all earlier pauses, in milliseconds.
+ * @param pauseStartMs Epoch milliseconds when the pause began, or null
+ *        if no pause start was recorded.
+ * @param nowMs Current epoch milliseconds (the moment of resuming).
+ * @return The new total of paused time, in milliseconds.
+ */
+internal fun pausedMsAfterResume(totalPausedMs: Long, pauseStartMs: Long?, nowMs: Long): Long {
+    val pauseMs = pauseStartMs?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+    return totalPausedMs + pauseMs
+}
+
+/** Altitude stored while no fix of the hike has reported one yet. */
+private const val ALTITUDE_UNKNOWN_METRES = 0.0
+
+/**
+ * Picks the altitude to store for a new track point.
+ *
+ * Some GPS fixes, often the first ones of a hike, report no altitude.
+ * Storing 0 m for them would show as a drop to sea level in the saved
+ * track and the elevation chart. Instead:
+ * - a fix without altitude reuses the last known altitude;
+ * - the first fix with an altitude also rewrites the points recorded
+ *   before it (which all lacked one) to that altitude.
+ *
+ * Only if no fix has reported an altitude yet is
+ * [ALTITUDE_UNKNOWN_METRES] stored; the backfill corrects it later.
+ *
+ * @param recorded Track points recorded so far. Rewritten in place
+ *        when the first altitude of the hike arrives.
+ * @param fixAltitude Altitude of the new fix in metres, or null if the
+ *        fix has none.
+ * @param lastKnownAltitude Altitude of the most recent fix that had
+ *        one, or null if none has yet.
+ * @return Altitude in metres to store for the new track point.
+ */
+internal fun resolveTrackAltitude(
+    recorded: MutableList<TrackPoint>,
+    fixAltitude: Double?,
+    lastKnownAltitude: Double?
+): Double {
+    if (fixAltitude == null) return lastKnownAltitude ?: ALTITUDE_UNKNOWN_METRES
+    if (lastKnownAltitude == null) recorded.replaceAll { it.copy(altitude = fixAltitude) }
+    return fixAltitude
 }

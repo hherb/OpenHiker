@@ -18,7 +18,9 @@
 
 package com.openhiker.android.ui.hikes
 
+import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -78,6 +80,35 @@ class HikeListFilterSortTest {
     @Test
     fun `date sort puts newest first`() {
         assertEquals(listOf("b", "a", "c"), sortItems(items, HikeSortOption.DATE).map { it.id })
+    }
+
+    @Test
+    fun `date sort compares instants, not strings`() {
+        // As strings, "08:30+02:00" > "07:00Z" and "00Z" > "00.5Z"; as instants both are older.
+        val mixed = listOf(
+            item("offset", startTime = "2026-03-01T08:30:00+02:00"), // 06:30 UTC
+            item("utc", startTime = "2026-03-01T07:00:00Z"),
+            item("whole", startTime = "2026-03-01T09:00:00Z"),
+            item("fraction", startTime = "2026-03-01T09:00:00.5Z")
+        )
+        assertEquals(
+            listOf("fraction", "whole", "utc", "offset"),
+            sortItems(mixed, HikeSortOption.DATE).map { it.id }
+        )
+    }
+
+    @Test
+    fun `date sort puts unparseable start times last`() {
+        val mixed = listOf(item("bad", startTime = "not a date"), item("ok", startTime = "2020-01-01T00:00:00Z"))
+        assertEquals(listOf("ok", "bad"), sortItems(mixed, HikeSortOption.DATE).map { it.id })
+    }
+
+    @Test
+    fun `parseStartTime reads Z and offset timestamps and rejects other text`() {
+        assertEquals(Instant.parse("2026-03-01T06:30:00Z"), parseStartTime("2026-03-01T08:30:00+02:00"))
+        assertEquals(Instant.parse("2026-03-01T09:00:00.5Z"), parseStartTime("2026-03-01T09:00:00.5Z"))
+        assertNull(parseStartTime("2026-03-01"))
+        assertNull(parseStartTime(""))
     }
 
     @Test
