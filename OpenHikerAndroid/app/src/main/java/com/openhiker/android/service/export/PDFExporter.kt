@@ -587,20 +587,6 @@ class PDFExporter @Inject constructor(
     }
 
     /**
-     * Calculates average speed from distance and time.
-     *
-     * @param distanceMetres Total distance in metres.
-     * @param durationSeconds Total time in seconds.
-     * @return Average speed in metres per second, or null if duration is zero.
-     */
-    private fun calculateAverageSpeed(
-        distanceMetres: Double,
-        durationSeconds: Double
-    ): Double? {
-        return if (durationSeconds > 0) distanceMetres / durationSeconds else null
-    }
-
-    /**
      * Writes a [PdfDocument] to a temporary file in the export cache directory.
      *
      * Cleans stale exports before writing to prevent unbounded cache growth.
@@ -818,4 +804,21 @@ class PDFExporter @Inject constructor(
         /** MIME type for PDF files. */
         private const val PDF_MIME_TYPE = "application/pdf"
     }
+}
+
+/**
+ * Calculates average speed from distance and time.
+ *
+ * Top-level and `internal` so it can be unit-tested without an Android context.
+ *
+ * @param distanceMetres Total distance in metres.
+ * @param durationSeconds Total time in seconds.
+ * @return Average speed in metres per second, or null if the duration is zero,
+ *         negative or NaN (no division by zero).
+ */
+internal fun calculateAverageSpeed(
+    distanceMetres: Double,
+    durationSeconds: Double
+): Double? {
+    return if (durationSeconds > 0) distanceMetres / durationSeconds else null
 }

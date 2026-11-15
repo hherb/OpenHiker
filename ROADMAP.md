@@ -10,7 +10,7 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 
 | Item | What | Where |
 |---|---|---|
-| **Android test coverage** | Service and ViewModel tests; #30 items 6–8 (GPX, PDF, waypoint filter) | #23, #30 |
+| **Android test coverage** | Service and ViewModel tests; PR #58 review follow-ups (0 m altitude, pause bookkeeping, date sort) | #23, #59 |
 
 ## Feature parity
 

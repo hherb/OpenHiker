@@ -25,6 +25,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.w3c.dom.Document
+import org.w3c.dom.Element
+import javax.xml.parsers.DocumentBuilderFactory
 
 /** Unit tests for [GpxSerializer]. */
 class GpxSerializerTest {
@@ -443,6 +446,120 @@ class GpxSerializerTest {
 
         val nameCount = "<name>Dual</name>".toRegex().findAll(gpx).count()
         assertEquals(2, nameCount)
+    }
+
+    // ─── serializeRoute elevation values (#30 item 6) ───────────────────
+
+    /** Reads every `<ele>` text in document order. */
+    private fun eleValues(gpx: String): List<String> =
+        "<ele>([^<]*)</ele>".toRegex().findAll(gpx).map { it.groupValues[1] }.toList()
+
+    @Test
+    fun `serializeRoute interpolates elevation by cumulative distance`() {
+        // Three points along a meridian, roughly 111 m and 222 m from the start.
+        val coords = listOf(
+            Coordinate(47.0, 11.0),
+            Coordinate(47.001, 11.0),
+            Coordinate(47.002, 11.0)
+        )
+        // Linear profile: 800 m at the start, rising 1 m every 10 m.
+        val profile = listOf(ElevationPoint(0.0, 800.0), ElevationPoint(1_000.0, 900.0))
+
+        val gpx = GpxSerializer.serializeRoute(
+            name = "Interpolated",
+            coordinates = coords,
+            elevationProfile = profile
+        )
+
+        // 0.001° of latitude is 111.19 m, so the points sit at 0, 111.2 and 222.4 m.
+        assertEquals(listOf("800.0", "811.1", "822.2"), eleValues(gpx))
+    }
+
+    @Test
+    fun `serializeRoute clamps elevation past the end of the profile`() {
+        val coords = listOf(Coordinate(47.0, 11.0), Coordinate(47.01, 11.0)) // ~1.1 km apart
+        val profile = listOf(ElevationPoint(0.0, 1_200.0), ElevationPoint(500.0, 1_250.0))
+
+        val gpx = GpxSerializer.serializeRoute(
+            name = "Clamped",
+            coordinates = coords,
+            elevationProfile = profile
+        )
+
+        assertEquals(listOf("1200.0", "1250.0"), eleValues(gpx))
+    }
+
+    @Test
+    fun `serializeRoute omits elevation for an empty profile`() {
+        val gpx = GpxSerializer.serializeRoute(
+            name = "Empty profile",
+            coordinates = listOf(Coordinate(47.0, 11.0)),
+            elevationProfile = emptyList()
+        )
+
+        assertFalse(gpx.contains("<ele>"))
+    }
+
+    // ─── XML well-formedness ────────────────────────────────────────────
+
+    /** Parses [xml] with a namespace-aware DOM parser; throws if it is not well-formed. */
+    private fun parse(xml: String): Document =
+        DocumentBuilderFactory.newInstance()
+            .apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(xml.byteInputStream(Charsets.UTF_8))
+
+    private val gpxNamespace = "http://www.topografix.com/GPX/1/1"
+
+    @Test
+    fun `serializeTrack output parses as XML and round-trips values`() {
+        val name = "Tom & Jerry's <Trail> \"quoted\""
+        val gpx = GpxSerializer.serializeTrack(
+            name = name,
+            description = "a > b & c",
+            trackPoints = listOf(
+                TrackPoint(47.2654, 11.3935, 1200.0, 0.0),
+                TrackPoint(47.2660, 11.3940, 1210.5, 60.0)
+            ),
+            timestampToIso = testTimestampToIso
+        )
+
+        val doc = parse(gpx)
+        val root = doc.documentElement
+        assertEquals("gpx", root.localName)
+        assertEquals(gpxNamespace, root.namespaceURI)
+        assertEquals("1.1", root.getAttribute("version"))
+
+        val names = doc.getElementsByTagNameNS(gpxNamespace, "name")
+        assertEquals(2, names.length)
+        assertEquals(name, names.item(0).textContent)
+        assertEquals("a > b & c", doc.getElementsByTagNameNS(gpxNamespace, "desc").item(0).textContent)
+
+        val trkpts = doc.getElementsByTagNameNS(gpxNamespace, "trkpt")
+        assertEquals(2, trkpts.length)
+        val second = trkpts.item(1) as Element
+        assertEquals(47.2660, second.getAttribute("lat").toDouble(), 1e-9)
+        assertEquals(11.3940, second.getAttribute("lon").toDouble(), 1e-9)
+        assertEquals("1210.5", second.getElementsByTagNameNS(gpxNamespace, "ele").item(0).textContent)
+        assertEquals(
+            "2024-01-01T00:01:00Z",
+            second.getElementsByTagNameNS(gpxNamespace, "time").item(0).textContent
+        )
+    }
+
+    @Test
+    fun `serializeRoute output parses as XML`() {
+        val gpx = GpxSerializer.serializeRoute(
+            name = "A & B <route>",
+            coordinates = listOf(Coordinate(47.0, 11.0), Coordinate(47.001, 11.0)),
+            elevationProfile = listOf(ElevationPoint(0.0, 800.0), ElevationPoint(1_000.0, 900.0))
+        )
+
+        val doc = parse(gpx)
+        assertEquals("gpx", doc.documentElement.localName)
+        assertEquals("A & B <route>", doc.getElementsByTagNameNS(gpxNamespace, "name").item(0).textContent)
+        assertEquals(2, doc.getElementsByTagNameNS(gpxNamespace, "rtept").length)
+        assertEquals(2, doc.getElementsByTagNameNS(gpxNamespace, "ele").length)
     }
 
     // ─── GPX schema location ────────────────────────────────────────────

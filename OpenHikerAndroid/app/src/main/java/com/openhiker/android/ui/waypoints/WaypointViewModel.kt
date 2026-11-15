@@ -92,16 +92,7 @@ class WaypointViewModel @Inject constructor(
         waypointRepository.observeAll(),
         _selectedCategories
     ) { allWaypoints, categories ->
-        if (categories.isEmpty()) {
-            allWaypoints
-        } else {
-            val categoryNames = categories.map { it.name }
-            allWaypoints.filter { waypoint ->
-                categoryNames.any { name ->
-                    name.equals(waypoint.category, ignoreCase = true)
-                }
-            }
-        }
+        filterByCategories(allWaypoints, categories)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     // ── Detail screen state ─────────────────────────────────────────
@@ -160,13 +151,7 @@ class WaypointViewModel @Inject constructor(
      * @param category The [WaypointCategory] to toggle.
      */
     fun toggleCategory(category: WaypointCategory) {
-        _selectedCategories.value = _selectedCategories.value.let { current ->
-            if (current.contains(category)) {
-                current - category
-            } else {
-                current + category
-            }
-        }
+        _selectedCategories.value = toggledCategories(_selectedCategories.value, category)
     }
 
     /**
@@ -378,5 +363,41 @@ class WaypointViewModel @Inject constructor(
          * restarting the database query.
          */
         private const val STOP_TIMEOUT_MS = 5_000L
+    }
+}
+
+/**
+ * Returns [current] with [category] removed if present, or added if absent.
+ *
+ * Top-level and `internal` so the filter-chip toggle can be unit-tested
+ * without a ViewModel.
+ *
+ * @param current The currently selected categories.
+ * @param category The category the user tapped.
+ * @return The new selection.
+ */
+internal fun toggledCategories(
+    current: Set<WaypointCategory>,
+    category: WaypointCategory
+): Set<WaypointCategory> = if (category in current) current - category else current + category
+
+/**
+ * Keeps only the waypoints whose category is in [categories].
+ *
+ * An empty [categories] set means "no filter" and returns all waypoints.
+ * The stored category string is matched against the enum name ignoring case.
+ *
+ * @param waypoints All waypoints from the database.
+ * @param categories The selected category filters.
+ * @return The waypoints that match the filter.
+ */
+internal fun filterByCategories(
+    waypoints: List<WaypointSummary>,
+    categories: Set<WaypointCategory>
+): List<WaypointSummary> {
+    if (categories.isEmpty()) return waypoints
+    val categoryNames = categories.map { it.name }
+    return waypoints.filter { waypoint ->
+        categoryNames.any { name -> name.equals(waypoint.category, ignoreCase = true) }
     }
 }
