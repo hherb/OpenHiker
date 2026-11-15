@@ -19,7 +19,6 @@
 package com.openhiker.core.formats
 
 import com.openhiker.core.compression.TrackPoint
-import com.openhiker.core.geo.Haversine
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.ElevationPoint
 import org.junit.Assert.assertEquals
@@ -28,7 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Document
 import org.w3c.dom.Element
-import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 
 /** Unit tests for [GpxSerializer]. */
@@ -473,10 +471,8 @@ class GpxSerializerTest {
             elevationProfile = profile
         )
 
-        val d1 = Haversine.distance(coords[0], coords[1])
-        val d2 = d1 + Haversine.distance(coords[1], coords[2])
-        val expected = listOf(0.0, d1, d2).map { String.format(Locale.US, "%.1f", 800.0 + it / 10.0) }
-        assertEquals(expected, eleValues(gpx))
+        // 0.001° of latitude is 111.19 m, so the points sit at 0, 111.2 and 222.4 m.
+        assertEquals(listOf("800.0", "811.1", "822.2"), eleValues(gpx))
     }
 
     @Test

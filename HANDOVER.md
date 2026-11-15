@@ -96,6 +96,9 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #59: follow-ups from the PR #58 review. Fixes without altitude are saved as 0 m track points
   (`HikeTrackingService.startLocationCollection`), the pause bookkeeping in `resumeRecording` is untested,
   and the hike-list DATE sort compares ISO strings.
+- #61: Android stores waypoint categories as the enum name (`WATER_SOURCE`), not the shared raw value
+  (`waterSource`), so camelCase categories from iOS or sync would be dropped by the filter. Latent until
+  waypoint sync lands.
 - #30 is closed by this session's PR: all eight items are tested. The pure functions sit top-level and
   `internal` next to their callers (`calculateAverageSpeed` in `PDFExporter.kt`, `toggledCategories` and
   `filterByCategories` in `WaypointViewModel.kt`).
