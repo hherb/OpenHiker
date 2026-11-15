@@ -41,7 +41,7 @@ OpenHiker runs natively on four platforms:
 | **Apple Watch** (watchOS 10+) | Stable | Standalone offline navigation with SpriteKit map rendering |
 | **iPhone/iPad** (iOS 17+) | Stable | Region downloading, route planning, turn-by-turn navigation, hike review |
 | **Mac** (macOS 14+) | Stable | Full-featured planning hub with GPX import, keyboard shortcuts, iCloud sync |
-| **Android** (API 26+) | In Development | MapLibre offline maps, A* routing, turn-by-turn navigation |
+| **Android** (API 26+) | Pre-release | MapLibre offline maps, A* routing, turn-by-turn navigation, cloud-drive sync |
 
 ## Features
 
@@ -108,13 +108,18 @@ OpenHiker runs natively on four platforms:
 - **Upload Your Routes** — Share your planned routes with other hikers
 - **iCloud Sync** — Routes, waypoints, and regions sync across your Apple devices via CloudKit
 
-### Android (In Development)
+### Android (Pre-release)
 - **MapLibre Native** — GPU-accelerated offline map rendering with native MBTiles support
 - **Jetpack Compose UI** — Modern Material 3 interface with bottom navigation
 - **A\* Routing Engine** — Same algorithms as iOS, ported to a pure Kotlin core library
 - **Turn-by-Turn Navigation** — Route following with haptic feedback and off-route detection
 - **Foreground GPS Service** — Background location tracking during active hikes
 - **Room Databases** — Type-safe SQLite storage with same schemas as iOS
+- **Hike History & Waypoints** — Record hikes, review their stats, and manage waypoints
+- **PDF & GPX Export** — Export hikes and routes
+- **Community Routes** — Browse and upload shared routes
+- **Cloud-Drive Sync** — Sync planned routes through a cloud drive (saved routes and waypoints still to do)
+- **Settings & Adaptive Layout** — Settings screen, tablet layouts and accessibility support
 
 ## How It Works
 
@@ -138,7 +143,7 @@ OpenHiker runs natively on four platforms:
        └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────┐
-│  Android App     │  (In Development)
+│  Android App     │  (Pre-release)
 │                  │
 │ • MapLibre maps  │  Same offline tile + routing
 │ • Download tiles │  format as Apple platforms
@@ -363,7 +368,7 @@ OpenHiker/
 │   └── Services/
 │       └── MacPDFExporter.swift         # macOS-specific PDF generation
 │
-└── OpenHikerAndroid/          # Android app (in development)
+└── OpenHikerAndroid/          # Android app (pre-release)
     ├── core/                  # Pure Kotlin library (no Android deps)
     │   └── src/main/kotlin/com/openhiker/core/
     │       ├── geo/           # TileCoordinate, BoundingBox, Haversine, TileRange
@@ -389,10 +394,10 @@ OpenHiker/
 
 ```bash
 # iOS (iPhone/iPad simulator)
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0"
 
 # watchOS (Apple Watch simulator)
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=26.5"
 
 # macOS
 xcodebuild -scheme "OpenHiker macOS" build
@@ -448,16 +453,19 @@ OpenHiker is under active development. Here's what's been completed and what's c
 |-------|---------|--------|
 | 1 | Foundation & Offline Maps (project scaffolding, core library, MapLibre, tile downloading, region management) | Done |
 | 2 | Navigation & Routing (GPS tracking, elevation data, OSM download, routing graph, A* routing, turn-by-turn) | Done |
-| 3 | History, Waypoints & Export (hike recording/review, waypoint management, PDF/GPX export) | In Progress |
-| 4 | Community & Cloud Sync (community route sharing, cloud drive sync) | Planned |
+| 3 | History, Waypoints & Export (hike recording/review, waypoint management, PDF/GPX export) | Done |
+| 4 | Community & Cloud Sync (community route sharing, cloud drive sync) | Done (sync of saved routes and waypoints still to do) |
+| 5 | Settings, Adaptive Layout, Accessibility & Play Store Prep | Done |
 
 ### What's Next
 
-- Complete Android Phase 3 (hike recording, waypoints, export)
-- Android Phase 4 (community features, cloud sync)
+- Android cloud-drive sync of saved routes and waypoints
+- Android GPS fix plausibility check during guidance (parity with Apple)
+- Trail overlay rendering from the routing database on iOS, macOS and Android
+- Community route upload: provision the GitHub bot token
 - Polish and bug fixes across all platforms
 - Expanded test coverage
-- App Store and Google Play release preparation
+- App Store and Google Play submission
 
 See [docs/planning/roadmap.md](docs/planning/roadmap.md) for the full roadmap with technical details.
 

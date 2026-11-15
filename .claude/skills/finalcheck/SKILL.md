@@ -30,9 +30,15 @@ git worktree list`. If the branch is checked out in another worktree, `cd` into 
    - A check failed → read the cause: `gh run list --branch "$(git branch --show-current)" --limit 5`, then
      `gh run view <run-id> --log-failed`. Reproduce it locally with the command the failing job runs (see
      `.github/workflows/`):
-     - `iOS starter workflow` (`ios.yml`) → `xcodebuild build-for-testing` then `test-without-building`,
-       scheme `OpenHiker`, on an iPhone simulator. Locally:
+     - `Apple` (`ios.yml`), job "Build and Test default scheme…" → `xcodebuild build-for-testing` then
+       `test-without-building`, scheme `OpenHiker`, on an iPhone simulator. Locally:
        `xcodebuild test -project OpenHiker.xcodeproj -scheme OpenHiker -destination 'platform=iOS Simulator,name=iPhone 17,OS=27.0'`
+     - `Apple`, job "Build watchOS app" →
+       `xcodebuild build -project OpenHiker.xcodeproj -scheme 'OpenHiker Watch App' -destination 'generic/platform=watchOS Simulator' CODE_SIGNING_ALLOWED=NO`
+     - `Apple`, job "Build macOS app" →
+       `xcodebuild build -project OpenHiker.xcodeproj -scheme 'OpenHiker macOS' -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO`
+     - `Android` (`android.yml`) → `cd OpenHikerAndroid && ./gradlew test --continue` (add `--rerun-tasks`
+       if the result looks stale).
      - CodeQL → read the alert (`gh api repos/hherb/OpenHiker/code-scanning/alerts`) and fix the code.
      - A workflow file changed → `actionlint`.
 
@@ -50,10 +56,8 @@ git worktree list`. If the branch is checked out in another worktree, `cd` into 
      adding a `paths:` filter to any job, without my explicit permission. If the same failure survives three
      fix attempts, stop and report what you tried.
 4. **Not covered by CI.** Run these locally if the PR needs them, and include the results in the report:
-   - Android: no CI job runs it. `cd OpenHikerAndroid && ./gradlew test` (add `--rerun-tasks` if the result
-     looks stale).
-   - watchOS and macOS: CI builds only the iOS scheme. Run the watchOS and macOS build commands from
-     `.claude/skills/nextsession/SKILL.md` for any change under `OpenHiker watchOS/`, `OpenHiker macOS/` or
-     `Shared/`.
+   - CI builds watchOS and macOS but runs no tests for them, and uses an older Xcode than the local one.
+     Build locally too (commands in `.claude/skills/nextsession/SKILL.md`) for any change under
+     `OpenHiker watchOS/`, `OpenHiker macOS/` or `Shared/`.
    - Device-only behaviour (WatchConnectivity, HealthKit, MultipeerConnectivity, background GPS) cannot be
      tested in CI or the simulator. List what needs a manual check on real hardware.
