@@ -40,18 +40,18 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
     onto the route, so the leg choice does not apply there.
-- **Last PRs:** #56 (2026-11-15, #55, recheck cap on the monotonic clock), #54 (#53, forward clock jump),
-  #52 (#51, backward clock jump).
+- **Last PRs:** #57 (2026-11-15, watchOS, macOS and Android CI jobs), #56 (#55, recheck cap on the
+  monotonic clock), #54 (#53, forward clock jump). This session: tests for #30 items 1–5 (see below).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
-## Baseline (Apple checked 2026-11-15, Android 2026-11-14; Xcode 27.2)
+## Baseline (checked 2026-11-15; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **76/76 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 321/321, `:app` green) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 331/331, `:app` 111/111 per variant) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -91,7 +91,12 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 ## Open GitHub issues
 
 - #23: Android service and ViewModel test coverage.
-- #30: missing unit tests for public functions from PR #26 (Android phase 3).
+- #30: missing unit tests for public functions from PR #26 (Android phase 3). Items 1–5 are done: live
+  elevation gain/loss now uses `ElevationAccumulator` in `:core` (shared with `computeGainLoss`), the
+  elapsed-time math is `recordingElapsedSeconds` in `HikeTrackingService.kt`, the hike-detail profile is
+  `ElevationProfile.fromTrackPoints`, and `filterByQuery`/`sortItems` are top-level `internal` in
+  `HikeListViewModel.kt`. Still open: items 6–8 (GPX elevation values and an XML well-formedness test,
+  `PDFExporter.calculateAverageSpeed`, `WaypointViewModel.toggleCategory`).
 
 ## Known stubs
 
