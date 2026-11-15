@@ -33,6 +33,7 @@ import com.openhiker.core.routing.ComputedRoute
 import com.openhiker.core.routing.RoutingError
 import com.openhiker.core.routing.TurnDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -324,10 +325,21 @@ class RoutePlanningViewModel @Inject constructor(
                 createdAt = java.time.Instant.now().toString(),
                 regionId = state.selectedRegionId
             )
-            plannedRouteRepository.save(plannedRoute)
+            val error = try {
+                plannedRouteRepository.save(plannedRoute)
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save planned route: ${plannedRoute.id}", e)
+                "Failed to save route: ${e.message}"
+            }
 
             withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(isSaveDialogVisible = false)
+                _uiState.value = _uiState.value.copy(
+                    isSaveDialogVisible = false,
+                    errorMessage = error
+                )
             }
         }
     }

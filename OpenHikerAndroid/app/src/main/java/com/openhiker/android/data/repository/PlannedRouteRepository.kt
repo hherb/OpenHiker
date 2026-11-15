@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -42,10 +43,22 @@ import javax.inject.Singleton
  * file-based storage approach for cross-platform sync compatibility.
  */
 @Singleton
-class PlannedRouteRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
+class PlannedRouteRepository internal constructor(
+    private val filesDir: File,
     private val syncState: SyncStateStore
 ) {
+    /**
+     * Hilt constructor: stores routes under the app's private files directory.
+     *
+     * @param context Application context whose `filesDir` holds the `planned_routes/` directory.
+     * @param syncState Records deletions for cloud sync.
+     */
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        syncState: SyncStateStore
+    ) : this(context.filesDir, syncState)
+
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -58,7 +71,7 @@ class PlannedRouteRepository @Inject constructor(
 
     /** Directory for storing planned route JSON files. */
     private val storageDirectory: File
-        get() = File(context.filesDir, ROUTES_DIR).also { it.mkdirs() }
+        get() = File(filesDir, ROUTES_DIR).also { it.mkdirs() }
 
     /**
      * Loads all planned routes from disk.
@@ -90,17 +103,14 @@ class PlannedRouteRepository @Inject constructor(
     }
 
     /**
-     * Saves a planned route to disk as a JSON file.
+     * Saves a planned route to disk as a JSON file, then updates the in-memory list.
      *
      * @param route The planned route to save.
+     * @throws java.io.IOException If the file cannot be written. The in-memory list is then left
+     *   unchanged, so callers must catch this and tell the user the route was not saved.
      */
     suspend fun save(route: PlannedRoute) = withContext(Dispatchers.IO) {
-        try {
-            val file = File(storageDirectory, "${route.id}.json")
-            file.writeText(json.encodeToString(route))
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save planned route: ${route.id}", e)
-        }
+        File(storageDirectory, "${route.id}.json").writeText(json.encodeToString(route))
 
         val current = _routes.value.toMutableList()
         current.removeAll { it.id == route.id }
@@ -139,12 +149,15 @@ class PlannedRouteRepository @Inject constructor(
      * cloud sync.
      *
      * @param id The route UUID to delete.
+     * @throws IOException If the route file exists but cannot be deleted. The route then stays in
+     *   the in-memory list, because it would reappear at the next [loadAll].
      */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         // Tombstone first: if the delete then fails, the next sync deletes the file anyway.
         syncState.recordDeletion(id)
-        if (!File(storageDirectory, "$id.json").delete()) {
-            Log.w(TAG, "Failed to delete route file for route $id")
+        val file = File(storageDirectory, "$id.json")
+        if (!file.delete() && file.exists()) {
+            throw IOException("Failed to delete route file for route $id")
         }
         _routes.value = _routes.value.filterNot { it.id == id }
     }
