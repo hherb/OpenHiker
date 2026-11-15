@@ -310,8 +310,8 @@ class HikeTrackingService : Service() {
 
                     trackPoints.add(trackPoint)
 
-                    // Update elevation gain/loss with noise filter
-                    updateElevation(altitude)
+                    // A fix without altitude would count as a drop to 0 m and back.
+                    if (location.hasAltitude()) updateElevation(altitude)
 
                     // Update speed statistics
                     if (lastPointTime > 0L && trackPoints.size >= 2) {

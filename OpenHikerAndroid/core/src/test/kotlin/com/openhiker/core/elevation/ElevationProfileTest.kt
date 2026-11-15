@@ -312,6 +312,8 @@ class ElevationProfileTest {
         assertEquals(0.0, profile[0].distance, 0.0)
         val leg = Haversine.distance(47.0, 11.0, 47.001, 11.0)
         assertEquals(leg, profile[1].distance, 1e-6)
+        // Independent check: 0.001° of latitude is about 111 m.
+        assertEquals(111.2, profile[1].distance, 0.5)
         assertEquals(
             leg + Haversine.distance(47.001, 11.0, 47.002, 11.0),
             profile[2].distance,
