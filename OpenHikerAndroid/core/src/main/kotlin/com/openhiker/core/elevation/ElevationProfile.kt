@@ -133,8 +133,9 @@ object ElevationProfile {
     /**
      * Computes the elevation at a specific distance along the profile.
      *
-     * Linearly interpolates between the two nearest profile points.
-     * Returns null if the profile is empty or the distance is out of range.
+     * Linearly interpolates between the two nearest profile points. A distance
+     * before the first point or past the last one returns that end's elevation.
+     * Returns null only if the profile is empty.
      *
      * @param profile Ordered elevation profile.
      * @param distance Distance from route start in metres.
