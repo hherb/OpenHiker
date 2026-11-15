@@ -406,8 +406,9 @@ internal fun filterByCategories(
  * Altitude to store for a waypoint taken from a GPS fix.
  *
  * `android.location.Location.altitude` is 0.0 when the fix has no altitude,
- * so storing it unchecked would record 0 m. Returning null instead matches
- * the hike tracker and Apple's `Waypoint.fromLocation`. Valid altitudes
+ * so storing it unchecked would record 0 m. This uses the same
+ * `hasAltitude()` test as the hike tracker and, like Apple's
+ * `Waypoint.fromLocation`, stores null for such a fix. Valid altitudes
  * below sea level are kept (#65).
  *
  * @param hasAltitude `Location.hasAltitude()` of the fix.
