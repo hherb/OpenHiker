@@ -333,20 +333,44 @@ final class iOSLocationManager: NSObject, ObservableObject {
         return last.timestamp.timeIntervalSince(first.timestamp)
     }
 
-    /// Incrementally updates cached distance and elevation stats when a new point is appended.
+    /// Whether a fix is accurate enough (< 100 m) to count towards distance and elevation.
+    ///
+    /// - Parameter location: A GPS fix.
+    /// - Returns: `true` for a valid horizontal accuracy under 100 m.
+    private static func isHighAccuracy(_ location: CLLocation) -> Bool {
+        location.horizontalAccuracy >= 0 && location.horizontalAccuracy < 100
+    }
+
+    /// Incrementally updates cached distance and elevation stats for a high-accuracy fix.
+    ///
+    /// Call before the fix is appended. Distance is measured from `anchor`. Elevation is
+    /// measured from the last high-accuracy point with a valid altitude, and a fix without
+    /// a valid altitude adds none (see ``TrackAltitude``).
     ///
     /// - Parameters:
-    ///   - previous: The last recorded track point.
-    ///   - current: The new track point being appended.
-    private func updateCachedStats(from previous: CLLocation, to current: CLLocation) {
-        totalDistance += current.distance(from: previous)
+    ///   - anchor: The last high-accuracy track point, or `nil` if there is none yet.
+    ///   - current: The new high-accuracy fix about to be appended.
+    private func updateCachedStats(from anchor: CLLocation?, to current: CLLocation) {
+        if let anchor {
+            totalDistance += current.distance(from: anchor)
+        }
 
-        let elevationDiff = current.altitude - previous.altitude
+        guard let elevationDiff = TrackAltitude.elevationChange(
+            to: current, since: trackPoints, countingOnly: Self.isHighAccuracy
+        ) else { return }
         if elevationDiff > 0 {
             elevationGain += elevationDiff
         } else if elevationDiff < 0 {
             elevationLoss -= elevationDiff
         }
+    }
+
+    /// Appends a fix to ``trackPoints``, fixing up an invalid altitude first.
+    ///
+    /// - Parameter location: The fix to record.
+    private func appendTrackPoint(_ location: CLLocation) {
+        let point = TrackAltitude.resolve(location, recorded: &trackPoints)
+        trackPoints.append(point)
     }
 
     // MARK: - State Persistence
@@ -418,7 +442,7 @@ final class iOSLocationManager: NSObject, ObservableObject {
 
         // Re-anchor distance accumulation on the last accurate restored point so the
         // first segment after recovery is measured (not silently dropped).
-        lastHighAccuracyPoint = trackPoints.last { $0.horizontalAccuracy >= 0 && $0.horizontalAccuracy < 100 }
+        lastHighAccuracyPoint = trackPoints.last(where: Self.isHighAccuracy)
 
         // Restore stats
         if let data = try? Data(contentsOf: Self.trackStatsFileURL),
@@ -486,7 +510,7 @@ extension iOSLocationManager: CLLocationManagerDelegate {
         currentLocation = location
 
         if isTracking {
-            let isHighAccuracy = location.horizontalAccuracy < 100
+            let isHighAccuracy = Self.isHighAccuracy(location)
 
             if let lastPoint = trackPoints.last {
                 let distance = location.distance(from: lastPoint)
@@ -499,12 +523,10 @@ extension iOSLocationManager: CLLocationManagerDelegate {
                     // appended to the track for visual continuity, but contribute no
                     // distance and the span across them is measured from the anchor.
                     if isHighAccuracy {
-                        if let anchor = lastHighAccuracyPoint {
-                            updateCachedStats(from: anchor, to: location)
-                        }
+                        updateCachedStats(from: lastHighAccuracyPoint, to: location)
                         lastHighAccuracyPoint = location
                     }
-                    trackPoints.append(location)
+                    appendTrackPoint(location)
 
                     // Persist track to disk every 10 points for crash recovery
                     if trackPoints.count % 10 == 0 {
@@ -512,7 +534,7 @@ extension iOSLocationManager: CLLocationManagerDelegate {
                     }
                 }
             } else {
-                trackPoints.append(location)
+                appendTrackPoint(location)
                 if isHighAccuracy {
                     lastHighAccuracyPoint = location
                 }

@@ -19,4 +19,8 @@ and loss: `OpenHiker watchOS/Services/LocationManager.swift` (elevation diff and
 
 ## Status
 
-Not started.
+Done (#63). Pure helper `TrackAltitude` in `Shared/Models/TrackAltitude.swift` (iOS and watchOS targets),
+tested in `OpenHikerTests/TrackAltitudeTests.swift`. Used by `LocationManager` (`appendTrackPoint`,
+`updateCachedStats`); `AddWaypointSheet` shows the altitude only when it is valid. Points whose altitude was
+filled in keep their negative `verticalAccuracy`. Gain and loss are measured from the last recorded point with
+a valid altitude, so a run of invalid fixes neither spikes the totals nor drops the climb across it.

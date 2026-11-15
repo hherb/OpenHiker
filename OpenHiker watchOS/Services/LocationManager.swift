@@ -329,6 +329,8 @@ final class LocationManager: NSObject, ObservableObject {
     /// Incrementally updates cached distance and elevation stats when a new point is appended.
     ///
     /// This avoids O(n) recomputation on every location update by updating running totals.
+    /// Call before the fix is appended. Elevation is measured from the last point with a
+    /// valid altitude, and a fix without a valid altitude adds none (see ``TrackAltitude``).
     ///
     /// - Parameters:
     ///   - previous: The last recorded track point.
@@ -336,7 +338,7 @@ final class LocationManager: NSObject, ObservableObject {
     private func updateCachedStats(from previous: CLLocation, to current: CLLocation) {
         totalDistance += current.distance(from: previous)
 
-        let elevationDiff = current.altitude - previous.altitude
+        guard let elevationDiff = TrackAltitude.elevationChange(to: current, since: trackPoints) else { return }
         if elevationDiff > 0 {
             elevationGain += elevationDiff
         } else if elevationDiff < 0 {
@@ -493,12 +495,20 @@ extension LocationManager: CLLocationManagerDelegate {
                 let distance = location.distance(from: lastPoint)
                 if distance >= gpsMode.distanceFilter {
                     updateCachedStats(from: lastPoint, to: location)
-                    trackPoints.append(location)
+                    appendTrackPoint(location)
                 }
             } else {
-                trackPoints.append(location)
+                appendTrackPoint(location)
             }
         }
+    }
+
+    /// Appends a fix to ``trackPoints``, fixing up an invalid altitude first.
+    ///
+    /// - Parameter location: The fix to record.
+    private func appendTrackPoint(_ location: CLLocation) {
+        let point = TrackAltitude.resolve(location, recorded: &trackPoints)
+        trackPoints.append(point)
     }
 
     /// Called when a new compass heading is available.
