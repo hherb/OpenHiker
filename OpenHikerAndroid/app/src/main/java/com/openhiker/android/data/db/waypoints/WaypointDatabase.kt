@@ -22,6 +22,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.openhiker.core.model.WaypointCategory
 
 /**
  * Room database for waypoints (points of interest with photos).
@@ -31,7 +34,7 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [WaypointEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class WaypointDatabase : RoomDatabase() {
@@ -42,6 +45,21 @@ abstract class WaypointDatabase : RoomDatabase() {
     companion object {
         /** Database filename in the app's internal storage. */
         private const val DATABASE_NAME = "openhiker_waypoints.db"
+
+        /**
+         * Version 1 stored the category as the enum name (`WATER_SOURCE`). Version 2 stores the
+         * shared raw value (`waterSource`) that iOS and the sync files use. The schema is unchanged.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (category in WaypointCategory.entries) {
+                    db.execSQL(
+                        "UPDATE waypoints SET category = ? WHERE category = ?",
+                        arrayOf(category.rawValue, category.name)
+                    )
+                }
+            }
+        }
 
         /**
          * Creates the Room database instance.
@@ -56,7 +74,7 @@ abstract class WaypointDatabase : RoomDatabase() {
                 context.applicationContext,
                 WaypointDatabase::class.java,
                 DATABASE_NAME
-            ).build()
+            ).addMigrations(MIGRATION_1_2).build()
         }
     }
 }

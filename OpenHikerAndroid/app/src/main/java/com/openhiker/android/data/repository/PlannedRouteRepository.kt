@@ -20,6 +20,7 @@ package com.openhiker.android.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.core.model.PlannedRoute
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +43,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class PlannedRouteRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val syncState: SyncStateStore
 ) {
     private val json = Json {
         prettyPrint = true
@@ -133,7 +135,8 @@ class PlannedRouteRepository @Inject constructor(
         _routes.value.filter { it.regionId == regionId }
 
     /**
-     * Deletes a planned route from disk and the in-memory list.
+     * Deletes a planned route from disk and the in-memory list, and records the deletion for
+     * cloud sync.
      *
      * @param id The route UUID to delete.
      */
@@ -142,6 +145,7 @@ class PlannedRouteRepository @Inject constructor(
             Log.w(TAG, "Failed to delete route file for route $id")
         }
         _routes.value = _routes.value.filterNot { it.id == id }
+        syncState.recordDeletion(id)
     }
 
     companion object {

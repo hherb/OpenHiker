@@ -30,17 +30,14 @@ private const val TAG = "WaypointCategoryUtils"
  * Falls back to [WaypointCategory.CUSTOM] if the string does not match any known
  * category, and logs a warning so data corruption is not silently masked.
  *
- * @param categoryName The raw category name from the database.
+ * @param categoryName The stored category string (raw value or legacy enum name).
  * @return The matching [WaypointCategory], or [WaypointCategory.CUSTOM] as fallback.
  */
-fun resolveCategory(categoryName: String): WaypointCategory {
-    return try {
-        WaypointCategory.valueOf(categoryName)
-    } catch (e: IllegalArgumentException) {
+fun resolveCategory(categoryName: String): WaypointCategory =
+    WaypointCategory.fromStored(categoryName) ?: run {
         Log.w(TAG, "Unknown waypoint category: '$categoryName', falling back to CUSTOM")
         WaypointCategory.CUSTOM
     }
-}
 
 /**
  * Parses the hex colour code from a [WaypointCategory] into a Compose [Color].

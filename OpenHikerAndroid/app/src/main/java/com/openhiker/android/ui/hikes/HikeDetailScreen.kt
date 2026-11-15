@@ -67,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openhiker.android.ui.components.ElevationProfileChart
+import com.openhiker.android.util.resolveCategory
 
 /**
  * Hike detail screen showing full statistics, track on map, and elevation profile.
@@ -228,7 +229,7 @@ fun HikeDetailScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Text(
-                                    text = waypoint.category,
+                                    text = resolveCategory(waypoint.category).displayName,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

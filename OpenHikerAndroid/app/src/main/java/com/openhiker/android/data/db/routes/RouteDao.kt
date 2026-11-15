@@ -19,6 +19,7 @@
 package com.openhiker.android.data.db.routes
 
 import androidx.room.Dao
+import com.openhiker.android.data.db.SyncStamp
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -84,6 +85,14 @@ interface RouteDao {
      */
     @Query("DELETE FROM saved_routes WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    /**
+     * Returns the id and last-modified time of all saved routes, for cloud sync.
+     *
+     * @return One [SyncStamp] per row.
+     */
+    @Query("SELECT id, modified_at FROM saved_routes")
+    suspend fun getSyncStamps(): List<SyncStamp>
 
     /**
      * Returns the total count of saved routes.

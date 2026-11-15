@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
 import javax.inject.Inject
 
 /**
@@ -273,7 +274,7 @@ class HikeDetailViewModel @Inject constructor(
         val route = _uiState.value.route ?: return
         viewModelScope.launch {
             try {
-                val updatedRoute = route.copy(name = newName)
+                val updatedRoute = route.copy(name = newName, modifiedAt = Instant.now().toString())
                 routeRepository.save(updatedRoute)
                 _uiState.update {
                     it.copy(

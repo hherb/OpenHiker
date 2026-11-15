@@ -51,6 +51,10 @@ When enabled, the screen stays on during active navigation. Useful on the trail 
 
 ## Cloud Sync
 
+Sync copies planned routes, recorded hikes, and waypoints (with their photos) to and from the folder, so
+several Android devices can share them. Deleting an item on one device deletes it on the others at their next
+sync.
+
 ### Auto-Sync
 Toggle automatic synchronization every 15 minutes.
 

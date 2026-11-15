@@ -19,7 +19,14 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   watch, periodic route sync, and a watchOS toolbar below the map.
 - **Android:** phases 1–5 merged (PRs #14, #20, #26, #33, #34). MapLibre offline maps, A* routing, navigation,
   history, waypoints, export, community routes, cloud-drive sync, settings. Last Android change:
-  2026-11-15 (waypoints store no altitude for a fix without one, #65).
+  2026-11-15 (cloud sync of saved routes and waypoints; waypoint category raw values, #61).
+- **Android cloud-drive sync** (`service/sync/`) covers planned routes, saved routes (track Base64) and
+  waypoints (photo and thumbnail Base64), one `SyncChannel` per type. `SyncStateStore`
+  (`data/sync/`) keeps this device's last-sync time and the deletions not yet in the manifest. The
+  repositories record a tombstone on every delete. The manifest's own timestamp is informational only.
+  Decisions are pure functions in `SyncRules.kt`. `SyncWorker` reads the folder URI from
+  `UserPreferencesRepository`. Before this fix it read an unused SharedPreferences file, so background
+  sync never ran. Only Android reads this folder; Apple platforms sync through iCloud.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -44,10 +51,12 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   without one stores the last valid altitude, the first valid altitude backfills the points before it, and
   such fixes add nothing to gain or loss. Android: `resolveTrackAltitude` (#59, PR #62). iOS and watchOS:
   `Shared/Models/TrackAltitude.swift` (`verticalAccuracy < 0`; #63, PR #64). Waypoints store no altitude
-  for such a fix: Apple `Waypoint.fromLocation`, Android `waypointAltitude` (#65).
-- **Last PRs:** #62 (2026-11-15, Android #59: altitude fix above, the pure `pausedMsAfterResume`, the DATE
-  sort parses `startTime` so unparseable dates go last), #60 (Android tests for #30; closes #30), #57
-  (watchOS, macOS and Android CI jobs).
+  for such a fix: Apple `Waypoint.fromLocation`, Android `waypointAltitude` (#65, PR #67).
+- **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
+  Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
+  `WaypointCategory.fromStored`, which accepts both forms (#61).
+- **Last PRs:** this branch `fix/android-sync-routes-waypoints-61` (#61 plus Android sync), #67
+  (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63), #62 (Android #59).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -57,7 +66,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **90/90 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 336/336, `:app` 141/141 per variant) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 162/162 per variant) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -97,9 +106,9 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 ## Open GitHub issues
 
 - #23: Android service and ViewModel test coverage.
-- #61: Android stores waypoint categories as the enum name (`WATER_SOURCE`), not the shared raw value
-  (`waterSource`), so camelCase categories from iOS or sync would be dropped by the filter. Latent until
-  waypoint sync lands.
+- #68: Android `PlannedRouteRepository.save` logs and swallows write errors, so callers report success.
+- #69: Android sync uploads a changed local item without checking the cloud copy, so the last device to
+  sync wins even with an older edit.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example
@@ -110,4 +119,3 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - **Community route upload** needs a real GitHub bot token on both platforms
   (`Shared/Services/GitHubRouteService.swift:175`, placeholder bytes;
   `OpenHikerAndroid/.../community/GitHubRouteService.kt:544`, empty `OBFUSCATED_TOKEN`).
-- **Android cloud sync** skips saved routes and waypoints (`CloudDriveSyncEngine.kt:176`, `:183`, both TODO).
