@@ -26,10 +26,10 @@ open OpenHiker.xcodeproj
 
 ```bash
 # iOS (iPhone simulator)
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0"
 
 # watchOS (Apple Watch simulator)
-xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)"
+xcodebuild -scheme "OpenHiker Watch App" -destination "platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=26.5"
 
 # macOS
 xcodebuild -scheme "OpenHiker macOS" build
@@ -368,9 +368,9 @@ Start with these files to understand the core flow:
 
 GitHub Actions workflows run on push to `main` and on pull requests:
 
-- **ios.yml** — Builds and tests the iOS target on `macos-latest`
-- **swift.yml** — Swift build and test workflow
-- **codeql.yml** — CodeQL security analysis
+- **ios.yml** ("Apple") — Builds and tests the iOS app, and builds the watchOS and macOS apps, on `macos-15`
+- **android.yml** — Runs `./gradlew test` for the Android `core` and `app` modules on `ubuntu-latest`
+- **codeql.yml** — CodeQL security analysis (currently disabled for inactivity)
 
 ## License
 

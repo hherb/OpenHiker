@@ -288,7 +288,7 @@ Currently all routes and waypoints associated with a region are transferred auto
 
 ```bash
 # iOS target (includes PeerSendView, PeerReceiveView, PeerTransferService)
-xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 16 Pro"
+xcodebuild -scheme "OpenHiker" -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0"
 
 # macOS target (includes MacPeerSendView, PeerTransferService)
 xcodebuild -scheme "OpenHiker macOS" build

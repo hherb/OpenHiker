@@ -115,6 +115,11 @@ OpenHiker runs natively on four platforms:
 - **Turn-by-Turn Navigation** — Route following with haptic feedback and off-route detection
 - **Foreground GPS Service** — Background location tracking during active hikes
 - **Room Databases** — Type-safe SQLite storage with same schemas as iOS
+- **Hike History & Waypoints** — Record hikes, review their stats, and manage waypoints
+- **PDF & GPX Export** — Export hikes and routes
+- **Community Routes** — Browse and upload shared routes
+- **Cloud-Drive Sync** — Sync planned routes through a cloud drive (saved routes and waypoints still to do)
+- **Settings & Adaptive Layout** — Settings screen, tablet layouts and accessibility support
 
 ## How It Works
 
@@ -363,7 +368,7 @@ OpenHiker/
 │   └── Services/
 │       └── MacPDFExporter.swift         # macOS-specific PDF generation
 │
-└── OpenHikerAndroid/          # Android app (in development)
+└── OpenHikerAndroid/          # Android app (pre-release)
     ├── core/                  # Pure Kotlin library (no Android deps)
     │   └── src/main/kotlin/com/openhiker/core/
     │       ├── geo/           # TileCoordinate, BoundingBox, Haversine, TileRange
@@ -460,7 +465,7 @@ OpenHiker is under active development. Here's what's been completed and what's c
 - Community route upload: provision the GitHub bot token
 - Polish and bug fixes across all platforms
 - Expanded test coverage
-- App Store and Google Play release preparation
+- App Store and Google Play submission
 
 See [docs/planning/roadmap.md](docs/planning/roadmap.md) for the full roadmap with technical details.
 

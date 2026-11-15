@@ -79,8 +79,9 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 ### CI
 
 - `ios.yml` (workflow "Apple") builds and tests scheme `OpenHiker`, and builds the watchOS app (generic
-  simulator destination) and the macOS app (`CODE_SIGNING_ALLOWED=NO`). All jobs are pinned to `macos-15`
-  (PR #40): `macos-latest` (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
+  simulator destination) and the macOS app, both with `CODE_SIGNING_ALLOWED=NO`. The iOS job was pinned to
+  `macos-15` in PR #40 (`macos-latest`, Xcode 26.6, had no iOS simulator runtime); the watchOS and macOS
+  jobs use the same runner. CI's Xcode (16.4) is older than the local one.
 - `android.yml` runs `./gradlew test --continue` on `ubuntu-latest` with Temurin JDK 21 (`:core` needs a
   21 toolchain).
 - `codeql.yml` is disabled for inactivity (last run 2026-04-14). Re-enable it with
