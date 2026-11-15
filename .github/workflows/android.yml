@@ -1,0 +1,28 @@
+name: Android
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Unit tests (core and app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: OpenHikerAndroid
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        # :core uses jvmToolchain(21); :app targets 17, which JDK 21 also builds
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Test
+        run: ./gradlew test --continue

@@ -36,12 +36,12 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
     freeze the gate until the clock caught up (#49, PR #50). If the device clock jumps back mid-session,
     the gate starts afresh as for a first fix (#51, PR #52). It does the same after a forward jump, which
     it spots when fix timestamps outrun a monotonic clock by more than 20 s (#53, PR #54). The 10 s
-    recheck cap runs on the same monotonic clock, so a smaller clock step cannot shorten it (#55, this
-    branch). `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
+    recheck cap runs on the same monotonic clock, so a smaller clock step cannot shorten it (#55, PR #56).
+    `iOSRouteGuidance.currentDate` and `currentMonotonicTime` are the clock seams the tests use.
   - Android port of the gate: `docs/TODO/Android/gps-fix-plausibility.md`. Android does not project fixes
     onto the route, so the leg choice does not apply there.
-- **Last PRs:** #54 (2026-11-14, #53, forward clock jump), #52 (#51, backward clock jump), #50 (#49,
-  future-dated fixes).
+- **Last PRs:** #56 (2026-11-15, #55, recheck cap on the monotonic clock), #54 (#53, forward clock jump),
+  #52 (#51, backward clock jump).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (Apple checked 2026-11-15, Android 2026-11-14; Xcode 27.2)
@@ -78,12 +78,14 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 ### CI
 
-- `ios.yml` builds and tests scheme `OpenHiker`. It is pinned to `macos-15` (PR #40): `macos-latest`
-  (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
+- `ios.yml` (workflow "Apple") builds and tests scheme `OpenHiker`, and builds the watchOS app (generic
+  simulator destination) and the macOS app (`CODE_SIGNING_ALLOWED=NO`). All jobs are pinned to `macos-15`
+  (PR #40): `macos-latest` (Xcode 26.6) had no iOS simulator runtime, so no destination matched.
+- `android.yml` runs `./gradlew test --continue` on `ubuntu-latest` with Temurin JDK 21 (`:core` needs a
+  21 toolchain).
 - `codeql.yml` is disabled for inactivity (last run 2026-04-14). Re-enable it with
   `gh workflow enable codeql.yml` if code scanning is wanted.
 - `swift.yml` was deleted in PR #40: it ran `swift build` with no `Package.swift` and failed on every run.
-- No CI job runs Android, watchOS or macOS.
 
 ## Open GitHub issues
 
@@ -96,5 +98,3 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   (`Shared/Services/GitHubRouteService.swift:175`, placeholder bytes;
   `OpenHikerAndroid/.../community/GitHubRouteService.kt:544`, empty `OBFUSCATED_TOKEN`).
 - **Android cloud sync** skips saved routes and waypoints (`CloudDriveSyncEngine.kt:176`, `:183`, both TODO).
-- **README is stale for Android:** its phase table says phase 3 is "In Progress" and phase 4 "Planned", but
-  both are merged.
