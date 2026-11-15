@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 /**
@@ -46,12 +47,14 @@ import javax.inject.Inject
  * @property isNavigating True while turn-by-turn navigation is active.
  * @property elapsedSeconds Elapsed navigation time in seconds.
  * @property isStopDialogVisible True when the stop confirmation dialog is shown.
+ * @property errorMessage Why the route could not be loaded, or null.
  */
 data class NavigationUiState(
     val routeName: String = "",
     val isNavigating: Boolean = false,
     val elapsedSeconds: Long = 0L,
-    val isStopDialogVisible: Boolean = false
+    val isStopDialogVisible: Boolean = false,
+    val errorMessage: String? = null
 )
 
 /**
@@ -112,15 +115,24 @@ class NavigationViewModel @Inject constructor(
     /**
      * Loads a planned route by ID and starts turn-by-turn navigation.
      *
+     * If the route is missing or cannot be read, sets [NavigationUiState.errorMessage] instead.
+     *
      * @param routeId The UUID of the planned route to navigate.
      */
     private fun loadAndStartNavigation(routeId: String) {
         viewModelScope.launch {
-            val route = plannedRouteRepository.getById(routeId)
+            val route = try {
+                plannedRouteRepository.getById(routeId)
+            } catch (e: IOException) {
+                Log.e(TAG, "Cannot load route $routeId", e)
+                _uiState.value = _uiState.value.copy(errorMessage = "Cannot load route: ${e.message}")
+                return@launch
+            }
             if (route != null) {
                 startNavigation(route)
             } else {
                 Log.w(TAG, "Route not found: $routeId")
+                _uiState.value = _uiState.value.copy(errorMessage = "Route not found.")
             }
         }
     }

@@ -19,7 +19,6 @@
 package com.openhiker.android.data.repository
 
 import android.content.Context
-import android.util.Log
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.core.model.PlannedRoute
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -69,37 +68,45 @@ class PlannedRouteRepository internal constructor(
     /** Observable list of all planned routes. */
     val routes: StateFlow<List<PlannedRoute>> = _routes.asStateFlow()
 
-    /** Directory for storing planned route JSON files. */
-    private val storageDirectory: File
-        get() = File(filesDir, ROUTES_DIR).also { it.mkdirs() }
-
     /**
-     * Loads all planned routes from disk.
+     * Directory for storing planned route JSON files, created if missing.
      *
-     * Reads all JSON files in the `planned_routes/` directory and
-     * deserializes them into [PlannedRoute] objects. Invalid files
-     * are logged and skipped.
+     * @throws IOException If the directory does not exist and cannot be created.
      */
-    suspend fun loadAll() = withContext(Dispatchers.IO) {
-        val dir = storageDirectory
-        if (!dir.exists()) {
-            _routes.value = emptyList()
-            return@withContext
+    private val storageDirectory: File
+        get() = File(filesDir, ROUTES_DIR).also {
+            if (!it.mkdirs() && !it.isDirectory) {
+                throw IOException("Cannot create planned route directory ${it.path}")
+            }
         }
 
-        val routes = dir.listFiles { file -> file.extension == "json" }
-            ?.mapNotNull { file ->
+    /**
+     * Loads all planned routes from disk into [routes].
+     *
+     * Reads every JSON file in the `planned_routes/` directory. A file that cannot be read or
+     * parsed is skipped and listed in the result, so the caller can log it and tell the user.
+     *
+     * @return One "file name: reason" entry per skipped file; empty if every file loaded.
+     * @throws IOException If the directory cannot be created or listed. [routes] is then left
+     *   unchanged: an empty list would make cloud sync treat every route as missing locally.
+     */
+    suspend fun loadAll(): List<String> = withContext(Dispatchers.IO) {
+        val dir = storageDirectory
+        val files = dir.listFiles { file -> file.extension == "json" }
+            ?: throw IOException("Cannot list planned route directory ${dir.path}")
+
+        val skipped = mutableListOf<String>()
+        _routes.value = files
+            .mapNotNull { file ->
                 try {
                     json.decodeFromString<PlannedRoute>(file.readText())
                 } catch (e: Exception) {
-                    Log.w(TAG, "Skipping corrupted route file: ${file.name}", e)
+                    skipped.add("${file.name}: ${e.message}")
                     null
                 }
             }
-            ?.sortedByDescending { it.createdAt }
-            ?: emptyList()
-
-        _routes.value = routes
+            .sortedByDescending { it.createdAt }
+        skipped
     }
 
     /**
@@ -132,7 +139,9 @@ class PlannedRouteRepository internal constructor(
      * Retrieves a single planned route by ID.
      *
      * @param id The route UUID.
-     * @return The planned route, or null if not found.
+     * @return The planned route, or null if no route with this ID is stored.
+     * @throws IOException If the route file exists but cannot be read or parsed, so callers can
+     *   tell "not found" apart from "found but broken".
      */
     suspend fun getById(id: String): PlannedRoute? = withContext(Dispatchers.IO) {
         val file = File(storageDirectory, "$id.json")
@@ -140,8 +149,7 @@ class PlannedRouteRepository internal constructor(
         try {
             json.decodeFromString<PlannedRoute>(file.readText())
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to deserialize planned route: $id", e)
-            null
+            throw IOException("Cannot read planned route $id: ${e.message}", e)
         }
     }
 
@@ -174,7 +182,6 @@ class PlannedRouteRepository internal constructor(
     }
 
     companion object {
-        private const val TAG = "PlannedRouteRepo"
         private const val ROUTES_DIR = "planned_routes"
     }
 }

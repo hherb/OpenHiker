@@ -116,7 +116,8 @@ class CloudDriveSyncEngine @Inject constructor(
      * @property serializer JSON serializer for [T].
      * @property idOf Returns the entity UUID.
      * @property modifiedAtOf Returns the entity's ISO-8601 change time, or null.
-     * @property localStamps Lists the id and change time of every local entity.
+     * @property localStamps Lists the id and change time of every local entity. Adds a message
+     *   to the given list for each local entity it had to skip because it could not be read.
      * @property loadLocal Loads one local entity as [T], or null if it is gone.
      * @property saveLocal Stores [T] locally, replacing any entity with the same id.
      * @property deleteLocal Deletes the local entity with the given id.
@@ -127,7 +128,7 @@ class CloudDriveSyncEngine @Inject constructor(
         val serializer: KSerializer<T>,
         val idOf: (T) -> String,
         val modifiedAtOf: (T) -> String?,
-        val localStamps: suspend () -> List<SyncStamp>,
+        val localStamps: suspend (MutableList<String>) -> List<SyncStamp>,
         val loadLocal: suspend (String) -> T?,
         val saveLocal: suspend (T) -> Unit,
         val deleteLocal: suspend (String) -> Unit
@@ -140,9 +141,11 @@ class CloudDriveSyncEngine @Inject constructor(
             serializer = PlannedRoute.serializer(),
             idOf = { it.id },
             modifiedAtOf = { it.modifiedAt },
-            localStamps = {
+            localStamps = { errors ->
                 // The repository's list is empty until loaded, as in a fresh worker process.
+                // A skipped file is replaced if the cloud holds a copy of the route.
                 plannedRouteRepository.loadAll()
+                    .forEach { errors.add("Planned routes: skipped local file $it") }
                 plannedRouteRepository.routes.value.map { SyncStamp(it.id, it.modifiedAt) }
             },
             loadLocal = { plannedRouteRepository.getById(it) },
@@ -276,13 +279,13 @@ class CloudDriveSyncEngine @Inject constructor(
         val local: Map<String, String?>
         val cloudFiles: List<DocumentFile>
         try {
-            local = channel.localStamps().associate { it.id to it.modifiedAt }
+            local = channel.localStamps(errors).associate { it.id to it.modifiedAt }
             cloudFiles = dir.listFiles().filter { it.name?.endsWith(JSON_SUFFIX) == true }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "${channel.label}: cannot list entities", e)
-            return SyncResult(errors = listOf("${channel.label}: ${e.message}"))
+            return SyncResult(errors = errors + "${channel.label}: ${e.message}")
         }
 
         for (id in local.keys intersect deletedIds) {
