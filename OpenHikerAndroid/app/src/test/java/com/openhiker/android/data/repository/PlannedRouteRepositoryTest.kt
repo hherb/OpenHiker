@@ -24,11 +24,13 @@ import com.openhiker.core.model.PlannedRoute
 import com.openhiker.core.model.RoutingMode
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 /**
  * Checks that [PlannedRouteRepository] reports failed writes and deletes to its caller instead of
@@ -39,16 +41,18 @@ class PlannedRouteRepositoryTest {
     @get:Rule
     val folder = TemporaryFolder()
 
-    private val repo by lazy {
-        PlannedRouteRepository(folder.root, SyncStateStore(File(folder.root, "sync_state.json"), { 42L }))
-    }
+    private val store by lazy { SyncStateStore(File(folder.root, "sync_state.json"), { 42L }) }
+
+    private val repo by lazy { PlannedRouteRepository(folder.root, store) }
+
+    private suspend fun pendingIds() = store.load().pendingTombstones.map { it.uuid }
 
     /** Where the repository stores the file for route [id]. */
     private fun routeFile(id: String) = File(folder.root, "planned_routes/$id.json")
 
-    private fun route(id: String) = PlannedRoute(
+    private fun route(id: String, name: String = "Test") = PlannedRoute(
         id = id,
-        name = "Test",
+        name = name,
         mode = RoutingMode.HIKING,
         startCoordinate = Coordinate(47.0, 11.0),
         endCoordinate = Coordinate(47.1, 11.1),
@@ -63,19 +67,39 @@ class PlannedRouteRepositoryTest {
     }
 
     @Test
+    fun `saving an existing route replaces it`() = runTest {
+        repo.save(route("r1", name = "v1"))
+        repo.save(route("r1", name = "v2"))
+        assertEquals(listOf("v2"), repo.routes.value.map { it.name })
+        assertEquals("v2", repo.getById("r1")?.name)
+    }
+
+    @Test
     fun `a failed save throws and leaves the list unchanged`() = runTest {
         routeFile("r1").mkdirs() // a directory where the file should go makes the write fail
         val result = runCatching { repo.save(route("r1")) }
-        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IOException)
         assertEquals(emptyList<PlannedRoute>(), repo.routes.value)
+    }
+
+    @Test
+    fun `a failed save over an existing route keeps the saved copy`() = runTest {
+        repo.save(route("r1", name = "v1"))
+        // A directory where the temp file goes makes the next write fail.
+        File(routeFile("r1").path + ".tmp").mkdirs()
+        val result = runCatching { repo.save(route("r1", name = "v2")) }
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertEquals("v1", repo.getById("r1")?.name)
+        assertEquals(listOf("v1"), repo.routes.value.map { it.name })
     }
 
     @Test
     fun `delete removes the file and the route`() = runTest {
         repo.save(route("r1"))
         repo.delete("r1")
-        assertTrue(!routeFile("r1").exists())
+        assertFalse(routeFile("r1").exists())
         assertEquals(emptyList<PlannedRoute>(), repo.routes.value)
+        assertEquals(listOf("r1"), pendingIds())
     }
 
     @Test
@@ -91,7 +115,9 @@ class PlannedRouteRepositoryTest {
         routeFile("r1").delete()
         File(routeFile("r1"), "child").apply { parentFile!!.mkdirs(); writeText("x") }
         val result = runCatching { repo.delete("r1") }
-        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IOException)
         assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+        // Tombstone first, so the next sync still deletes the route.
+        assertEquals(listOf("r1"), pendingIds())
     }
 }

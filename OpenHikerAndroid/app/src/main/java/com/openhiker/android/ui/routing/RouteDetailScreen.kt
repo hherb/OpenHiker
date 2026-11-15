@@ -58,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -109,6 +110,11 @@ fun RouteDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
+
+    // Close only once the delete has succeeded; a failed delete keeps the screen open with the error.
+    LaunchedEffect(uiState.isDeleted) {
+        if (uiState.isDeleted) onNavigateBack()
+    }
 
     Scaffold(
         topBar = {
@@ -319,7 +325,17 @@ fun RouteDetailScreen(
             onConfirm = {
                 viewModel.deleteRoute()
                 showDeleteDialog = false
-                onNavigateBack()
+            }
+        )
+    }
+
+    // Rename or delete failure
+    uiState.actionErrorMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearActionError,
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::clearActionError) { Text("OK") }
             }
         )
     }

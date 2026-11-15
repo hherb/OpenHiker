@@ -27,6 +27,7 @@ import com.openhiker.core.model.ElevationPoint
 import com.openhiker.core.model.PlannedRoute
 import com.openhiker.core.model.TurnInstruction
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,7 +52,10 @@ import javax.inject.Inject
  * @property elevationLoss Cumulative elevation loss in metres.
  * @property createdAt ISO-8601 creation timestamp.
  * @property isLoading True while the route is being loaded from disk.
- * @property errorMessage Error message if loading or an operation failed, or null.
+ * @property errorMessage Why the route could not be loaded, or null. Replaces the whole screen.
+ * @property actionErrorMessage Why a rename or delete failed, or null. Shown over the intact
+ *   route until [RouteDetailViewModel.clearActionError] is called.
+ * @property isDeleted True once the route has been deleted, so the screen can close.
  */
 data class RouteDetailUiState(
     val routeId: String = "",
@@ -63,7 +67,9 @@ data class RouteDetailUiState(
     val elevationLoss: Double = 0.0,
     val createdAt: String = "",
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val actionErrorMessage: String? = null,
+    val isDeleted: Boolean = false
 )
 
 /**
@@ -190,10 +196,12 @@ class RouteDetailViewModel @Inject constructor(
                 }
                 currentRoute = updatedRoute
                 _uiState.value = _uiState.value.copy(routeName = newName)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to rename route: ${route.id}", e)
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = "Failed to rename route: ${e.message}"
+                    actionErrorMessage = "Failed to rename route: ${e.message}"
                 )
             }
         }
@@ -202,7 +210,8 @@ class RouteDetailViewModel @Inject constructor(
     /**
      * Deletes the currently loaded route from the repository.
      *
-     * After successful deletion, the route data is cleared from the UI state.
+     * After successful deletion, the route data is cleared and [RouteDetailUiState.isDeleted] is
+     * set so the screen closes. On failure the screen stays open and shows the error.
      * If the route has not been loaded yet, this operation is a no-op.
      */
     fun deleteRoute() {
@@ -216,13 +225,21 @@ class RouteDetailViewModel @Inject constructor(
                 currentRoute = null
                 _instructions.value = emptyList()
                 _elevationProfile.value = emptyList()
+                _uiState.value = _uiState.value.copy(isDeleted = true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to delete route: ${route.id}", e)
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = "Failed to delete route: ${e.message}"
+                    actionErrorMessage = "Failed to delete route: ${e.message}"
                 )
             }
         }
+    }
+
+    /** Dismisses the rename or delete error after the user has seen it. */
+    fun clearActionError() {
+        _uiState.value = _uiState.value.copy(actionErrorMessage = null)
     }
 
     companion object {

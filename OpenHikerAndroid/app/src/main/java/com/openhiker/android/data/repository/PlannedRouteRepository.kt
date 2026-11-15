@@ -105,12 +105,22 @@ class PlannedRouteRepository internal constructor(
     /**
      * Saves a planned route to disk as a JSON file, then updates the in-memory list.
      *
+     * The JSON goes to a temporary file that is then renamed over the old one, so a failed write
+     * (for example a full disk) never destroys the route already saved under that ID.
+     *
      * @param route The planned route to save.
-     * @throws java.io.IOException If the file cannot be written. The in-memory list is then left
-     *   unchanged, so callers must catch this and tell the user the route was not saved.
+     * @throws IOException If the file cannot be written. The file on disk and the in-memory list
+     *   are then left unchanged, so callers must catch this and tell the user the route was not saved.
      */
     suspend fun save(route: PlannedRoute) = withContext(Dispatchers.IO) {
-        File(storageDirectory, "${route.id}.json").writeText(json.encodeToString(route))
+        val file = File(storageDirectory, "${route.id}.json")
+        // ".json.tmp" has extension "tmp", so loadAll never reads a leftover temp file.
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        tmp.writeText(json.encodeToString(route))
+        if (!tmp.renameTo(file)) {
+            tmp.delete()
+            throw IOException("Cannot replace planned route file ${file.path}")
+        }
 
         val current = _routes.value.toMutableList()
         current.removeAll { it.id == route.id }
@@ -150,7 +160,8 @@ class PlannedRouteRepository internal constructor(
      *
      * @param id The route UUID to delete.
      * @throws IOException If the route file exists but cannot be deleted. The route then stays in
-     *   the in-memory list, because it would reappear at the next [loadAll].
+     *   the in-memory list, because it would reappear at the next [loadAll]. The deletion is still
+     *   recorded, so the next cloud sync removes the route.
      */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         // Tombstone first: if the delete then fails, the next sync deletes the file anyway.

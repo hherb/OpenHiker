@@ -28,6 +28,7 @@ import com.openhiker.core.community.CommunityRouteConverter
 import com.openhiker.core.community.SharedRoute
 import com.openhiker.core.model.HikeStatsFormatter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -113,6 +114,8 @@ class CommunityRouteDetailViewModel @Inject constructor(
                     isSaving = false,
                     savedSuccessfully = true
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save community route locally", e)
                 _uiState.value = _uiState.value.copy(
