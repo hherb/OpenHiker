@@ -326,14 +326,14 @@ final class LocationManager: NSObject, ObservableObject {
 
     // MARK: - Track Statistics
 
-    /// Incrementally updates cached distance and elevation stats when a new point is appended.
+    /// Incrementally updates cached distance and elevation stats for a fix about to be appended.
     ///
     /// This avoids O(n) recomputation on every location update by updating running totals.
     /// Call before the fix is appended. Elevation is measured from the last point with a
     /// valid altitude, and a fix without a valid altitude adds none (see ``TrackAltitude``).
     ///
     /// - Parameters:
-    ///   - previous: The last recorded track point.
+    ///   - previous: The last recorded track point; distance is measured from it.
     ///   - current: The new track point being appended.
     private func updateCachedStats(from previous: CLLocation, to current: CLLocation) {
         totalDistance += current.distance(from: previous)

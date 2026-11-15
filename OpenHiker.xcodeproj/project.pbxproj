@@ -170,6 +170,7 @@
 		1C000001000000000000002F /* MacAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000012 /* MacAssets.xcassets */; };
 		1C0000010000000000000030 /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
 		1C0000010000000000000031 /* MacPeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000013 /* MacPeerSendView.swift */; };
+		1C0000010000000000000032 /* TrackAltitude.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000064 /* TrackAltitude.swift */; };
 		1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000001 /* WatchHealthRelayTests.swift */; };
 		1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */; };
 		1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000003 /* iOSLocationManagerTests.swift */; };
@@ -996,6 +997,7 @@
 				1C000001000000000000002E /* MacTrailMapView.swift in Sources */,
 				1C0000010000000000000030 /* PeerTransferService.swift in Sources */,
 				1C0000010000000000000031 /* MacPeerSendView.swift in Sources */,
+				1C0000010000000000000032 /* TrackAltitude.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

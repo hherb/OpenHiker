@@ -43,7 +43,8 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Fixes without a valid altitude** are handled the same way on all three recording platforms. A fix
   without one stores the last valid altitude, the first valid altitude backfills the points before it, and
   such fixes add nothing to gain or loss. Android: `resolveTrackAltitude` (#59, PR #62). iOS and watchOS:
-  `Shared/Models/TrackAltitude.swift` (`verticalAccuracy < 0`, #63, this session's PR).
+  `Shared/Models/TrackAltitude.swift` (`verticalAccuracy < 0`; #63, PR #64). Apple waypoints use the same
+  validity test (`Waypoint.fromLocation`).
 - **Last PRs:** #62 (2026-11-15, Android #59: altitude fix above, the pure `pausedMsAfterResume`, the DATE
   sort parses `startTime` so unparseable dates go last), #60 (Android tests for #30; closes #30), #57
   (watchOS, macOS and Android CI jobs).
@@ -53,7 +54,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **85/85 pass** |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **90/90 pass** |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 336/336, `:app` 137/137 per variant) |
@@ -99,6 +100,10 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #61: Android stores waypoint categories as the enum name (`WATER_SOURCE`), not the shared raw value
   (`waterSource`), so camelCase categories from iOS or sync would be dropped by the filter. Latent until
   waypoint sync lands.
+- #65: Android waypoints store 0 m when the fix has no altitude
+  (`docs/TODO/Android/waypoint-invalid-altitude.md`).
+- #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
+  look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example
   `calculateAverageSpeed` in `PDFExporter.kt`, `pausedMsAfterResume` in `HikeTrackingService.kt`).
 

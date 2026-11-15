@@ -73,6 +73,7 @@ final class TrackAltitudeTests: XCTestCase {
         XCTAssertEqual(stored.altitude, 820)
         XCTAssertEqual(recorded.map(\.altitude), [820, 820])
         XCTAssertEqual(recorded.map(\.timestamp.timeIntervalSince1970), [1, 2])
+        XCTAssertTrue(recorded.allSatisfy { $0.verticalAccuracy < 0 }, "backfilled points stay marked unmeasured")
     }
 
     /// Later valid altitudes do not rewrite earlier points.
@@ -108,5 +109,17 @@ final class TrackAltitudeTests: XCTestCase {
             to: fix(510, t: 3), since: recorded, countingOnly: { $0.horizontalAccuracy < 100 }
         )
         XCTAssertEqual(change, 10)
+    }
+
+    // MARK: - Waypoint.fromLocation
+
+    /// A waypoint from a fix without a valid altitude has no altitude, not 0 m.
+    func testWaypointFromInvalidAltitudeFixHasNoAltitude() {
+        XCTAssertNil(Waypoint.fromLocation(fix(0, verticalAccuracy: -1, t: 1)).altitude)
+    }
+
+    /// A valid altitude below sea level is kept on the waypoint.
+    func testWaypointKeepsValidAltitudeBelowSeaLevel() {
+        XCTAssertEqual(Waypoint.fromLocation(fix(-400, t: 1)).altitude, -400)
     }
 }

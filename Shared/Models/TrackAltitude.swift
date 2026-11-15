@@ -21,8 +21,10 @@ import CoreLocation
 ///
 /// Core Location sets `verticalAccuracy < 0` when a fix has no usable altitude (its
 /// `altitude` is then often 0 m). Recording that value as is shows a drop to sea level
-/// in the elevation profile and inflates elevation gain and loss. These pure functions
-/// apply the same rules as Android's `resolveTrackAltitude` (#59, #63):
+/// in the elevation profile and inflates elevation gain and loss. These functions apply
+/// the rules Android uses (#59, #63): `resolveTrackAltitude` for the stored altitude, and
+/// `HikeTrackingService`, which skips `updateElevation` for a fix without altitude.
+/// Android tests validity with `Location.hasAltitude()` rather than `verticalAccuracy`.
 ///
 /// - A fix with an invalid altitude is stored with the last valid altitude of the track.
 /// - The first valid altitude of a track also rewrites the earlier points, which all
@@ -79,7 +81,8 @@ enum TrackAltitude {
     ///   - fix: The new GPS fix, not yet appended.
     ///   - recorded: The points recorded so far.
     ///   - isCounted: Which recorded points may serve as the baseline. iOS passes its
-    ///     high-accuracy test so noisy points do not count; the default accepts all.
+    ///     high-accuracy test so noisy points do not count. watchOS uses the default
+    ///     (accept all) because it drops fixes of 100 m or worse before recording.
     /// - Returns: The change in metres (positive = climb), or `nil` when `fix` has no
     ///   valid altitude or no recorded point qualifies as a baseline.
     static func elevationChange(
@@ -93,7 +96,11 @@ enum TrackAltitude {
         return fix.altitude - baseline.altitude
     }
 
-    /// Copies a location with a different altitude, keeping every other field.
+    /// Copies a location with a different altitude.
+    ///
+    /// Keeps coordinate, both accuracies, course, speed (with their accuracies) and
+    /// timestamp. `floor`, `ellipsoidalAltitude` and `sourceInformation` are not copied;
+    /// nothing in the app reads them.
     ///
     /// - Parameters:
     ///   - location: The location to copy.

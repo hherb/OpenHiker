@@ -218,7 +218,8 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
 
     /// Creates a waypoint from a Core Location object with the given category and label.
     ///
-    /// Extracts latitude, longitude, and altitude from the ``CLLocation``.
+    /// Extracts latitude, longitude, and altitude from the ``CLLocation``. The altitude is `nil`
+    /// when Core Location marks it invalid (see ``TrackAltitude/hasValidAltitude(_:)``).
     ///
     /// - Parameters:
     ///   - location: The GPS location to create the waypoint from.
@@ -235,7 +236,7 @@ struct Waypoint: Identifiable, Codable, Sendable, Equatable {
         Waypoint(
             latitude: location.coordinate.latitude,
             longitude: location.coordinate.longitude,
-            altitude: location.altitude >= 0 ? location.altitude : nil,
+            altitude: TrackAltitude.hasValidAltitude(location) ? location.altitude : nil,
             label: label,
             category: category,
             note: note
