@@ -19,6 +19,7 @@
 package com.openhiker.android.data.db.waypoints
 
 import androidx.room.Dao
+import com.openhiker.android.data.db.SyncStamp
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -107,6 +108,14 @@ interface WaypointDao {
      */
     @Query("DELETE FROM waypoints WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    /**
+     * Returns the id and last-modified time of all waypoints, for cloud sync.
+     *
+     * @return One [SyncStamp] per row.
+     */
+    @Query("SELECT id, modified_at FROM waypoints")
+    suspend fun getSyncStamps(): List<SyncStamp>
 
     /**
      * Returns the total count of waypoints.

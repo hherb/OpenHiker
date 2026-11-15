@@ -23,16 +23,14 @@ import kotlinx.serialization.Serializable
 /**
  * Manifest file for cloud drive sync.
  *
- * Stored as `manifest.json` in the sync directory root. Tracks the
- * last sync timestamp and tombstones (deletion records) to enable
- * delta-based synchronisation across devices.
- *
- * The format is platform-agnostic: both iOS and Android can read/write
- * the same manifest to share data via a common cloud drive folder.
+ * Stored as `manifest.json` in the sync directory root and shared by every device that syncs
+ * with the folder. Its tombstones (deletion records) tell the other devices what was deleted.
+ * Only Android uses this format today; Apple platforms sync through iCloud.
  *
  * @property version Schema version for forward compatibility (currently 1).
- * @property lastSyncTimestamp Epoch milliseconds of the last successful sync.
- * @property tombstones List of deletion records for entities removed since last sync.
+ * @property lastSyncTimestamp Epoch milliseconds of the last sync by any device; informational
+ *   only. Each device keeps its own last-sync time locally.
+ * @property tombstones Deletion records from the last [TOMBSTONE_EXPIRY_MILLIS].
  */
 @Serializable
 data class SyncManifest(

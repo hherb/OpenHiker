@@ -28,40 +28,59 @@ import kotlinx.serialization.Serializable
  * and a colour hex code. The serial names match the iOS WaypointCategory
  * raw values for cross-platform JSON compatibility.
  *
+ * The database and sync files store [rawValue] (for example `waterSource`). Use [fromStored]
+ * to read a stored string back.
+ *
+ * @property rawValue Stored and serialised form; equals the `@SerialName` and the iOS raw value.
  * @property displayName Human-readable label shown in the UI.
  * @property iconName Material Design icon name for Android rendering.
  * @property colorHex Six-character hex colour code (no '#' prefix).
  */
 @Serializable
 enum class WaypointCategory(
+    val rawValue: String,
     val displayName: String,
     val iconName: String,
     val colorHex: String
 ) {
     @SerialName("trailMarker")
-    TRAIL_MARKER("Trail Marker", "signpost", "8B4513"),
+    TRAIL_MARKER("trailMarker", "Trail Marker", "signpost", "8B4513"),
 
     @SerialName("viewpoint")
-    VIEWPOINT("Viewpoint", "visibility", "4169E1"),
+    VIEWPOINT("viewpoint", "Viewpoint", "visibility", "4169E1"),
 
     @SerialName("waterSource")
-    WATER_SOURCE("Water Source", "water_drop", "1E90FF"),
+    WATER_SOURCE("waterSource", "Water Source", "water_drop", "1E90FF"),
 
     @SerialName("campsite")
-    CAMPSITE("Campsite", "camping", "228B22"),
+    CAMPSITE("campsite", "Campsite", "camping", "228B22"),
 
     @SerialName("danger")
-    DANGER("Danger", "warning", "FF4500"),
+    DANGER("danger", "Danger", "warning", "FF4500"),
 
     @SerialName("food")
-    FOOD("Food", "restaurant", "FF8C00"),
+    FOOD("food", "Food", "restaurant", "FF8C00"),
 
     @SerialName("shelter")
-    SHELTER("Shelter", "house", "708090"),
+    SHELTER("shelter", "Shelter", "house", "708090"),
 
     @SerialName("parking")
-    PARKING("Parking", "local_parking", "4682B4"),
+    PARKING("parking", "Parking", "local_parking", "4682B4"),
 
     @SerialName("custom")
-    CUSTOM("Custom", "location_on", "9370DB")
+    CUSTOM("custom", "Custom", "location_on", "9370DB");
+
+    companion object {
+        /**
+         * Reads a stored category string back into a [WaypointCategory].
+         *
+         * Accepts the [rawValue] (`waterSource`) and, for rows written before the database
+         * stored raw values, the enum name (`WATER_SOURCE`).
+         *
+         * @param stored The category string from the database or a sync file.
+         * @return The matching category, or null if the string matches none.
+         */
+        fun fromStored(stored: String): WaypointCategory? =
+            entries.firstOrNull { it.rawValue == stored || it.name == stored }
+    }
 }

@@ -43,8 +43,9 @@ class WaypointCategoryFilterTest {
 
     private val waypoints = listOf(
         waypoint("view", WaypointCategory.VIEWPOINT.name),
-        waypoint("water", WaypointCategory.WATER_SOURCE.name),
+        waypoint("water", WaypointCategory.WATER_SOURCE.rawValue),
         waypoint("camp", "campsite"),
+        waypoint("marker", "trailMarker"),
         waypoint("unknown", "not_a_category")
     )
 
@@ -99,14 +100,17 @@ class WaypointCategoryFilterTest {
     }
 
     @Test
-    fun `stored category matches the enum name ignoring case`() {
-        val result = filterByCategories(waypoints, setOf(WaypointCategory.CAMPSITE))
-        assertEquals(listOf("camp"), result.map { it.id })
+    fun `legacy enum name and camelCase raw value both match`() {
+        val result = filterByCategories(
+            waypoints,
+            setOf(WaypointCategory.VIEWPOINT, WaypointCategory.TRAIL_MARKER)
+        )
+        assertEquals(listOf("view", "marker"), result.map { it.id })
     }
 
     @Test
     fun `unknown stored category matches no filter`() {
         val result = filterByCategories(waypoints, WaypointCategory.entries.toSet())
-        assertEquals(listOf("view", "water", "camp"), result.map { it.id })
+        assertEquals(listOf("view", "water", "camp", "marker"), result.map { it.id })
     }
 }

@@ -19,7 +19,9 @@
 package com.openhiker.android.data.repository
 
 import com.openhiker.android.data.db.routes.RouteDao
+import com.openhiker.android.data.db.SyncStamp
 import com.openhiker.android.data.db.routes.SavedRouteEntity
+import com.openhiker.android.data.sync.SyncStateStore
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,7 +35,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class RouteRepository @Inject constructor(
-    private val routeDao: RouteDao
+    private val routeDao: RouteDao,
+    private val syncState: SyncStateStore
 ) {
     /**
      * Observes all saved routes, ordered by start time (newest first).
@@ -67,9 +70,20 @@ class RouteRepository @Inject constructor(
     suspend fun save(route: SavedRouteEntity) = routeDao.insert(route)
 
     /**
-     * Deletes a saved route by ID.
+     * Returns the id and last-modified time of every saved route, for cloud sync.
+     *
+     * @return One [SyncStamp] per route.
+     */
+    suspend fun getSyncStamps(): List<SyncStamp> = routeDao.getSyncStamps()
+
+    /**
+     * Deletes a saved route by ID and records the deletion for cloud sync.
      *
      * @param id The route UUID to delete.
      */
-    suspend fun delete(id: String) = routeDao.deleteById(id)
+    suspend fun delete(id: String) {
+        // Tombstone first: if the delete then fails, the next sync deletes the row anyway.
+        syncState.recordDeletion(id)
+        routeDao.deleteById(id)
+    }
 }

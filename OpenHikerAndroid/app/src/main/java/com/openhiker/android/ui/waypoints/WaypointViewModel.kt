@@ -248,7 +248,7 @@ class WaypointViewModel @Inject constructor(
                     altitude = altitude,
                     timestamp = now,
                     label = label,
-                    category = category.name,
+                    category = category.rawValue,
                     note = note,
                     hasPhoto = photo != null,
                     hikeId = hikeId,
@@ -301,7 +301,7 @@ class WaypointViewModel @Inject constructor(
                 }
                 val updated = existing.copy(
                     label = label,
-                    category = category.name,
+                    category = category.rawValue,
                     note = note,
                     modifiedAt = Instant.now().toString()
                 )
@@ -385,7 +385,8 @@ internal fun toggledCategories(
  * Keeps only the waypoints whose category is in [categories].
  *
  * An empty [categories] set means "no filter" and returns all waypoints.
- * The stored category string is matched against the enum name ignoring case.
+ * The stored category string is read with [WaypointCategory.fromStored], so both the raw value
+ * (`waterSource`) and the legacy enum name (`WATER_SOURCE`) match.
  *
  * @param waypoints All waypoints from the database.
  * @param categories The selected category filters.
@@ -396,10 +397,7 @@ internal fun filterByCategories(
     categories: Set<WaypointCategory>
 ): List<WaypointSummary> {
     if (categories.isEmpty()) return waypoints
-    val categoryNames = categories.map { it.name }
-    return waypoints.filter { waypoint ->
-        categoryNames.any { name -> name.equals(waypoint.category, ignoreCase = true) }
-    }
+    return waypoints.filter { WaypointCategory.fromStored(it.category) in categories }
 }
 
 /**

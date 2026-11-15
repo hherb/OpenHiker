@@ -17,7 +17,6 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 | Feature | iOS | watchOS | macOS | Android | Spec |
 |---|---|---|---|---|---|
 | Trail overlay rendering from the routing DB (`routing_edges`) | todo | **done** | todo | todo | `docs/TODO/<platform>/trail-overlay-rendering.md` |
-| Cloud sync of saved routes and waypoints | done | n/a (via iPhone) | done | todo (TODO stubs in `CloudDriveSyncEngine.kt`) | — |
 | GPS fix plausibility check during guidance | done | done | n/a (no guidance) | todo | `docs/TODO/Android/gps-fix-plausibility.md` |
 
 ## Release blockers

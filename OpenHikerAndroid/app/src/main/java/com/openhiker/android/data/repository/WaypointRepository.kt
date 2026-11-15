@@ -18,9 +18,11 @@
 
 package com.openhiker.android.data.repository
 
+import com.openhiker.android.data.db.SyncStamp
 import com.openhiker.android.data.db.waypoints.WaypointDao
 import com.openhiker.android.data.db.waypoints.WaypointEntity
 import com.openhiker.android.data.db.waypoints.WaypointSummary
+import com.openhiker.android.data.sync.SyncStateStore
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,7 +36,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class WaypointRepository @Inject constructor(
-    private val waypointDao: WaypointDao
+    private val waypointDao: WaypointDao,
+    private val syncState: SyncStateStore
 ) {
     /**
      * Observes all waypoints (without photo BLOBs), newest first.
@@ -77,9 +80,20 @@ class WaypointRepository @Inject constructor(
     suspend fun save(waypoint: WaypointEntity) = waypointDao.insert(waypoint)
 
     /**
-     * Deletes a waypoint by ID.
+     * Returns the id and last-modified time of every waypoint, for cloud sync.
+     *
+     * @return One [SyncStamp] per waypoint.
+     */
+    suspend fun getSyncStamps(): List<SyncStamp> = waypointDao.getSyncStamps()
+
+    /**
+     * Deletes a waypoint by ID and records the deletion for cloud sync.
      *
      * @param id The waypoint UUID to delete.
      */
-    suspend fun delete(id: String) = waypointDao.deleteById(id)
+    suspend fun delete(id: String) {
+        // Tombstone first: if the delete then fails, the next sync deletes the row anyway.
+        syncState.recordDeletion(id)
+        waypointDao.deleteById(id)
+    }
 }

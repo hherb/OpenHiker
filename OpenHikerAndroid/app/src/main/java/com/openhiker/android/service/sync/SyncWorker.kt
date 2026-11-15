@@ -29,8 +29,10 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.openhiker.android.data.repository.UserPreferencesRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
@@ -38,25 +40,27 @@ import java.util.concurrent.TimeUnit
  *
  * Runs every [SYNC_INTERVAL_MINUTES] minutes when the device is connected
  * to a network (Wi-Fi or cellular). Reads the cloud folder URI from
- * SharedPreferences and delegates to [CloudDriveSyncEngine].
+ * [UserPreferencesRepository] and delegates to [CloudDriveSyncEngine].
  *
  * Uses [HiltWorker] for dependency injection of the sync engine.
  *
  * @param context Application context.
  * @param params Worker parameters from WorkManager.
  * @param syncEngine The cloud drive sync engine.
+ * @param preferencesRepository Source of the sync folder URI and the sync toggle.
  */
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val syncEngine: CloudDriveSyncEngine
+    private val syncEngine: CloudDriveSyncEngine,
+    private val preferencesRepository: UserPreferencesRepository
 ) : CoroutineWorker(context, params) {
 
     /**
      * Performs the background sync operation.
      *
-     * Reads the cloud folder URI from shared preferences, then runs a
+     * Reads the cloud folder URI from the user preferences, then runs a
      * full sync cycle. Returns [Result.success] on success or
      * [Result.retry] on transient failures.
      *
@@ -64,7 +68,7 @@ class SyncWorker @AssistedInject constructor(
      */
     override suspend fun doWork(): Result {
         val folderUri = getSyncFolderUri() ?: run {
-            Log.d(TAG, "No sync folder configured, skipping")
+            Log.d(TAG, "Sync disabled or no folder configured, skipping")
             return Result.success()
         }
 
@@ -84,13 +88,15 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Reads the configured cloud sync folder URI from SharedPreferences.
+     * Reads the configured cloud sync folder URI from the user preferences, where the
+     * Settings screen stores it.
      *
-     * @return The folder URI, or null if not configured.
+     * @return The folder URI, or null if not configured or sync is disabled.
      */
-    private fun getSyncFolderUri(): Uri? {
-        val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val uriString = prefs.getString(PREF_SYNC_FOLDER_URI, null) ?: return null
+    private suspend fun getSyncFolderUri(): Uri? {
+        val prefs = preferencesRepository.preferencesFlow.first()
+        if (!prefs.syncEnabled) return null
+        val uriString = prefs.syncFolderUri ?: return null
         return try {
             Uri.parse(uriString)
         } catch (e: Exception) {
@@ -101,12 +107,6 @@ class SyncWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "SyncWorker"
-
-        /** SharedPreferences file name for sync settings. */
-        const val PREFS_NAME = "openhiker_sync_prefs"
-
-        /** Preference key for the cloud sync folder URI. */
-        const val PREF_SYNC_FOLDER_URI = "sync_folder_uri"
 
         /** Sync interval in minutes. */
         private const val SYNC_INTERVAL_MINUTES = 15L
