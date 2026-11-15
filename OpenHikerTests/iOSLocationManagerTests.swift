@@ -92,4 +92,72 @@ final class iOSLocationManagerTests: XCTestCase {
         let manager = iOSLocationManager()
         XCTAssertEqual(manager.gpsMode, .highAccuracy)
     }
+
+    // MARK: - Invalid Altitudes (#63)
+
+    /// Builds a fix `step` × ~11 m north of a fixed start, so consecutive fixes pass
+    /// the 5 m high-accuracy distance filter. A negative `vacc` marks the altitude invalid.
+    private func fix(step: Int, altitude: Double, vacc: Double = 5, hacc: Double = 5) -> CLLocation {
+        CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 47 + Double(step) * 0.0001, longitude: 11),
+            altitude: altitude,
+            horizontalAccuracy: hacc,
+            verticalAccuracy: vacc,
+            timestamp: Date(timeIntervalSince1970: TimeInterval(step))
+        )
+    }
+
+    /// Feeds fixes through the delegate of a tracking manager and returns it.
+    ///
+    /// Keep the fixes under 10: the 10th point persists tracking state to disk.
+    /// `stopTracking()` runs at teardown to clear any persisted state anyway.
+    private func record(_ fixes: [CLLocation]) -> iOSLocationManager {
+        let manager = iOSLocationManager()
+        manager.isTracking = true
+        addTeardownBlock { manager.stopTracking() }
+        let clManager = CLLocationManager()
+        for f in fixes {
+            manager.locationManager(clManager, didUpdateLocations: [f])
+        }
+        return manager
+    }
+
+    /// A mid-hike fix without a valid altitude is stored at the last valid altitude
+    /// and adds no gain or loss, while its distance still counts.
+    func testInvalidAltitudeFixAddsNoElevation() {
+        let manager = record([
+            fix(step: 0, altitude: 500),
+            fix(step: 1, altitude: 0, vacc: -1),
+            fix(step: 2, altitude: 510)
+        ])
+        XCTAssertEqual(manager.trackPoints.map(\.altitude), [500, 500, 510])
+        XCTAssertEqual(manager.elevationGain, 10, accuracy: 0.001)
+        XCTAssertEqual(manager.elevationLoss, 0)
+        XCTAssertGreaterThan(manager.totalDistance, 20)
+    }
+
+    /// Leading fixes without altitude are backfilled, and reaching the first valid
+    /// altitude does not count as a climb.
+    func testLeadingInvalidAltitudesAreBackfilledWithoutGain() {
+        let manager = record([
+            fix(step: 0, altitude: 0, vacc: -1),
+            fix(step: 1, altitude: 0, vacc: -1),
+            fix(step: 2, altitude: 820),
+            fix(step: 3, altitude: 830)
+        ])
+        XCTAssertEqual(manager.trackPoints.map(\.altitude), [820, 820, 820, 830])
+        XCTAssertEqual(manager.elevationGain, 10, accuracy: 0.001)
+        XCTAssertEqual(manager.elevationLoss, 0)
+    }
+
+    /// A low-accuracy fix is not used as the elevation baseline, even with a valid altitude.
+    func testLowAccuracyFixIsNotElevationBaseline() {
+        let manager = record([
+            fix(step: 0, altitude: 500),
+            fix(step: 1, altitude: 900, hacc: 150),
+            fix(step: 2, altitude: 510)
+        ])
+        XCTAssertEqual(manager.elevationGain, 10, accuracy: 0.001)
+        XCTAssertEqual(manager.elevationLoss, 0)
+    }
 }

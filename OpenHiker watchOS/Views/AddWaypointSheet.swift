@@ -109,7 +109,7 @@ struct AddWaypointSheet: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    if location.altitude >= 0 {
+                    if TrackAltitude.hasValidAltitude(location) {
                         Text("\(Int(location.altitude))m alt")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)

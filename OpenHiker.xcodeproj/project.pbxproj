@@ -73,6 +73,7 @@
 		1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000061 /* RouteGuidanceConfig.swift */; };
 		1A0000010000000000000062 /* RouteProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000062 /* RouteProjection.swift */; };
 		1A0000010000000000000063 /* FixPlausibilityGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000063 /* FixPlausibilityGate.swift */; };
+		1A0000010000000000000064 /* TrackAltitude.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000064 /* TrackAltitude.swift */; };
 		1B0000010000000000000001 /* OpenHikerWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000001 /* OpenHikerWatchApp.swift */; };
 		1B0000010000000000000002 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000002 /* WatchContentView.swift */; };
 		1B0000010000000000000003 /* WatchAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000003 /* WatchAssets.xcassets */; };
@@ -119,6 +120,7 @@
 		1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B000001000000000000001C /* TrackOnlyScene.swift */; };
 		1B0000010000000000000063 /* RouteProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000062 /* RouteProjection.swift */; };
 		1B0000010000000000000064 /* FixPlausibilityGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000063 /* FixPlausibilityGate.swift */; };
+		1B0000010000000000000065 /* TrackAltitude.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000064 /* TrackAltitude.swift */; };
 		1C0000010000000000000001 /* OpenHikerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000001 /* OpenHikerMacApp.swift */; };
 		1C0000010000000000000002 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000002 /* MacContentView.swift */; };
 		1C0000010000000000000003 /* OpenHikerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000003 /* OpenHikerCommands.swift */; };
@@ -168,9 +170,11 @@
 		1C000001000000000000002F /* MacAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000012 /* MacAssets.xcassets */; };
 		1C0000010000000000000030 /* PeerTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001000000000000004F /* PeerTransferService.swift */; };
 		1C0000010000000000000031 /* MacPeerSendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0000010000000000000013 /* MacPeerSendView.swift */; };
+		1C0000010000000000000032 /* TrackAltitude.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000064 /* TrackAltitude.swift */; };
 		1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000001 /* WatchHealthRelayTests.swift */; };
 		1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */; };
 		1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000003 /* iOSLocationManagerTests.swift */; };
+		1D0000010000000000000004 /* TrackAltitudeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000004 /* TrackAltitudeTests.swift */; };
 		6F81B2D52F3F76EF00218D95 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
 		6F81B2D82F3F76F100218D95 /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 /* End PBXBuildFile section */
@@ -273,6 +277,7 @@
 		2A0000010000000000000061 /* RouteGuidanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGuidanceConfig.swift; sourceTree = "<group>"; };
 		2A0000010000000000000062 /* RouteProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProjection.swift; sourceTree = "<group>"; };
 		2A0000010000000000000063 /* FixPlausibilityGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixPlausibilityGate.swift; sourceTree = "<group>"; };
+		2A0000010000000000000064 /* TrackAltitude.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackAltitude.swift; sourceTree = "<group>"; };
 		2B0000010000000000000001 /* OpenHikerWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenHikerWatchApp.swift; sourceTree = "<group>"; };
 		2B0000010000000000000002 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		2B0000010000000000000003 /* WatchAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WatchAssets.xcassets; sourceTree = "<group>"; };
@@ -317,6 +322,7 @@
 		2D0000010000000000000001 /* WatchHealthRelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchHealthRelayTests.swift; sourceTree = "<group>"; };
 		2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSRouteGuidanceTests.swift; sourceTree = "<group>"; };
 		2D0000010000000000000003 /* iOSLocationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSLocationManagerTests.swift; sourceTree = "<group>"; };
+		2D0000010000000000000004 /* TrackAltitudeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackAltitudeTests.swift; sourceTree = "<group>"; };
 		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -550,6 +556,7 @@
 				2A0000010000000000000061 /* RouteGuidanceConfig.swift */,
 				2A0000010000000000000062 /* RouteProjection.swift */,
 				2A0000010000000000000063 /* FixPlausibilityGate.swift */,
+				2A0000010000000000000064 /* TrackAltitude.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -652,6 +659,7 @@
 				2D0000010000000000000001 /* WatchHealthRelayTests.swift */,
 				2D0000010000000000000002 /* iOSRouteGuidanceTests.swift */,
 				2D0000010000000000000003 /* iOSLocationManagerTests.swift */,
+				2D0000010000000000000004 /* TrackAltitudeTests.swift */,
 			);
 			path = OpenHikerTests;
 			sourceTree = "<group>";
@@ -880,6 +888,7 @@
 				1A0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 				1A0000010000000000000062 /* RouteProjection.swift in Sources */,
 				1A0000010000000000000063 /* FixPlausibilityGate.swift in Sources */,
+				1A0000010000000000000064 /* TrackAltitude.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -931,6 +940,7 @@
 				1B0000010000000000000061 /* RouteGuidanceConfig.swift in Sources */,
 				1B0000010000000000000063 /* RouteProjection.swift in Sources */,
 				1B0000010000000000000064 /* FixPlausibilityGate.swift in Sources */,
+				1B0000010000000000000065 /* TrackAltitude.swift in Sources */,
 				1B0000010000000000000062 /* TrackOnlyScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -987,6 +997,7 @@
 				1C000001000000000000002E /* MacTrailMapView.swift in Sources */,
 				1C0000010000000000000030 /* PeerTransferService.swift in Sources */,
 				1C0000010000000000000031 /* MacPeerSendView.swift in Sources */,
+				1C0000010000000000000032 /* TrackAltitude.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -997,6 +1008,7 @@
 				1D0000010000000000000001 /* WatchHealthRelayTests.swift in Sources */,
 				1D0000010000000000000002 /* iOSRouteGuidanceTests.swift in Sources */,
 				1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */,
+				1D0000010000000000000004 /* TrackAltitudeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
