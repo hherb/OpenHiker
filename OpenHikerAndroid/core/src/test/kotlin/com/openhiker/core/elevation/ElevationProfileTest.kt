@@ -18,6 +18,8 @@
 
 package com.openhiker.core.elevation
 
+import com.openhiker.core.compression.TrackPoint
+import com.openhiker.core.geo.Haversine
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.ElevationPoint
 import org.junit.Assert.assertEquals
@@ -231,6 +233,103 @@ class ElevationProfileTest {
             ElevationPoint(200.0, 1200.0)
         )
         assertEquals(1100.0, ElevationProfile.elevationAtDistance(profile, 100.0)!!, 0.01)
+    }
+
+    // ── Incremental accumulator ──────────────────────────────────────
+
+    @Test
+    fun `accumulator first sample only sets the reference`() {
+        val acc = ElevationAccumulator().add(1000.0)
+        assertEquals(0.0, acc.gain, 0.0)
+        assertEquals(0.0, acc.loss, 0.0)
+        assertEquals(1000.0, acc.lastSignificantElevation!!, 0.0)
+    }
+
+    @Test
+    fun `accumulator ignores a change just below the threshold`() {
+        val acc = ElevationAccumulator().add(1000.0).add(1002.99)
+        assertEquals(0.0, acc.gain, 0.0)
+        assertEquals(1000.0, acc.lastSignificantElevation!!, 0.0)
+    }
+
+    @Test
+    fun `accumulator counts a change of exactly the threshold`() {
+        val acc = ElevationAccumulator().add(1000.0).add(1003.0)
+        assertEquals(3.0, acc.gain, 1e-9)
+        assertEquals(1003.0, acc.lastSignificantElevation!!, 0.0)
+    }
+
+    @Test
+    fun `accumulator adds up slow drift once it crosses the threshold`() {
+        // Each 1 m step is noise, but the total from the reference reaches 3 m.
+        val acc = listOf(1000.0, 1001.0, 1002.0, 1003.0)
+            .fold(ElevationAccumulator()) { a, alt -> a.add(alt) }
+        assertEquals(3.0, acc.gain, 1e-9)
+    }
+
+    @Test
+    fun `accumulator does not count GPS jitter around one altitude`() {
+        val acc = listOf(1000.0, 1002.0, 998.0, 1002.5, 997.5, 1000.0)
+            .fold(ElevationAccumulator()) { a, alt -> a.add(alt) }
+        assertEquals(0.0, acc.gain, 0.0)
+        assertEquals(0.0, acc.loss, 0.0)
+    }
+
+    @Test
+    fun `accumulator tracks gain and loss separately as positive values`() {
+        val acc = ElevationAccumulator().add(1000.0).add(1050.0).add(1020.0)
+        assertEquals(50.0, acc.gain, 1e-9)
+        assertEquals(30.0, acc.loss, 1e-9)
+    }
+
+    @Test
+    fun `accumulator matches computeGainLoss on the same samples`() {
+        val altitudes = listOf(500.0, 502.0, 507.0, 505.0, 499.0, 520.0, 518.0)
+        val incremental = altitudes.fold(ElevationAccumulator()) { a, alt -> a.add(alt) }
+        val batch = ElevationProfile.computeGainLoss(
+            altitudes.mapIndexed { i, alt -> ElevationPoint(i * 10.0, alt) }
+        )
+        assertEquals(batch.gain, incremental.gain, 1e-9)
+        assertEquals(batch.loss, incremental.loss, 1e-9)
+    }
+
+    // ── Profile from recorded track ──────────────────────────────────
+
+    @Test
+    fun `fromTrackPoints returns empty list for no points`() {
+        assertTrue(ElevationProfile.fromTrackPoints(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `fromTrackPoints keeps altitudes and accumulates distance`() {
+        val points = listOf(
+            TrackPoint(47.0, 11.0, 1000.0, 0.0),
+            TrackPoint(47.001, 11.0, 1010.0, 10.0),
+            TrackPoint(47.002, 11.0, 1005.0, 20.0)
+        )
+        val profile = ElevationProfile.fromTrackPoints(points)
+        assertEquals(3, profile.size)
+        assertEquals(0.0, profile[0].distance, 0.0)
+        val leg = Haversine.distance(47.0, 11.0, 47.001, 11.0)
+        assertEquals(leg, profile[1].distance, 1e-6)
+        // Independent check: 0.001° of latitude is about 111 m.
+        assertEquals(111.2, profile[1].distance, 0.5)
+        assertEquals(
+            leg + Haversine.distance(47.001, 11.0, 47.002, 11.0),
+            profile[2].distance,
+            1e-6
+        )
+        assertEquals(listOf(1000.0, 1010.0, 1005.0), profile.map { it.elevation })
+    }
+
+    @Test
+    fun `fromTrackPoints adds no distance for a stationary point`() {
+        val points = listOf(
+            TrackPoint(47.0, 11.0, 1000.0, 0.0),
+            TrackPoint(47.0, 11.0, 1001.0, 5.0)
+        )
+        val profile = ElevationProfile.fromTrackPoints(points)
+        assertEquals(0.0, profile[1].distance, 1e-9)
     }
 
     // ── Constants ────────────────────────────────────────────────────

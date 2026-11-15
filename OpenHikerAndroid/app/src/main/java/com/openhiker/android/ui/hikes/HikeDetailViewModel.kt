@@ -28,7 +28,7 @@ import com.openhiker.android.data.repository.RouteRepository
 import com.openhiker.android.data.repository.WaypointRepository
 import com.openhiker.core.compression.TrackCompression
 import com.openhiker.core.compression.TrackPoint
-import com.openhiker.core.geo.Haversine
+import com.openhiker.core.elevation.ElevationProfile
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.ElevationPoint
 import com.openhiker.core.model.HikeStatsFormatter
@@ -164,7 +164,7 @@ class HikeDetailViewModel @Inject constructor(
 
                 val trackPoints = decompressTrackData(route.trackData)
                 val coordinates = trackPointsToCoordinates(trackPoints)
-                val elevationProfile = buildElevationProfile(trackPoints)
+                val elevationProfile = ElevationProfile.fromTrackPoints(trackPoints)
                 val waypoints = waypointRepository.getByHike(id)
 
                 _uiState.update {
@@ -244,47 +244,6 @@ class HikeDetailViewModel @Inject constructor(
                 longitude = point.longitude
             )
         }
-    }
-
-    /**
-     * Builds an elevation profile from track points.
-     *
-     * Computes cumulative Haversine distance from the start for each point
-     * and pairs it with the altitude, producing [ElevationPoint] instances
-     * suitable for rendering an elevation chart.
-     *
-     * Uses [Haversine.distance] for accurate great-circle segment lengths
-     * between consecutive GPS points.
-     *
-     * @param trackPoints The decompressed GPS track points.
-     * @return List of elevation profile data points, ordered by distance.
-     */
-    private fun buildElevationProfile(trackPoints: List<TrackPoint>): List<ElevationPoint> {
-        if (trackPoints.isEmpty()) return emptyList()
-
-        val profile = mutableListOf<ElevationPoint>()
-        var cumulativeDistance = 0.0
-
-        profile.add(ElevationPoint(distance = 0.0, elevation = trackPoints[0].altitude))
-
-        for (i in 1 until trackPoints.size) {
-            val prev = trackPoints[i - 1]
-            val curr = trackPoints[i]
-
-            cumulativeDistance += Haversine.distance(
-                prev.latitude, prev.longitude,
-                curr.latitude, curr.longitude
-            )
-
-            profile.add(
-                ElevationPoint(
-                    distance = cumulativeDistance,
-                    elevation = curr.altitude
-                )
-            )
-        }
-
-        return profile
     }
 
     /**

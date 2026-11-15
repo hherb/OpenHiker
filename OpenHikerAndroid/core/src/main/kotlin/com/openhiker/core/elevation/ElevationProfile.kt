@@ -18,6 +18,7 @@
 
 package com.openhiker.core.elevation
 
+import com.openhiker.core.compression.TrackPoint
 import com.openhiker.core.geo.Haversine
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.ElevationPoint
@@ -100,25 +101,33 @@ object ElevationProfile {
         profile: List<ElevationPoint>,
         noiseThreshold: Double = NOISE_FILTER_METRES
     ): ElevationGainLoss {
-        if (profile.size < 2) return ElevationGainLoss(0.0, 0.0)
-
-        var gain = 0.0
-        var loss = 0.0
-        var lastSignificantElevation = profile.first().elevation
-
-        for (i in 1 until profile.size) {
-            val delta = profile[i].elevation - lastSignificantElevation
-            if (kotlin.math.abs(delta) >= noiseThreshold) {
-                if (delta > 0) {
-                    gain += delta
-                } else {
-                    loss += -delta
-                }
-                lastSignificantElevation = profile[i].elevation
-            }
+        val totals = profile.fold(ElevationAccumulator()) { acc, point ->
+            acc.add(point.elevation, noiseThreshold)
         }
+        return ElevationGainLoss(totals.gain, totals.loss)
+    }
 
-        return ElevationGainLoss(gain, loss)
+    /**
+     * Builds an elevation profile from recorded GPS track points.
+     *
+     * Each point keeps its recorded altitude and gets the cumulative
+     * Haversine distance from the first point, ready for an elevation chart.
+     *
+     * @param trackPoints Recorded track points in time order.
+     * @return One [ElevationPoint] per track point, ordered by distance.
+     */
+    fun fromTrackPoints(trackPoints: List<TrackPoint>): List<ElevationPoint> {
+        var cumulativeDistance = 0.0
+        return trackPoints.mapIndexed { i, point ->
+            if (i > 0) {
+                val prev = trackPoints[i - 1]
+                cumulativeDistance += Haversine.distance(
+                    prev.latitude, prev.longitude,
+                    point.latitude, point.longitude
+                )
+            }
+            ElevationPoint(distance = cumulativeDistance, elevation = point.altitude)
+        }
     }
 
     /**
@@ -171,3 +180,44 @@ data class ElevationGainLoss(
     val gain: Double,
     val loss: Double
 )
+
+/**
+ * Running elevation gain and loss, fed one altitude sample at a time.
+ *
+ * Used both for whole profiles ([ElevationProfile.computeGainLoss]) and for
+ * live hike recording, so both apply the same noise filter. The first sample
+ * only sets the reference. After that, a sample counts only once it differs
+ * from the last counted sample by at least the noise threshold, so slow drift
+ * still adds up once it crosses the threshold.
+ *
+ * @property gain Total uphill change counted so far, in metres (positive).
+ * @property loss Total downhill change counted so far, in metres (positive).
+ * @property lastSignificantElevation The last sample that was counted (or the
+ *           first sample), or null before any sample.
+ */
+data class ElevationAccumulator(
+    val gain: Double = 0.0,
+    val loss: Double = 0.0,
+    val lastSignificantElevation: Double? = null
+) {
+    /**
+     * Returns the totals after one more altitude sample.
+     *
+     * @param altitude The new altitude in metres.
+     * @param noiseThreshold Minimum change in metres to count
+     *        (default: [ElevationProfile.NOISE_FILTER_METRES]).
+     * @return Updated totals; this instance is unchanged.
+     */
+    fun add(
+        altitude: Double,
+        noiseThreshold: Double = ElevationProfile.NOISE_FILTER_METRES
+    ): ElevationAccumulator {
+        val last = lastSignificantElevation ?: return copy(lastSignificantElevation = altitude)
+        val delta = altitude - last
+        return when {
+            kotlin.math.abs(delta) < noiseThreshold -> this
+            delta > 0 -> copy(gain = gain + delta, lastSignificantElevation = altitude)
+            else -> copy(loss = loss - delta, lastSignificantElevation = altitude)
+        }
+    }
+}

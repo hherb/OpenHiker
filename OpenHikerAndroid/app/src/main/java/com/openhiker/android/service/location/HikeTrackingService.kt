@@ -36,6 +36,8 @@ import com.openhiker.android.data.db.routes.SavedRouteEntity
 import com.openhiker.android.data.repository.RouteRepository
 import com.openhiker.core.compression.TrackCompression
 import com.openhiker.core.compression.TrackPoint
+import com.openhiker.core.elevation.ElevationAccumulator
+import com.openhiker.core.elevation.ElevationProfile
 import com.openhiker.core.geo.Haversine
 import com.openhiker.core.model.CalorieEstimator
 import com.openhiker.core.model.HikeStatisticsConfig
@@ -141,7 +143,7 @@ class HikeTrackingService : Service() {
     private var hikeStartTime: Instant? = null
     private var lastPauseTime: Instant? = null
     private var totalPausedMs: Long = 0L
-    private var lastSignificantElevation: Double? = null
+    private var elevation = ElevationAccumulator()
     private var lastPointTime: Long = 0L
     private var currentMaxSpeed: Double = 0.0
     private var totalMovingTime: Double = 0.0
@@ -202,7 +204,7 @@ class HikeTrackingService : Service() {
         hikeStartTime = Instant.now()
         lastPauseTime = null
         totalPausedMs = 0L
-        lastSignificantElevation = null
+        elevation = ElevationAccumulator()
         lastPointTime = 0L
         currentMaxSpeed = 0.0
         totalMovingTime = 0.0
@@ -308,8 +310,8 @@ class HikeTrackingService : Service() {
 
                     trackPoints.add(trackPoint)
 
-                    // Update elevation gain/loss with noise filter
-                    updateElevation(altitude)
+                    // A fix without altitude would count as a drop to 0 m and back.
+                    if (location.hasAltitude()) updateElevation(altitude)
 
                     // Update speed statistics
                     if (lastPointTime > 0L && trackPoints.size >= 2) {
@@ -341,30 +343,17 @@ class HikeTrackingService : Service() {
     }
 
     /**
-     * Accumulates elevation gain and loss with a noise filter.
-     *
-     * Changes smaller than [ELEVATION_NOISE_THRESHOLD_METRES] are ignored
-     * to prevent GPS altitude noise from inflating totals.
+     * Accumulates elevation gain and loss with the shared noise filter
+     * ([ElevationAccumulator], [ElevationProfile.NOISE_FILTER_METRES]).
      *
      * @param currentAltitude Current altitude in metres from GPS.
      */
     private fun updateElevation(currentAltitude: Double) {
-        val lastElev = lastSignificantElevation
-        if (lastElev == null) {
-            lastSignificantElevation = currentAltitude
-            return
-        }
-
-        val delta = currentAltitude - lastElev
-        if (kotlin.math.abs(delta) >= ELEVATION_NOISE_THRESHOLD_METRES) {
-            val stats = _liveStats.value
-            if (delta > 0) {
-                _liveStats.value = stats.copy(elevationGain = stats.elevationGain + delta)
-            } else {
-                _liveStats.value = stats.copy(elevationLoss = stats.elevationLoss + (-delta))
-            }
-            lastSignificantElevation = currentAltitude
-        }
+        elevation = elevation.add(currentAltitude)
+        _liveStats.value = _liveStats.value.copy(
+            elevationGain = elevation.gain,
+            elevationLoss = elevation.loss
+        )
     }
 
     /**
@@ -392,14 +381,13 @@ class HikeTrackingService : Service() {
      */
     private fun elapsedSeconds(): Double {
         val start = hikeStartTime ?: return 0.0
-        val now = Instant.now().toEpochMilli()
-        val currentPause = if (_recordingState.value == HikeRecordingState.PAUSED) {
-            lastPauseTime?.let { now - it.toEpochMilli() } ?: 0L
-        } else {
-            0L
-        }
-        return (now - start.toEpochMilli() - totalPausedMs - currentPause).toDouble() /
-            MILLIS_PER_SECOND
+        val pauseStart = lastPauseTime.takeIf { _recordingState.value == HikeRecordingState.PAUSED }
+        return recordingElapsedSeconds(
+            startMs = start.toEpochMilli(),
+            nowMs = Instant.now().toEpochMilli(),
+            totalPausedMs = totalPausedMs,
+            currentPauseStartMs = pauseStart?.toEpochMilli()
+        )
     }
 
     // ── Timer & Auto-save ────────────────────────────────────────────
@@ -655,14 +643,10 @@ class HikeTrackingService : Service() {
         private const val CHANNEL_ID = "hike_tracking"
         private const val NOTIFICATION_ID = 1001
         private const val DRAFT_FILENAME = "hike_draft.bin"
-        private const val MILLIS_PER_SECOND = 1000.0
         private const val TIMER_UPDATE_INTERVAL_MS = 1000L
 
         /** Auto-save interval: 5 minutes. */
         private const val AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000L
-
-        /** Minimum elevation change to count as gain or loss (noise filter). */
-        private const val ELEVATION_NOISE_THRESHOLD_METRES = 3.0
 
         /** Intent action: pause recording from notification. */
         const val ACTION_PAUSE = "com.openhiker.android.PAUSE_HIKE"
@@ -707,4 +691,30 @@ class HikeTrackingService : Service() {
             context.startService(intent)
         }
     }
+}
+
+/** Milliseconds per second, for time conversions in this file. */
+private const val MILLIS_PER_SECOND = 1000.0
+
+/**
+ * Computes elapsed recording time, excluding all paused periods.
+ *
+ * Pure function so the pause/resume arithmetic can be unit-tested
+ * without a running service.
+ *
+ * @param startMs Epoch milliseconds when recording started.
+ * @param nowMs Current epoch milliseconds.
+ * @param totalPausedMs Sum of all finished pauses, in milliseconds.
+ * @param currentPauseStartMs Epoch milliseconds when the current pause
+ *        began, or null if recording is not paused right now.
+ * @return Elapsed recording time in seconds.
+ */
+internal fun recordingElapsedSeconds(
+    startMs: Long,
+    nowMs: Long,
+    totalPausedMs: Long,
+    currentPauseStartMs: Long?
+): Double {
+    val currentPauseMs = currentPauseStartMs?.let { nowMs - it } ?: 0L
+    return (nowMs - startMs - totalPausedMs - currentPauseMs) / MILLIS_PER_SECOND
 }

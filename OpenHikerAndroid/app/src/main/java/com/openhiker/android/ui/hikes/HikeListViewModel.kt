@@ -311,40 +311,6 @@ class HikeListViewModel @Inject constructor(
         )
     }
 
-    /**
-     * Filters hike items by a case-insensitive name search query.
-     *
-     * Returns all items if the query is blank.
-     *
-     * @param items The full list of hike display items.
-     * @param query The search text to match against hike names.
-     * @return Filtered list containing only items whose name contains the query.
-     */
-    private fun filterByQuery(items: List<HikeListItem>, query: String): List<HikeListItem> {
-        if (query.isBlank()) return items
-        val lowerQuery = query.lowercase()
-        return items.filter { it.name.lowercase().contains(lowerQuery) }
-    }
-
-    /**
-     * Sorts hike items according to the specified criterion.
-     *
-     * All sort orders are descending (largest/newest first), matching
-     * the typical user expectation for hike history screens.
-     *
-     * @param items The list of hike display items to sort.
-     * @param option The sort criterion to apply.
-     * @return A new list sorted by the given criterion.
-     */
-    private fun sortItems(items: List<HikeListItem>, option: HikeSortOption): List<HikeListItem> {
-        return when (option) {
-            HikeSortOption.DATE -> items.sortedByDescending { it.startTime }
-            HikeSortOption.DISTANCE -> items.sortedByDescending { it.totalDistance }
-            HikeSortOption.ELEVATION -> items.sortedByDescending { it.elevationGain }
-            HikeSortOption.DURATION -> items.sortedByDescending { it.durationSeconds }
-        }
-    }
-
     companion object {
         private const val TAG = "HikeListViewModel"
 
@@ -355,5 +321,39 @@ class HikeListViewModel @Inject constructor(
          * the database query.
          */
         private const val STOP_TIMEOUT_MS = 5_000L
+    }
+}
+
+/**
+ * Filters hike items by a case-insensitive name search query.
+ *
+ * Returns all items if the query is blank.
+ *
+ * @param items The full list of hike display items.
+ * @param query The search text to match against hike names.
+ * @return Filtered list containing only items whose name contains the query.
+ */
+internal fun filterByQuery(items: List<HikeListItem>, query: String): List<HikeListItem> {
+    if (query.isBlank()) return items
+    val lowerQuery = query.lowercase()
+    return items.filter { it.name.lowercase().contains(lowerQuery) }
+}
+
+/**
+ * Sorts hike items according to the specified criterion.
+ *
+ * All sort orders are descending (largest/newest first), matching
+ * the typical user expectation for hike history screens.
+ *
+ * @param items The list of hike display items to sort.
+ * @param option The sort criterion to apply.
+ * @return A new list sorted by the given criterion.
+ */
+internal fun sortItems(items: List<HikeListItem>, option: HikeSortOption): List<HikeListItem> {
+    return when (option) {
+        HikeSortOption.DATE -> items.sortedByDescending { it.startTime }
+        HikeSortOption.DISTANCE -> items.sortedByDescending { it.totalDistance }
+        HikeSortOption.ELEVATION -> items.sortedByDescending { it.elevationGain }
+        HikeSortOption.DURATION -> items.sortedByDescending { it.durationSeconds }
     }
 }
