@@ -210,7 +210,7 @@ fun AddWaypointScreen(
                 onClick = {
                     val latitude = latitudeText.toDoubleOrNull() ?: return@Button
                     val longitude = longitudeText.toDoubleOrNull() ?: return@Button
-                    val altitude = currentLocation?.altitude
+                    val altitude = currentLocation?.let { waypointAltitude(it.hasAltitude(), it.altitude) }
 
                     viewModel.saveWaypoint(
                         label = label.trim(),
