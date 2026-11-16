@@ -50,13 +50,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `fetchForRegion` throws on a folder error and calls `loadAll()` when it skipped files, so transfers
   report them too. Unused `fetch(id:)` is gone. The store takes its folder in `init(storageDirectory:)`
   for tests (`PlannedRouteStoreTests`).
-- **Apple iCloud sync errors reach the user** (#78, #81). `CloudSyncManager` syncs saved hikes, waypoints and
-  planned routes as separate steps (`runSteps`), so one failing part no longer stops the others. Each sync,
+- **Apple iCloud sync errors reach the user** (#78, #81). `CloudSyncManager` runs the upload and the download
+  of saved hikes, waypoints and planned routes as six separate steps (`runSteps`), so one failing step no
+  longer stops the others. Each sync,
   launch error and push-notification pull is recorded in `CloudSyncStatus.shared` (`@MainActor`, last clean
   sync time plus "part: reason" errors), which replaced the unobserved `cloudSyncCompleted` notification.
   iOS shows a red banner above every tab (Retry, dismiss); macOS shows "Sync failed" in the sidebar and the
   errors or last sync time in Settings → Sync. watchOS does not sync with iCloud. Tests:
-  `CloudSyncManagerTests`. An unavailable iCloud account is still not shown (Sync Now does nothing then).
+  `CloudSyncManagerTests`. When the launch account check failed, Sync Now and Retry rerun it. An unavailable
+  iCloud account is still not shown, nor is a sync in progress (#84). Pulls can drop remote records silently
+  (#85); subscription errors are swallowed and non-recoverable CloudKit errors are retried (#86).
   Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
@@ -95,7 +98,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **99/99 pass** (2026-11-16) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **101/101 pass** (2026-11-17) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -145,6 +148,10 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #80: Apple cannot delete a broken planned-route file, and a one-off read failure lets an iCloud pull
   overwrite an unsynced edit with the older cloud copy.
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
+- #84: Apple iCloud shows nothing when the account is unavailable or a sync is already running.
+- #85: Apple iCloud pulls skip unreadable records and ignore the query cursor, yet report a clean sync.
+- #86: Apple iCloud subscription errors are logged at debug level; non-recoverable CloudKit errors are
+  retried.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example

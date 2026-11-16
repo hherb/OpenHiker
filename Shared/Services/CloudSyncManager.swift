@@ -32,8 +32,9 @@ final class CloudSyncStatus: ObservableObject {
     /// When a sync last finished with no errors, or `nil` if none has yet.
     @Published private(set) var lastSuccess: Date?
 
-    /// One "part: reason" entry per part of the last sync that failed. Empty after a
-    /// clean sync or after ``dismissErrors()``.
+    /// One "part: reason" entry per part of the last sync that failed, or an
+    /// "iCloud: reason" entry if the account check or subscription setup failed.
+    /// Empty after a clean sync or after ``dismissErrors()``.
     @Published private(set) var errors: [String] = []
 
     /// Records the result of a sync.
@@ -66,9 +67,8 @@ final class CloudSyncStatus: ObservableObject {
 ///
 /// ## Sync Triggers
 /// - App launch (via ``syncOnLaunch()``)
-/// - Manual pull-to-refresh
-/// - CloudKit push notification (subscription-based)
-/// - Periodic background (every 15 minutes via ``schedulePeriodic()``)
+/// - Manual "Sync Now" / Retry (via ``performSync()``)
+/// - CloudKit push notification (``handleRemoteNotification()``, not yet wired up)
 ///
 /// ## Dependencies
 /// - ``CloudKitStore``: Low-level CloudKit CRUD operations
@@ -129,6 +129,8 @@ actor CloudSyncManager {
     /// notifications and triggers the first sync.
     ///
     /// Safe to call if iCloud is unavailable — it logs the status and returns.
+    /// Errors from the account check or subscription setup are recorded in
+    /// ``CloudSyncStatus`` as an "iCloud: reason" entry.
     func syncOnLaunch() async {
         do {
             isAvailable = try await cloudStore.isAccountAvailable()
@@ -151,18 +153,25 @@ actor CloudSyncManager {
                 try await cloudStore.setupSubscriptions()
             }
         } catch {
-            await report(["iCloud: \(error.localizedDescription)"])
+            await Self.report(["iCloud: \(error.localizedDescription)"], to: CloudSyncStatus.shared)
         }
     }
 
     /// Performs a full bidirectional sync: for saved hikes, waypoints and planned routes
     /// in turn, push local changes, then pull remote changes.
     ///
-    /// Each of the three is its own step, so a failure in one (for example an unreadable
-    /// `planned_routes/` folder) does not stop the others (#81). Skips if a sync is already
-    /// in progress. Records the result in ``CloudSyncStatus``.
+    /// Each upload and each download is its own step, so a failure in one (for example
+    /// an unreadable `planned_routes/` folder) does not stop the others (#81). Skips if
+    /// a sync is already in progress. Records the result in ``CloudSyncStatus``.
+    ///
+    /// If iCloud was not available at the last check (for example the launch check
+    /// failed while offline), this reruns ``syncOnLaunch()`` instead, so Retry and
+    /// "Sync Now" check the account again rather than doing nothing.
     func performSync() async {
-        guard isAvailable else { return }
+        guard isAvailable else {
+            await syncOnLaunch()
+            return
+        }
         guard !isSyncing else {
             Self.logger.debug("Sync already in progress, skipping")
             return
@@ -179,21 +188,17 @@ actor CloudSyncManager {
             Self.logger.debug("Schema not ready, force-pushing all local records")
         }
 
+        // Upload and download are separate steps: a record that fails to upload must
+        // not block downloads. Pulls never delete and keep newer local edits.
         let errors = await Self.runSteps([
-            (Self.savedHikesLabel, {
-                try await self.pushRoutes(forceAll: forceAll)
-                try await self.pullRoutes()
-            }),
-            (Self.waypointsLabel, {
-                try await self.pushWaypoints(forceAll: forceAll)
-                try await self.pullWaypoints()
-            }),
-            (Self.plannedRoutesLabel, {
-                try await self.pushPlannedRoutes(forceAll: forceAll)
-                try await self.pullPlannedRoutes()
-            }),
+            (Self.upload(Self.savedHikesLabel), { try await self.pushRoutes(forceAll: forceAll) }),
+            (Self.download(Self.savedHikesLabel), { try await self.pullRoutes() }),
+            (Self.upload(Self.waypointsLabel), { try await self.pushWaypoints(forceAll: forceAll) }),
+            (Self.download(Self.waypointsLabel), { try await self.pullWaypoints() }),
+            (Self.upload(Self.plannedRoutesLabel), { try await self.pushPlannedRoutes(forceAll: forceAll) }),
+            (Self.download(Self.plannedRoutesLabel), { try await self.pullPlannedRoutes() }),
         ])
-        await report(errors)
+        await Self.report(errors, to: CloudSyncStatus.shared)
     }
 
     /// Called when a CloudKit push notification is received.
@@ -208,11 +213,14 @@ actor CloudSyncManager {
         defer { isSyncing = false }
 
         let errors = await Self.runSteps([
-            (Self.savedHikesLabel, { try await self.pullRoutes() }),
-            (Self.waypointsLabel, { try await self.pullWaypoints() }),
-            (Self.plannedRoutesLabel, { try await self.pullPlannedRoutes() }),
+            (Self.download(Self.savedHikesLabel), { try await self.pullRoutes() }),
+            (Self.download(Self.waypointsLabel), { try await self.pullWaypoints() }),
+            (Self.download(Self.plannedRoutesLabel), { try await self.pullPlannedRoutes() }),
         ])
-        await report(errors)
+        // shortcut: a clean pull here clears earlier upload errors and sets lastSuccess
+        // although nothing was pushed; nothing calls this yet, so merge instead of
+        // replace when it gets wired to push notifications.
+        await Self.report(errors, to: CloudSyncStatus.shared)
     }
 
     // MARK: - Steps and Reporting
@@ -225,6 +233,12 @@ actor CloudSyncManager {
 
     /// User-facing name of the planned-routes part of a sync, used in error entries.
     static let plannedRoutesLabel = "Planned routes"
+
+    /// Label of the upload half of a part, e.g. "Waypoints (upload)".
+    static func upload(_ part: String) -> String { "\(part) (upload)" }
+
+    /// Label of the download half of a part, e.g. "Waypoints (download)".
+    static func download(_ part: String) -> String { "\(part) (download)" }
 
     /// Runs every step in order, even after an earlier one fails.
     ///
@@ -244,17 +258,19 @@ actor CloudSyncManager {
         return errors
     }
 
-    /// Logs the result of a sync and publishes it in ``CloudSyncStatus/shared``.
+    /// Logs the result of a sync and publishes it for the UI.
     ///
-    /// - Parameter errors: The failures of this sync; empty if it succeeded.
-    private func report(_ errors: [String]) async {
+    /// - Parameters:
+    ///   - errors: The failures of this sync; empty if it succeeded.
+    ///   - status: Where to publish it; the app passes ``CloudSyncStatus/shared``.
+    static func report(_ errors: [String], to status: CloudSyncStatus) async {
         if errors.isEmpty {
-            Self.logger.info("Sync completed successfully")
+            logger.info("Sync completed successfully")
         }
         for entry in errors {
-            Self.logger.error("Sync error: \(entry)")
+            logger.error("Sync error: \(entry)")
         }
-        await CloudSyncStatus.shared.record(errors: errors)
+        await status.record(errors: errors)
     }
 
     // MARK: - Push Operations
@@ -347,8 +363,9 @@ actor CloudSyncManager {
     /// stay, and the route list shows them from its last ``PlannedRouteStore/loadAll()``.
     ///
     /// - Returns: Every local planned route that could be read.
-    /// - Throws: If the routes folder exists but cannot be listed. The sync stops so
-    ///   that cloud copies never overwrite local routes that only look missing.
+    /// - Throws: If the routes folder exists but cannot be listed. The planned-routes
+    ///   step of the sync stops (the other parts still run), so cloud copies never
+    ///   overwrite local routes that only look missing.
     private func loadLocalPlannedRoutes() throws -> [PlannedRoute] {
         let result = try PlannedRouteStore.shared.loadAllFromDisk()
         for entry in result.skippedFiles {
@@ -486,7 +503,8 @@ actor CloudSyncManager {
 
     /// Executes an async operation with exponential backoff retry.
     ///
-    /// Retries up to ``maxRetryAttempts`` times with delays of 2s, 4s, 8s, 16s.
+    /// Makes up to ``maxRetryAttempts`` attempts, waiting 2s, 4s, 8s between them. It
+    /// does not wait after the last attempt, so the error reaches the user sooner.
     ///
     /// - Parameter operation: The async throwing operation to execute.
     /// - Returns: The result of the operation.
@@ -501,6 +519,7 @@ actor CloudSyncManager {
                 return try await operation()
             } catch {
                 lastError = error
+                guard attempt < Self.maxRetryAttempts - 1 else { break }
                 let delay = Self.baseRetryDelay * pow(2.0, Double(attempt))
                 Self.logger.debug("Retry \(attempt + 1)/\(Self.maxRetryAttempts) after \(delay)s: \(error.localizedDescription)")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

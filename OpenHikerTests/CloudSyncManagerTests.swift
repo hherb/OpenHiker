@@ -51,6 +51,9 @@ final class CloudSyncManagerTests: XCTestCase {
         let status = CloudSyncStatus()
         let first = Date(timeIntervalSince1970: 1_000)
 
+        status.record(errors: ["iCloud: offline"], at: Date(timeIntervalSince1970: 500))
+        XCTAssertNil(status.lastSuccess, "a failed first sync must not count as a success")
+
         status.record(errors: [], at: first)
         XCTAssertEqual(status.lastSuccess, first)
         XCTAssertEqual(status.errors, [])
@@ -65,5 +68,23 @@ final class CloudSyncManagerTests: XCTestCase {
         let third = Date(timeIntervalSince1970: 3_000)
         status.record(errors: [], at: third)
         XCTAssertEqual(status.lastSuccess, third)
+    }
+
+    /// `report` publishes a sync's errors, and a clean sync's success, to the status the
+    /// UI observes (#78).
+    func testReportPublishesToStatus() async {
+        let status = await CloudSyncStatus()
+        XCTAssertEqual(CloudSyncManager.upload("Waypoints"), "Waypoints (upload)")
+        XCTAssertEqual(CloudSyncManager.download("Waypoints"), "Waypoints (download)")
+
+        await CloudSyncManager.report(["Waypoints (upload): offline"], to: status)
+        let errors = await status.errors
+        XCTAssertEqual(errors, ["Waypoints (upload): offline"])
+
+        await CloudSyncManager.report([], to: status)
+        let cleared = await status.errors
+        let lastSuccess = await status.lastSuccess
+        XCTAssertEqual(cleared, [])
+        XCTAssertNotNil(lastSuccess)
     }
 }
