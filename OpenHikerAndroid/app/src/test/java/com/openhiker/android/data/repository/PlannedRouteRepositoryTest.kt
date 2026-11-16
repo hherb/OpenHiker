@@ -25,6 +25,7 @@ import com.openhiker.core.model.RoutingMode
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -33,8 +34,8 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Checks that [PlannedRouteRepository] reports failed writes and deletes to its caller instead of
- * pretending they succeeded (#68).
+ * Checks that [PlannedRouteRepository] reports failed writes, deletes (#68) and reads (#74) to its
+ * caller instead of pretending they succeeded or that the route does not exist.
  */
 class PlannedRouteRepositoryTest {
 
@@ -119,5 +120,38 @@ class PlannedRouteRepositoryTest {
         assertEquals(listOf("r1"), repo.routes.value.map { it.id })
         // Tombstone first, so the next sync still deletes the route.
         assertEquals(listOf("r1"), pendingIds())
+    }
+
+    @Test
+    fun `getById returns null for a missing route`() = runTest {
+        assertNull(repo.getById("missing"))
+    }
+
+    @Test
+    fun `getById throws for a corrupt route file`() = runTest {
+        routeFile("r1").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        val result = runCatching { repo.getById("r1") }
+        assertTrue(result.exceptionOrNull() is IOException)
+    }
+
+    @Test
+    fun `loadAll lists readable routes and names the skipped files`() = runTest {
+        repo.save(route("r1"))
+        routeFile("bad").writeText("{not json")
+        val skipped = repo.loadAll()
+        assertEquals(1, skipped.size)
+        assertTrue(skipped[0], skipped[0].startsWith("bad.json: "))
+        assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+    }
+
+    @Test
+    fun `loadAll throws and keeps the list when the directory is unusable`() = runTest {
+        repo.save(route("r1"))
+        // A regular file where the directory should be cannot be listed or created.
+        File(folder.root, "planned_routes").deleteRecursively()
+        File(folder.root, "planned_routes").writeText("x")
+        val result = runCatching { repo.loadAll() }
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertEquals(listOf("r1"), repo.routes.value.map { it.id })
     }
 }
