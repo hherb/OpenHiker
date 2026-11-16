@@ -19,13 +19,37 @@ import Foundation
 import Combine
 import os
 
-/// Notification posted when a cloud sync completes (success or failure).
+/// The outcome of the last iCloud sync, published for the UI (#78).
 ///
-/// The `userInfo` dictionary contains:
-/// - `"success"`: `Bool` indicating whether the sync succeeded
-/// - `"error"`: Optional `String` with the error message if sync failed
-extension Notification.Name {
-    static let cloudSyncCompleted = Notification.Name("cloudSyncCompleted")
+/// ``CloudSyncManager`` records every sync here. The iOS app shows a banner while
+/// ``errors`` is not empty; macOS shows the state in the sidebar and in Settings.
+@MainActor
+final class CloudSyncStatus: ObservableObject {
+
+    /// Shared instance that ``CloudSyncManager`` writes to and the views observe.
+    static let shared = CloudSyncStatus()
+
+    /// When a sync last finished with no errors, or `nil` if none has yet.
+    @Published private(set) var lastSuccess: Date?
+
+    /// One "part: reason" entry per part of the last sync that failed. Empty after a
+    /// clean sync or after ``dismissErrors()``.
+    @Published private(set) var errors: [String] = []
+
+    /// Records the result of a sync.
+    ///
+    /// - Parameters:
+    ///   - errors: The failures of this sync; empty if it succeeded.
+    ///   - date: When the sync finished. Becomes ``lastSuccess`` if `errors` is empty.
+    func record(errors: [String], at date: Date = Date()) {
+        self.errors = errors
+        if errors.isEmpty { lastSuccess = date }
+    }
+
+    /// Hides the current errors until the next sync reports new ones.
+    func dismissErrors() {
+        errors = []
+    }
 }
 
 /// Coordinates bidirectional sync between local SQLite stores and iCloud via CloudKit.
@@ -85,9 +109,6 @@ actor CloudSyncManager {
     /// Whether iCloud is available for this user.
     private var isAvailable = false
 
-    /// Timestamp of the last successful sync.
-    private var lastSyncDate: Date?
-
     // MARK: - Singleton
 
     /// Shared singleton instance.
@@ -130,14 +151,16 @@ actor CloudSyncManager {
                 try await cloudStore.setupSubscriptions()
             }
         } catch {
-            Self.logger.error("Launch sync error: \(error.localizedDescription)")
+            await report(["iCloud: \(error.localizedDescription)"])
         }
     }
 
-    /// Performs a full bidirectional sync (push local changes, then pull remote changes).
+    /// Performs a full bidirectional sync: for saved hikes, waypoints and planned routes
+    /// in turn, push local changes, then pull remote changes.
     ///
-    /// Skips if a sync is already in progress. Posts ``Notification.Name/cloudSyncCompleted``
-    /// when done.
+    /// Each of the three is its own step, so a failure in one (for example an unreadable
+    /// `planned_routes/` folder) does not stop the others (#81). Skips if a sync is already
+    /// in progress. Records the result in ``CloudSyncStatus``.
     func performSync() async {
         guard isAvailable else { return }
         guard !isSyncing else {
@@ -148,52 +171,35 @@ actor CloudSyncManager {
         isSyncing = true
         defer { isSyncing = false }
 
-        do {
-            // When subscriptions aren't ready the CloudKit schema may not exist
-            // (e.g. fresh container or development schema reset). Force-push all
-            // local records so the record types get auto-created server-side.
-            let forceAll = await !cloudStore.subscriptionsReady
-            if forceAll {
-                Self.logger.debug("Schema not ready, force-pushing all local records")
-            }
-
-            // Push local changes to CloudKit
-            try await pushRoutes(forceAll: forceAll)
-            try await pushWaypoints(forceAll: forceAll)
-            try await pushPlannedRoutes(forceAll: forceAll)
-
-            // Pull remote changes from CloudKit
-            try await pullRoutes()
-            try await pullWaypoints()
-            try await pullPlannedRoutes()
-
-            lastSyncDate = Date()
-
-            await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .cloudSyncCompleted,
-                    object: nil,
-                    userInfo: ["success": true]
-                )
-            }
-
-            Self.logger.info("Sync completed successfully")
-        } catch {
-            Self.logger.error("Sync error: \(error.localizedDescription)")
-
-            await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .cloudSyncCompleted,
-                    object: nil,
-                    userInfo: ["success": false, "error": error.localizedDescription]
-                )
-            }
+        // When subscriptions aren't ready the CloudKit schema may not exist
+        // (e.g. fresh container or development schema reset). Force-push all
+        // local records so the record types get auto-created server-side.
+        let forceAll = await !cloudStore.subscriptionsReady
+        if forceAll {
+            Self.logger.debug("Schema not ready, force-pushing all local records")
         }
+
+        let errors = await Self.runSteps([
+            (Self.savedHikesLabel, {
+                try await self.pushRoutes(forceAll: forceAll)
+                try await self.pullRoutes()
+            }),
+            (Self.waypointsLabel, {
+                try await self.pushWaypoints(forceAll: forceAll)
+                try await self.pullWaypoints()
+            }),
+            (Self.plannedRoutesLabel, {
+                try await self.pushPlannedRoutes(forceAll: forceAll)
+                try await self.pullPlannedRoutes()
+            }),
+        ])
+        await report(errors)
     }
 
     /// Called when a CloudKit push notification is received.
     ///
-    /// Triggers a pull-only sync to fetch the changed records.
+    /// Triggers a pull-only sync to fetch the changed records, with the same independent
+    /// steps and reporting as ``performSync()``.
     func handleRemoteNotification() async {
         guard isAvailable else { return }
         guard !isSyncing else { return }
@@ -201,14 +207,54 @@ actor CloudSyncManager {
         isSyncing = true
         defer { isSyncing = false }
 
-        do {
-            try await pullRoutes()
-            try await pullWaypoints()
-            try await pullPlannedRoutes()
-            lastSyncDate = Date()
-        } catch {
-            Self.logger.error("Remote notification sync error: \(error.localizedDescription)")
+        let errors = await Self.runSteps([
+            (Self.savedHikesLabel, { try await self.pullRoutes() }),
+            (Self.waypointsLabel, { try await self.pullWaypoints() }),
+            (Self.plannedRoutesLabel, { try await self.pullPlannedRoutes() }),
+        ])
+        await report(errors)
+    }
+
+    // MARK: - Steps and Reporting
+
+    /// User-facing name of the saved-hikes part of a sync, used in error entries.
+    static let savedHikesLabel = "Saved hikes"
+
+    /// User-facing name of the waypoints part of a sync, used in error entries.
+    static let waypointsLabel = "Waypoints"
+
+    /// User-facing name of the planned-routes part of a sync, used in error entries.
+    static let plannedRoutesLabel = "Planned routes"
+
+    /// Runs every step in order, even after an earlier one fails.
+    ///
+    /// - Parameter steps: Pairs of a user-facing label and the work to run.
+    /// - Returns: One "label: reason" entry per step that threw, in step order.
+    static func runSteps(
+        _ steps: [(label: String, run: () async throws -> Void)]
+    ) async -> [String] {
+        var errors: [String] = []
+        for step in steps {
+            do {
+                try await step.run()
+            } catch {
+                errors.append("\(step.label): \(error.localizedDescription)")
+            }
         }
+        return errors
+    }
+
+    /// Logs the result of a sync and publishes it in ``CloudSyncStatus/shared``.
+    ///
+    /// - Parameter errors: The failures of this sync; empty if it succeeded.
+    private func report(_ errors: [String]) async {
+        if errors.isEmpty {
+            Self.logger.info("Sync completed successfully")
+        }
+        for entry in errors {
+            Self.logger.error("Sync error: \(entry)")
+        }
+        await CloudSyncStatus.shared.record(errors: errors)
     }
 
     // MARK: - Push Operations

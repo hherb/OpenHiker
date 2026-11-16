@@ -26,11 +26,14 @@ struct MacSettingsView: View {
     /// Width of the settings window.
     private static let windowWidth: CGFloat = 400
 
-    /// Height of the settings window.
+    /// Minimum height of the settings window; it grows to fit sync errors.
     private static let windowHeight: CGFloat = 200
 
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
+
+    /// Result of the last iCloud sync, shown on the Sync tab (#78).
+    @ObservedObject private var syncStatus = CloudSyncStatus.shared
 
     var body: some View {
         TabView {
@@ -44,7 +47,8 @@ struct MacSettingsView: View {
                     Label("Sync", systemImage: "icloud")
                 }
         }
-        .frame(width: Self.windowWidth, height: Self.windowHeight)
+        .frame(width: Self.windowWidth)
+        .frame(minHeight: Self.windowHeight)
     }
 
     // MARK: - General Tab
@@ -81,6 +85,22 @@ struct MacSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            if syncStatus.errors.isEmpty {
+                if let lastSuccess = syncStatus.lastSuccess {
+                    Text("Last synced \(lastSuccess.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Label(
+                    "Last sync failed:\n" + syncStatus.errors.joined(separator: "\n"),
+                    systemImage: "exclamationmark.icloud.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             Button("Sync Now") {

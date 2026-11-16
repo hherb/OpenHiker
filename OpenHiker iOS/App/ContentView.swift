@@ -45,6 +45,9 @@ struct ContentView: View {
     /// The currently selected sidebar section on iPad.
     @State private var sidebarSelection: SidebarSection? = .navigate
 
+    /// Result of the last iCloud sync; failures show in a banner above every tab (#78).
+    @ObservedObject private var syncStatus = CloudSyncStatus.shared
+
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -52,6 +55,9 @@ struct ContentView: View {
             } else {
                 iPhoneLayout
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            CloudSyncErrorBanner(errors: syncStatus.errors)
         }
         .onReceive(NotificationCenter.default.publisher(
             for: DirectionsRequestHandler.routeComputedNotification
@@ -170,6 +176,44 @@ struct ContentView: View {
                     description: Text("Choose a section from the sidebar.")
                 )
             }
+        }
+    }
+}
+
+// MARK: - iCloud Sync Error Banner
+
+/// Red banner listing the parts of the last iCloud sync that failed (#78).
+///
+/// Shows nothing when `errors` is empty. "Retry" starts a new sync; the close button
+/// hides the banner until a later sync fails again.
+struct CloudSyncErrorBanner: View {
+    /// Entries from ``CloudSyncStatus/errors``.
+    let errors: [String]
+
+    var body: some View {
+        if !errors.isEmpty {
+            HStack(alignment: .top) {
+                Label(
+                    "iCloud sync failed:\n" + errors.joined(separator: "\n"),
+                    systemImage: "exclamationmark.icloud.fill"
+                )
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("Retry") {
+                    Task { await CloudSyncManager.shared.performSync() }
+                }
+                .font(.footnote)
+
+                Button {
+                    CloudSyncStatus.shared.dismissErrors()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Dismiss")
+            }
+            .padding()
+            .background(.red.opacity(0.15))
         }
     }
 }

@@ -41,15 +41,23 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   route replaces the broken file in the same sync. The navigation screen now shows a load error instead
   of staying blank.
 - **Apple planned-route reads** (#75) match Android. `PlannedRouteStore.loadAllFromDisk()` throws when the
-  folder exists but cannot be listed, so iCloud sync stops instead of overwriting local edits (it also
-  stops the hike and waypoint sync: #81). It returns the skipped files as "file: reason" entries, which
+  folder exists but cannot be listed, so the planned-route part of the iCloud sync stops instead of
+  overwriting local edits. It returns the skipped files as "file: reason" entries, which
   sync logs; a pull replaces a broken `<id>.json` with the cloud copy of route `<id>`, if there is one.
   Other broken files stay and the app cannot delete them (#80, like Android #77). `loadAll()` leaves
   `routes` unchanged on a folder error and publishes `loadErrors`. The iOS Routes tab, the iOS Navigate
   route picker, macOS and watchOS show them and hide the "No Planned Routes" empty state.
   `fetchForRegion` throws on a folder error and calls `loadAll()` when it skipped files, so transfers
   report them too. Unused `fetch(id:)` is gone. The store takes its folder in `init(storageDirectory:)`
-  for tests (`PlannedRouteStoreTests`). Apple sync errors still reach only the log: #78.
+  for tests (`PlannedRouteStoreTests`).
+- **Apple iCloud sync errors reach the user** (#78, #81). `CloudSyncManager` syncs saved hikes, waypoints and
+  planned routes as separate steps (`runSteps`), so one failing part no longer stops the others. Each sync,
+  launch error and push-notification pull is recorded in `CloudSyncStatus.shared` (`@MainActor`, last clean
+  sync time plus "part: reason" errors), which replaced the unobserved `cloudSyncCompleted` notification.
+  iOS shows a red banner above every tab (Retry, dismiss); macOS shows "Sync failed" in the sidebar and the
+  errors or last sync time in Settings → Sync. watchOS does not sync with iCloud. Tests:
+  `CloudSyncManagerTests`. An unavailable iCloud account is still not shown (Sync Now does nothing then).
+  Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -87,7 +95,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **97/97 pass** (2026-11-16) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **99/99 pass** (2026-11-16) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -134,10 +142,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #72: Android background sync errors are only logged, never shown to the user.
 - #77: Android sync never clears the error for a broken local planned-route file that has a tombstone
   or no cloud copy, and the app cannot delete it.
-- #78: Apple iCloud sync errors never reach the user (`cloudSyncCompleted` has no observer).
 - #80: Apple cannot delete a broken planned-route file, and a one-off read failure lets an iCloud pull
   overwrite an unsynced edit with the older cloud copy.
-- #81: Apple: an unreadable `planned_routes/` folder aborts the whole iCloud sync, hikes and waypoints too.
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.

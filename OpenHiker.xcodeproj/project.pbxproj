@@ -176,6 +176,7 @@
 		1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000003 /* iOSLocationManagerTests.swift */; };
 		1D0000010000000000000004 /* TrackAltitudeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000004 /* TrackAltitudeTests.swift */; };
 		1D0000010000000000000005 /* PlannedRouteStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000005 /* PlannedRouteStoreTests.swift */; };
+		1D0000010000000000000006 /* CloudSyncManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D0000010000000000000006 /* CloudSyncManagerTests.swift */; };
 		6F81B2D52F3F76EF00218D95 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000001 /* HealthKit.framework */; };
 		6F81B2D82F3F76F100218D95 /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F10000010000000000000002 /* WeatherKit.framework */; };
 /* End PBXBuildFile section */
@@ -325,6 +326,7 @@
 		2D0000010000000000000003 /* iOSLocationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSLocationManagerTests.swift; sourceTree = "<group>"; };
 		2D0000010000000000000004 /* TrackAltitudeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackAltitudeTests.swift; sourceTree = "<group>"; };
 		2D0000010000000000000005 /* PlannedRouteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedRouteStoreTests.swift; sourceTree = "<group>"; };
+		2D0000010000000000000006 /* CloudSyncManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncManagerTests.swift; sourceTree = "<group>"; };
 		3A0000010000000000000001 /* OpenHiker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenHiker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B0000010000000000000001 /* OpenHiker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C0000010000000000000001 /* OpenHiker macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenHiker macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -663,6 +665,7 @@
 				2D0000010000000000000003 /* iOSLocationManagerTests.swift */,
 				2D0000010000000000000004 /* TrackAltitudeTests.swift */,
 				2D0000010000000000000005 /* PlannedRouteStoreTests.swift */,
+				2D0000010000000000000006 /* CloudSyncManagerTests.swift */,
 			);
 			path = OpenHikerTests;
 			sourceTree = "<group>";
@@ -1013,6 +1016,7 @@
 				1D0000010000000000000003 /* iOSLocationManagerTests.swift in Sources */,
 				1D0000010000000000000004 /* TrackAltitudeTests.swift in Sources */,
 				1D0000010000000000000005 /* PlannedRouteStoreTests.swift in Sources */,
+				1D0000010000000000000006 /* CloudSyncManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
