@@ -428,7 +428,7 @@ class PeerTransferService: NSObject, ObservableObject, @unchecked Sendable {
                 }
 
                 // Step 6: Send planned routes for this region
-                let plannedRoutes = PlannedRouteStore.shared.fetchForRegion(region.id)
+                let plannedRoutes = try PlannedRouteStore.shared.fetchForRegion(region.id)
                 if !plannedRoutes.isEmpty {
                     transferState = .sendingPlannedRoutes
                     progress = 0

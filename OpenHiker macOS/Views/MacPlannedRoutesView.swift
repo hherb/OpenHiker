@@ -125,6 +125,20 @@ struct MacPlannedRoutesView: View {
                 }
             }
         }
+        // Route files that could not be read (#75); shown even when the list is empty.
+        .safeAreaInset(edge: .top) {
+            if !routeStore.loadErrors.isEmpty {
+                Label(
+                    "Some planned routes could not be read:\n"
+                        + routeStore.loadErrors.joined(separator: "\n"),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(.orange.opacity(0.15))
+            }
+        }
         .navigationTitle("Planned Routes")
         .toolbar {
             ToolbarItemGroup {

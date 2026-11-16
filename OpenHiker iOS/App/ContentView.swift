@@ -240,6 +240,20 @@ struct PlannedRoutesListView: View {
                     directionsProcessingOverlay
                 }
             }
+            // Route files that could not be read (#75); shown even when the list is empty.
+            .safeAreaInset(edge: .top) {
+                if !routeStore.loadErrors.isEmpty {
+                    Label(
+                        "Some planned routes could not be read:\n"
+                            + routeStore.loadErrors.joined(separator: "\n"),
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(.orange.opacity(0.15))
+                }
+            }
             .navigationTitle("Planned Routes")
             .navigationDestination(for: PlannedRoute.ID.self) { routeId in
                 if let route = routeStore.routes.first(where: { $0.id == routeId }) {
