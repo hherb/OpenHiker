@@ -177,8 +177,10 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         do {
             plannedRoutes = try PlannedRouteStore.shared.fetchForRegion(region.id)
         } catch {
-            // The route list shows the same folder error to the user via PlannedRouteStore.loadErrors.
+            // Tiles and routing data are already queued; the routes are not. loadAll() publishes
+            // the folder error in PlannedRouteStore.loadErrors, which the route list shows.
             print("Cannot read planned routes for region \(region.name): \(error.localizedDescription)")
+            PlannedRouteStore.shared.loadAll()
             return
         }
         for route in plannedRoutes {

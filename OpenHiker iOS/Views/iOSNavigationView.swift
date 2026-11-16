@@ -393,7 +393,7 @@ struct iOSNavigationView: View {
     private var routePickerSheet: some View {
         NavigationStack {
             Group {
-                if routeStore.routes.isEmpty {
+                if routeStore.routes.isEmpty && routeStore.loadErrors.isEmpty {
                     ContentUnavailableView(
                         "No Planned Routes",
                         systemImage: "arrow.triangle.turn.up.right.diamond",
@@ -429,6 +429,10 @@ struct iOSNavigationView: View {
                         .buttonStyle(.plain)
                     }
                 }
+            }
+            // Route files that could not be read (#75); shown even when the list is empty.
+            .safeAreaInset(edge: .top) {
+                PlannedRouteLoadErrorsBanner(errors: routeStore.loadErrors)
             }
             .navigationTitle("Select Route")
             .toolbar {

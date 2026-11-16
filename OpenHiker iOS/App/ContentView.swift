@@ -176,6 +176,28 @@ struct ContentView: View {
 
 // MARK: - Planned Routes List View
 
+/// Orange banner listing planned-route files that could not be read (#75).
+///
+/// Shows nothing when `errors` is empty. Used above the iOS route lists so a read
+/// failure is never mistaken for "no routes".
+struct PlannedRouteLoadErrorsBanner: View {
+    /// Entries from ``PlannedRouteStore/loadErrors``.
+    let errors: [String]
+
+    var body: some View {
+        if !errors.isEmpty {
+            Label(
+                "Some planned routes could not be read:\n" + errors.joined(separator: "\n"),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.footnote)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.orange.opacity(0.15))
+        }
+    }
+}
+
 /// Displays a list of all planned routes with options to plan new routes.
 ///
 /// Each route shows its name, distance, estimated time, and creation date.
@@ -224,7 +246,8 @@ struct PlannedRoutesListView: View {
         NavigationStack(path: $navigationPath) {
             ZStack {
                 Group {
-                    if routeStore.routes.isEmpty && !directionsHandler.isProcessing {
+                    if routeStore.routes.isEmpty && routeStore.loadErrors.isEmpty
+                        && !directionsHandler.isProcessing {
                         ContentUnavailableView(
                             "No Planned Routes",
                             systemImage: "arrow.triangle.turn.up.right.diamond",
@@ -242,17 +265,7 @@ struct PlannedRoutesListView: View {
             }
             // Route files that could not be read (#75); shown even when the list is empty.
             .safeAreaInset(edge: .top) {
-                if !routeStore.loadErrors.isEmpty {
-                    Label(
-                        "Some planned routes could not be read:\n"
-                            + routeStore.loadErrors.joined(separator: "\n"),
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(.orange.opacity(0.15))
-                }
+                PlannedRouteLoadErrorsBanner(errors: routeStore.loadErrors)
             }
             .navigationTitle("Planned Routes")
             .navigationDestination(for: PlannedRoute.ID.self) { routeId in

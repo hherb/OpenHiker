@@ -480,13 +480,18 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     ///
     /// Reads from disk directly to ensure all routes are included regardless
     /// of whether the in-memory cache is up to date. Unreadable route files are
-    /// left out; ``loadAll()`` reports them to the user.
+    /// logged and left out. If any were skipped, this calls ``loadAll()``, which
+    /// publishes them in ``loadErrors`` for the route lists to show.
     ///
     /// - Parameter regionId: The UUID of the region to match.
     /// - Returns: An array of ``PlannedRoute`` objects with matching `regionId`.
     /// - Throws: A file system error if the routes folder exists but cannot be listed.
     func fetchForRegion(_ regionId: UUID) throws -> [PlannedRoute] {
-        try loadAllFromDisk().routes.filter { $0.regionId == regionId }
+        let result = try loadAllFromDisk()
+        if !result.skippedFiles.isEmpty {
+            loadAll()
+        }
+        return result.routes.filter { $0.regionId == regionId }
     }
 
     /// Returns the file URL for a planned route's JSON file.

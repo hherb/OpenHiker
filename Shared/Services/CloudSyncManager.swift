@@ -296,8 +296,9 @@ actor CloudSyncManager {
     /// Reads from disk rather than the in-memory cache to avoid a race where
     /// syncOnLaunch() runs before loadAll()'s main-queue dispatch has populated
     /// the routes array. Unreadable route files are logged and left out. Pulling
-    /// then treats them as missing, so a cloud copy of the route replaces the broken
-    /// file. The route list shows the files that are still broken to the user.
+    /// then treats them as missing, so if the cloud has a route with the same ID
+    /// (file `<id>.json`), its copy replaces the broken file. Other broken files
+    /// stay, and the route list shows them from its last ``PlannedRouteStore/loadAll()``.
     ///
     /// - Returns: Every local planned route that could be read.
     /// - Throws: If the routes folder exists but cannot be listed. The sync stops so

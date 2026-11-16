@@ -79,7 +79,7 @@ final class PlannedRouteStoreTests: XCTestCase {
 
         XCTAssertEqual(result.routes.map(\.id), [good.id])
         XCTAssertEqual(result.skippedFiles.count, 1)
-        XCTAssertTrue(result.skippedFiles[0].hasPrefix("broken.json: "))
+        XCTAssertTrue(try XCTUnwrap(result.skippedFiles.first).hasPrefix("broken.json: "))
     }
 
     func testUnlistableFolderThrows() throws {
@@ -99,6 +99,19 @@ final class PlannedRouteStoreTests: XCTestCase {
         XCTAssertEqual(try store.fetchForRegion(regionId).map(\.id), [inRegion.id])
     }
 
+    /// One broken file must not block a region transfer, and must reach the route lists.
+    func testFetchForRegionSkipsBrokenFileAndPublishesIt() throws {
+        let store = PlannedRouteStore(storageDirectory: routesDir)
+        let regionId = UUID()
+        let inRegion = route(regionId: regionId)
+        try store.save(inRegion)
+        try Data("{ broken".utf8).write(to: routesDir.appendingPathComponent("broken.json"))
+
+        XCTAssertEqual(try store.fetchForRegion(regionId).map(\.id), [inRegion.id])
+        drainMainQueue()
+        XCTAssertEqual(store.loadErrors.count, 1)
+    }
+
     func testLoadAllPublishesSkippedFiles() throws {
         let store = PlannedRouteStore(storageDirectory: routesDir)
         try store.save(route())
@@ -109,6 +122,12 @@ final class PlannedRouteStoreTests: XCTestCase {
 
         XCTAssertEqual(store.routes.count, 1)
         XCTAssertEqual(store.loadErrors.count, 1)
+
+        // Once the file is gone, the next load clears the banner.
+        try FileManager.default.removeItem(at: routesDir.appendingPathComponent("broken.json"))
+        store.loadAll()
+        drainMainQueue()
+        XCTAssertTrue(store.loadErrors.isEmpty)
     }
 
     func testLoadAllKeepsRoutesWhenFolderUnreadable() throws {
@@ -124,5 +143,6 @@ final class PlannedRouteStoreTests: XCTestCase {
 
         XCTAssertEqual(store.routes.count, 1, "an unreadable folder must not empty the list")
         XCTAssertEqual(store.loadErrors.count, 1)
+        XCTAssertTrue(try XCTUnwrap(store.loadErrors.first).hasPrefix("Cannot read the planned routes folder"))
     }
 }

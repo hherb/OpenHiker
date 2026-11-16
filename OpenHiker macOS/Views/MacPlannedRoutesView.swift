@@ -91,7 +91,7 @@ struct MacPlannedRoutesView: View {
     /// The route list with toolbar, shown when no region is selected for planning.
     private var routeListView: some View {
         Group {
-            if routeStore.routes.isEmpty {
+            if routeStore.routes.isEmpty && routeStore.loadErrors.isEmpty {
                 ContentUnavailableView(
                     "No Planned Routes",
                     systemImage: "point.topleft.down.to.point.bottomright.curvepath",
