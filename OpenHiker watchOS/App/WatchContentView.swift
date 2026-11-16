@@ -178,7 +178,7 @@ struct WatchPlannedRoutesView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if routeStore.routes.isEmpty {
+                if routeStore.routes.isEmpty && routeStore.loadErrors.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.turn.up.right.diamond")
                             .font(.title2)
@@ -232,6 +232,16 @@ struct WatchPlannedRoutesView: View {
                     routeGuidance.stop()
                 } label: {
                     Label("Stop Navigation", systemImage: "xmark.circle.fill")
+                }
+            }
+
+            // Route files that could not be read (#75).
+            if !routeStore.loadErrors.isEmpty {
+                Section("Could not read") {
+                    ForEach(routeStore.loadErrors, id: \.self) { message in
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                    }
                 }
             }
 

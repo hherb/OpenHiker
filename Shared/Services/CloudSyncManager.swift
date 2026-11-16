@@ -271,10 +271,7 @@ actor CloudSyncManager {
     /// Same logic as ``pushRoutes(forceAll:)`` but for planned routes. Uses
     /// ``PlannedRouteStore`` (JSON file-based) instead of ``RouteStore`` (SQLite).
     private func pushPlannedRoutes(forceAll: Bool = false) async throws {
-        // Use loadAllFromDisk() instead of the in-memory cache to avoid a
-        // race where syncOnLaunch() runs before loadAll()'s main-queue
-        // dispatch has populated the routes array.
-        let localRoutes = PlannedRouteStore.shared.loadAllFromDisk()
+        let localRoutes = try loadLocalPlannedRoutes()
 
         for var route in localRoutes {
             // Skip routes that are already synced and haven't been modified locally
@@ -292,6 +289,26 @@ actor CloudSyncManager {
             route.modifiedAt = nil
             try PlannedRouteStore.shared.save(route)
         }
+    }
+
+    /// Reads the local planned routes for a push or pull.
+    ///
+    /// Reads from disk rather than the in-memory cache to avoid a race where
+    /// syncOnLaunch() runs before loadAll()'s main-queue dispatch has populated
+    /// the routes array. Unreadable route files are logged and left out. Pulling
+    /// then treats them as missing, so if the cloud has a route with the same ID
+    /// (file `<id>.json`), its copy replaces the broken file. Other broken files
+    /// stay, and the route list shows them from its last ``PlannedRouteStore/loadAll()``.
+    ///
+    /// - Returns: Every local planned route that could be read.
+    /// - Throws: If the routes folder exists but cannot be listed. The sync stops so
+    ///   that cloud copies never overwrite local routes that only look missing.
+    private func loadLocalPlannedRoutes() throws -> [PlannedRoute] {
+        let result = try PlannedRouteStore.shared.loadAllFromDisk()
+        for entry in result.skippedFiles {
+            Self.logger.error("Planned routes: skipped local file \(entry)")
+        }
+        return result.routes
     }
 
     // MARK: - Pull Operations
@@ -380,7 +397,7 @@ actor CloudSyncManager {
             try await self.cloudStore.fetchAllPlannedRoutes()
         }
 
-        let localRoutes = PlannedRouteStore.shared.loadAllFromDisk()
+        let localRoutes = try loadLocalPlannedRoutes()
         let localRouteIDs = Set(localRoutes.map { $0.id })
         var didChange = false
 

@@ -318,6 +318,19 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     /// In-memory cache of all planned routes, sorted by creation date descending.
     @Published var routes: [PlannedRoute] = []
 
+    /// Problems found by the last ``loadAll()``: one "file name: reason" entry per route file
+    /// that could not be read, or a single entry if the folder itself could not be read.
+    /// Empty when everything loaded. Route list views show these to the user.
+    @Published var loadErrors: [String] = []
+
+    /// What ``loadAllFromDisk()`` read from disk.
+    struct LoadResult {
+        /// Every route that loaded, sorted by creation date, newest first.
+        let routes: [PlannedRoute]
+        /// One "file name: reason" entry per route file that could not be read or decoded.
+        let skippedFiles: [String]
+    }
+
     /// Serial queue for thread-safe file I/O.
     private let queue = DispatchQueue(label: "com.openhiker.plannedroutestore", qos: .userInitiated)
 
@@ -337,12 +350,17 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     }()
 
     /// The directory where planned route JSON files are stored.
-    private var storageDirectory: URL {
-        let documentsDir = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first!
-        return documentsDir.appendingPathComponent("planned_routes", isDirectory: true)
+    private let storageDirectory: URL
+
+    /// Creates a store that keeps its route files in `storageDirectory`.
+    ///
+    /// - Parameter storageDirectory: Folder for the `<uuid>.json` files. The app uses the
+    ///   default, `Documents/planned_routes/`; tests pass a temporary folder.
+    init(storageDirectory: URL = FileManager.default.urls(
+        for: .documentDirectory,
+        in: .userDomainMask
+    ).first!.appendingPathComponent("planned_routes", isDirectory: true)) {
+        self.storageDirectory = storageDirectory
     }
 
     // MARK: - Lifecycle
@@ -353,74 +371,62 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     /// via the main queue, so it's safe to call from any thread or actor
     /// without worrying about async dispatch timing.
     ///
-    /// - Returns: All planned routes sorted by creation date, newest first.
-    func loadAllFromDisk() -> [PlannedRoute] {
-        queue.sync {
+    /// A route file that cannot be read or decoded is skipped and listed in the
+    /// result, so the caller can log it and tell the user.
+    ///
+    /// - Returns: The routes that loaded (newest first) and the files that were skipped.
+    ///   Both are empty if the folder does not exist yet.
+    /// - Throws: A file system error if the folder exists but cannot be listed. Returning
+    ///   an empty list instead would make iCloud sync treat every route as missing locally
+    ///   and overwrite newer local edits with the cloud copies.
+    func loadAllFromDisk() throws -> LoadResult {
+        try queue.sync {
             let directory = storageDirectory
             guard FileManager.default.fileExists(atPath: directory.path) else {
-                return []
+                return LoadResult(routes: [], skippedFiles: [])
             }
 
-            do {
-                let files = try FileManager.default.contentsOfDirectory(
-                    at: directory,
-                    includingPropertiesForKeys: nil
-                ).filter { $0.pathExtension == "json" }
+            let files = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            ).filter { $0.pathExtension == "json" }
 
-                var loaded: [PlannedRoute] = []
-                for file in files {
-                    do {
-                        let data = try Data(contentsOf: file)
-                        let route = try decoder.decode(PlannedRoute.self, from: data)
-                        loaded.append(route)
-                    } catch {
-                        print("Error loading planned route \(file.lastPathComponent): \(error.localizedDescription)")
-                    }
+            var loaded: [PlannedRoute] = []
+            var skipped: [String] = []
+            for file in files {
+                do {
+                    let data = try Data(contentsOf: file)
+                    loaded.append(try decoder.decode(PlannedRoute.self, from: data))
+                } catch {
+                    skipped.append("\(file.lastPathComponent): \(error.localizedDescription)")
                 }
-
-                loaded.sort { $0.createdAt > $1.createdAt }
-                return loaded
-            } catch {
-                print("Error reading planned routes directory: \(error.localizedDescription)")
-                return []
             }
+
+            loaded.sort { $0.createdAt > $1.createdAt }
+            return LoadResult(routes: loaded, skippedFiles: skipped)
         }
     }
 
     /// Loads all planned routes from disk into the in-memory cache.
     ///
-    /// Call this on app launch. Routes are sorted by creation date, newest first.
+    /// Call this on app launch and whenever a route list appears. Routes are sorted
+    /// by creation date, newest first. Problems are logged and published in
+    /// ``loadErrors``. If the folder cannot be read, `routes` is left unchanged.
     func loadAll() {
-        queue.sync {
-            let directory = storageDirectory
-            guard FileManager.default.fileExists(atPath: directory.path) else {
-                return
+        do {
+            let result = try loadAllFromDisk()
+            for entry in result.skippedFiles {
+                print("Error loading planned route \(entry)")
             }
-
-            do {
-                let files = try FileManager.default.contentsOfDirectory(
-                    at: directory,
-                    includingPropertiesForKeys: nil
-                ).filter { $0.pathExtension == "json" }
-
-                var loaded: [PlannedRoute] = []
-                for file in files {
-                    do {
-                        let data = try Data(contentsOf: file)
-                        let route = try decoder.decode(PlannedRoute.self, from: data)
-                        loaded.append(route)
-                    } catch {
-                        print("Error loading planned route \(file.lastPathComponent): \(error.localizedDescription)")
-                    }
-                }
-
-                loaded.sort { $0.createdAt > $1.createdAt }
-
-                DispatchQueue.main.async {
-                    self.routes = loaded
-                }
-            } catch {
-                print("Error reading planned routes directory: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.routes = result.routes
+                self.loadErrors = result.skippedFiles
+            }
+        } catch {
+            print("Error reading planned routes directory: \(error.localizedDescription)")
+            let message = "Cannot read the planned routes folder: \(error.localizedDescription)"
+            DispatchQueue.main.async {
+                self.loadErrors = [message]
             }
         }
     }
@@ -470,32 +476,22 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
         }
     }
 
-    /// Fetches a single planned route by its UUID.
-    ///
-    /// Reads from disk directly (does not rely on the in-memory cache).
-    ///
-    /// - Parameter id: The UUID of the route to fetch.
-    /// - Returns: The ``PlannedRoute`` if found, or `nil`.
-    func fetch(id: UUID) -> PlannedRoute? {
-        queue.sync {
-            let fileURL = storageDirectory.appendingPathComponent("\(id.uuidString).json")
-            guard let data = try? Data(contentsOf: fileURL),
-                  let route = try? decoder.decode(PlannedRoute.self, from: data) else {
-                return nil
-            }
-            return route
-        }
-    }
-
     /// Fetches all planned routes associated with a given region.
     ///
     /// Reads from disk directly to ensure all routes are included regardless
-    /// of whether the in-memory cache is up to date.
+    /// of whether the in-memory cache is up to date. Unreadable route files are
+    /// logged and left out. If any were skipped, this calls ``loadAll()``, which
+    /// publishes them in ``loadErrors`` for the route lists to show.
     ///
     /// - Parameter regionId: The UUID of the region to match.
     /// - Returns: An array of ``PlannedRoute`` objects with matching `regionId`.
-    func fetchForRegion(_ regionId: UUID) -> [PlannedRoute] {
-        loadAllFromDisk().filter { $0.regionId == regionId }
+    /// - Throws: A file system error if the routes folder exists but cannot be listed.
+    func fetchForRegion(_ regionId: UUID) throws -> [PlannedRoute] {
+        let result = try loadAllFromDisk()
+        if !result.skippedFiles.isEmpty {
+            loadAll()
+        }
+        return result.routes.filter { $0.regionId == regionId }
     }
 
     /// Returns the file URL for a planned route's JSON file.

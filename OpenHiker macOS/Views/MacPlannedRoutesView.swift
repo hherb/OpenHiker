@@ -91,7 +91,7 @@ struct MacPlannedRoutesView: View {
     /// The route list with toolbar, shown when no region is selected for planning.
     private var routeListView: some View {
         Group {
-            if routeStore.routes.isEmpty {
+            if routeStore.routes.isEmpty && routeStore.loadErrors.isEmpty {
                 ContentUnavailableView(
                     "No Planned Routes",
                     systemImage: "point.topleft.down.to.point.bottomright.curvepath",
@@ -123,6 +123,20 @@ struct MacPlannedRoutesView: View {
                             }
                         }
                 }
+            }
+        }
+        // Route files that could not be read (#75); shown even when the list is empty.
+        .safeAreaInset(edge: .top) {
+            if !routeStore.loadErrors.isEmpty {
+                Label(
+                    "Some planned routes could not be read:\n"
+                        + routeStore.loadErrors.joined(separator: "\n"),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(.orange.opacity(0.15))
             }
         }
         .navigationTitle("Planned Routes")
