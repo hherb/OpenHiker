@@ -63,6 +63,9 @@ struct MacContentView: View {
     /// The currently selected sidebar section.
     @State private var selectedSection: MacSidebarSection? = .hikes
 
+    /// Result of the last iCloud sync, shown in the sidebar's status bar (#78).
+    @ObservedObject private var syncStatus = CloudSyncStatus.shared
+
     /// User preference for metric (true) or imperial (false) units.
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -90,14 +93,24 @@ struct MacContentView: View {
     }
 
     /// Displays the iCloud sync status at the bottom of the sidebar.
+    ///
+    /// After a failed sync it shows a red "Sync failed" whose tooltip lists the errors;
+    /// Settings → Sync lists them too.
     private var syncStatusBar: some View {
         HStack {
-            Image(systemName: "icloud")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-            Text("iCloud Sync")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if syncStatus.errors.isEmpty {
+                Image(systemName: "icloud")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                Text("iCloud Sync")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Label("Sync failed", systemImage: "exclamationmark.icloud.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .help(syncStatus.errors.joined(separator: "\n"))
+            }
             Spacer()
             Button {
                 Task {
