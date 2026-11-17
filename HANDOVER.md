@@ -60,12 +60,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `CloudSyncManagerTests`. When the launch account check failed, Sync Now and Retry rerun it. An unavailable
   iCloud account is still not shown, nor is a sync in progress (#84). Subscription errors are swallowed and
   non-recoverable CloudKit errors are retried (#86).
+  Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
 - **Apple iCloud pulls read every record** (#85). `CloudKitStore.fetchAll(recordType:decode:)` follows the
   query cursor to the last page (`collectPages`). A record that fails to load or decode is logged and kept as
   a "record: reason" entry in `FetchResult.skipped`; the pull merges the readable records, then throws
   `unreadableRecords`, so the banner reads "Saved hikes (download): 2 records could not be read: …". The
-  decoders are static and throwing. Tests: `CloudKitStoreTests`.
-  Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
+  decoders are static and throwing; a waypoint without coordinates or a record with a broken `hikeId` or
+  `regionId` counts as unreadable. The error names at most 3 records and counts the rest. A query error
+  "is not marked queryable" (missing `recordName` index) is now reported, not read as an empty result. Tests:
+  `CloudKitStoreTests`. Deferred: #89 (deletions never reach iCloud), #90 (unreadable records never heal,
+  merge write errors).
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -94,16 +98,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus
-  Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple
-  invalid altitudes, #63).
+- **Last PRs:** #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android
+  #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint
+  altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **105/105 pass** (2026-11-17) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **111/111 pass** (2026-11-17) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |

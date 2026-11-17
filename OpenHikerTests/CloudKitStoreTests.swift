@@ -16,6 +16,7 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import CloudKit
+import CoreLocation
 import XCTest
 @testable import OpenHiker
 
@@ -35,7 +36,23 @@ final class CloudKitStoreTests: XCTestCase {
         )
         record["localID"] = UUID().uuidString
         record["timestamp"] = Date()
+        record["latitude"] = 47.0
+        record["longitude"] = 11.0
         record["label"] = label
+        return record
+    }
+
+    /// Builds a saved-route record with the fields `decodeRoute` requires.
+    private func savedRouteRecord(id: UUID) -> CKRecord {
+        let record = CKRecord(
+            recordType: CloudKitStore.savedRouteRecordType,
+            recordID: CKRecord.ID(recordName: id.uuidString)
+        )
+        record["localID"] = id.uuidString
+        record["name"] = "Ridge walk"
+        record["startTime"] = Date(timeIntervalSince1970: 1_000)
+        record["endTime"] = Date(timeIntervalSince1970: 2_000)
+        record["trackData"] = Data([1, 2, 3])
         return record
     }
 
@@ -61,6 +78,93 @@ final class CloudKitStoreTests: XCTestCase {
         )
         XCTAssertEqual(requested, [1, 2])
         XCTAssertEqual(matches.map { $0.0.recordName }, ["a", "b", "c"])
+    }
+
+    /// An empty page with a cursor does not end paging.
+    func testCollectPagesContinuesPastEmptyPage() async throws {
+        let pages = [
+            page([waypointRecord(name: "a", label: "A")]),
+            page([]),
+            page([waypointRecord(name: "c", label: "C")]),
+        ]
+        let matches = try await CloudKitStore.collectPages(
+            first: { (pages[0], Optional(1)) },
+            next: { (cursor: Int) in (pages[cursor], cursor + 1 < pages.count ? cursor + 1 : nil) }
+        )
+        XCTAssertEqual(matches.map { $0.0.recordName }, ["a", "c"])
+    }
+
+    /// A failure on a later page fails the fetch instead of returning the earlier pages.
+    func testCollectPagesThrowsWhenLaterPageFails() async {
+        do {
+            _ = try await CloudKitStore.collectPages(
+                first: { (self.page([self.waypointRecord(name: "a", label: "A")]), Optional(1)) },
+                next: { (_: Int) -> (matchResults: CloudKitStore.MatchResults, queryCursor: Int?) in
+                    throw LoadError(errorDescription: "page lost")
+                }
+            )
+            XCTFail("expected the page error")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "page lost")
+        }
+    }
+
+    /// The error text names a few skipped records and counts the rest.
+    func testUnreadableRecordsTextIsCapped() {
+        let one = CloudKitStore.CloudKitStoreError.unreadableRecords(["a: bad"])
+        XCTAssertEqual(one.localizedDescription, "1 record could not be read: a: bad")
+
+        let five = CloudKitStore.CloudKitStoreError.unreadableRecords(["a", "b", "c", "d", "e"])
+        XCTAssertEqual(five.localizedDescription, "5 records could not be read: a; b; c; and 2 more")
+    }
+
+    /// A complete saved-route record decodes, keeping its record name.
+    func testDecodeRouteReadsCompleteRecord() throws {
+        let id = UUID()
+        let route = try CloudKitStore.decodeRoute(from: savedRouteRecord(id: id))
+        XCTAssertEqual(route.id, id)
+        XCTAssertEqual(route.name, "Ridge walk")
+        XCTAssertEqual(route.cloudKitRecordID, id.uuidString)
+    }
+
+    /// A planned route round-trips through its `routeData` blob and gets its record name.
+    func testDecodePlannedRouteReadsRouteData() throws {
+        let start = CLLocationCoordinate2D(latitude: 47, longitude: 11)
+        let end = CLLocationCoordinate2D(latitude: 47.01, longitude: 11.01)
+        let original = PlannedRoute(
+            name: "Test", mode: .hiking, startCoordinate: start, endCoordinate: end,
+            coordinates: [start, end], turnInstructions: [], totalDistance: 1500,
+            estimatedDuration: 1200, elevationGain: 50, elevationLoss: 10, regionId: nil
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let record = CKRecord(
+            recordType: CloudKitStore.plannedRouteRecordType,
+            recordID: CKRecord.ID(recordName: "planned-1")
+        )
+        record["routeData"] = try encoder.encode(original)
+
+        let route = try CloudKitStore.decodePlannedRoute(from: record)
+        XCTAssertEqual(route.id, original.id)
+        XCTAssertEqual(route.cloudKitRecordID, "planned-1")
+    }
+
+    /// A waypoint without coordinates, or with a broken hike link, is rejected, not
+    /// read as a pin at 0,0 or an unlinked waypoint.
+    func testDecodeWaypointRejectsMissingCoordinatesAndBadHikeId() {
+        let noCoordinates = waypointRecord(name: "w", label: "W")
+        noCoordinates["latitude"] = nil
+        XCTAssertThrowsError(try CloudKitStore.decodeWaypoint(from: noCoordinates))
+
+        let badLink = waypointRecord(name: "w", label: "W")
+        badLink["hikeId"] = "not-a-uuid"
+        XCTAssertThrowsError(try CloudKitStore.decodeWaypoint(from: badLink)) { error in
+            XCTAssertEqual(error.localizedDescription, "CloudKit serialization error: invalid hikeId")
+        }
+
+        let route = savedRouteRecord(id: UUID())
+        route["regionId"] = "not-a-uuid"
+        XCTAssertThrowsError(try CloudKitStore.decodeRoute(from: route))
     }
 
     /// A record that fails to load or to decode is skipped with its name and reason;

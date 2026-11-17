@@ -63,6 +63,9 @@ actor CloudKitStore {
     /// Maximum number of records per batch operation.
     static let batchSize = 50
 
+    /// How many unreadable records the error text names; the rest are counted (all are logged).
+    static let maxListedUnreadableRecords = 3
+
     // MARK: - Error Types
 
     /// Errors that can occur during CloudKit operations.
@@ -90,7 +93,12 @@ actor CloudKitStore {
                 return "CloudKit serialization error: \(message)"
             case .unreadableRecords(let entries):
                 let noun = entries.count == 1 ? "record" : "records"
-                return "\(entries.count) \(noun) could not be read: \(entries.joined(separator: "; "))"
+                var listed = entries.prefix(CloudKitStore.maxListedUnreadableRecords).joined(separator: "; ")
+                let unlisted = entries.count - CloudKitStore.maxListedUnreadableRecords
+                if unlisted > 0 {
+                    listed += "; and \(unlisted) more"
+                }
+                return "\(entries.count) \(noun) could not be read: \(listed)"
             }
         }
     }
@@ -401,18 +409,16 @@ actor CloudKitStore {
 
     // MARK: - Error Helpers
 
-    /// Checks if a CloudKit error indicates the schema isn't ready for queries.
+    /// Checks if a CloudKit error says the record type does not exist yet.
     ///
-    /// This covers two cases on a fresh or newly-created CloudKit schema:
-    /// - Record type doesn't exist yet (no records have been saved)
-    /// - Fields aren't marked queryable (auto-created schema lacks indexes)
+    /// That is expected before any record of the type was saved: CloudKit creates
+    /// the type on first save, so the query has nothing to return.
     ///
-    /// Both are transient: CloudKit auto-creates record types on first save,
-    /// and these errors resolve once the schema is properly initialized.
-    private static func isSchemaNotReadyError(_ error: Error) -> Bool {
-        let description = error.localizedDescription
-        return description.contains("Did not find record type")
-            || description.contains("is not marked queryable")
+    /// "is not marked queryable" is not matched: it means the schema lacks the
+    /// `recordName` query index, which never fixes itself, so every pull would
+    /// silently return nothing. It is reported as a failed fetch instead.
+    private static func isRecordTypeMissingError(_ error: Error) -> Bool {
+        error.localizedDescription.contains("Did not find record type")
     }
 
     // MARK: - Paged Fetch
@@ -442,7 +448,7 @@ actor CloudKitStore {
                 Self.logger.error("Skipped unreadable \(recordType) record \(entry)")
             }
             return result
-        } catch where Self.isSchemaNotReadyError(error) {
+        } catch where Self.isRecordTypeMissingError(error) {
             Self.logger.debug("Record type \(recordType) not in schema yet (expected on first launch)")
             return FetchResult()
         } catch {
@@ -498,13 +504,32 @@ actor CloudKitStore {
     /// The error a decoder throws when a record lacks a field it needs.
     private static let missingFieldsError = CloudKitStoreError.serializationError("missing required fields")
 
+    /// Reads an optional UUID field.
+    ///
+    /// A record that has the field but not a valid UUID in it is broken, not unlinked:
+    /// accepting it as `nil` would overwrite the local link on merge.
+    ///
+    /// - Parameters:
+    ///   - key: The field name.
+    ///   - record: The record to read.
+    /// - Returns: The UUID, or `nil` if the field is absent.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if the field holds no valid UUID.
+    static func optionalUUID(_ key: String, in record: CKRecord) throws -> UUID? {
+        guard let string = record[key] as? String else { return nil }
+        guard let uuid = UUID(uuidString: string) else {
+            throw CloudKitStoreError.serializationError("invalid \(key)")
+        }
+        return uuid
+    }
+
     // MARK: - Decoders
 
     /// Decodes a ``SavedRoute`` from a CloudKit record.
     ///
     /// - Parameter record: The CKRecord to decode.
     /// - Returns: The decoded ``SavedRoute``.
-    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing
+    ///   or a UUID field is invalid.
     static func decodeRoute(from record: CKRecord) throws -> SavedRoute {
         guard let localIDString = record["localID"] as? String,
               let id = UUID(uuidString: localIDString),
@@ -515,12 +540,7 @@ actor CloudKitStore {
             throw missingFieldsError
         }
 
-        let regionId: UUID?
-        if let regionIdString = record["regionId"] as? String {
-            regionId = UUID(uuidString: regionIdString)
-        } else {
-            regionId = nil
-        }
+        let regionId = try optionalUUID("regionId", in: record)
 
         return SavedRoute(
             id: id,
@@ -579,28 +599,26 @@ actor CloudKitStore {
     ///
     /// - Parameter record: The CKRecord to decode.
     /// - Returns: The decoded ``Waypoint``.
-    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing
+    ///   or a UUID field is invalid.
     static func decodeWaypoint(from record: CKRecord) throws -> Waypoint {
         guard let localIDString = record["localID"] as? String,
               let id = UUID(uuidString: localIDString),
-              let timestamp = record["timestamp"] as? Date else {
+              let timestamp = record["timestamp"] as? Date,
+              let latitude = record["latitude"] as? Double,
+              let longitude = record["longitude"] as? Double else {
             throw missingFieldsError
         }
 
         let categoryString = record["category"] as? String ?? "custom"
         let category = WaypointCategory(rawValue: categoryString) ?? .custom
 
-        let hikeId: UUID?
-        if let hikeIdString = record["hikeId"] as? String {
-            hikeId = UUID(uuidString: hikeIdString)
-        } else {
-            hikeId = nil
-        }
+        let hikeId = try optionalUUID("hikeId", in: record)
 
         return Waypoint(
             id: id,
-            latitude: record["latitude"] as? Double ?? 0,
-            longitude: record["longitude"] as? Double ?? 0,
+            latitude: latitude,
+            longitude: longitude,
             altitude: record["altitude"] as? Double,
             timestamp: timestamp,
             label: record["label"] as? String ?? "",

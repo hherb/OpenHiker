@@ -415,6 +415,7 @@ actor CloudSyncManager {
                 try RouteStore.shared.insert(newRoute)
             }
         }
+        // After the merge, so one unreadable record does not block the readable ones.
         try remoteRoutes.throwIfSkipped()
     }
 
@@ -449,6 +450,7 @@ actor CloudSyncManager {
                 try WaypointStore.shared.insert(newWaypoint)
             }
         }
+        // After the merge, so one unreadable record does not block the readable ones.
         try remoteWaypoints.throwIfSkipped()
     }
 
@@ -502,6 +504,7 @@ actor CloudSyncManager {
                 )
             }
         }
+        // After the merge, so one unreadable record does not block the readable ones.
         try remotePlannedRoutes.throwIfSkipped()
     }
 
