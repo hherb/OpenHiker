@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-16.
+Last updated: 2026-11-17.
 
 ---
 
@@ -58,8 +58,13 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   iOS shows a red banner above every tab (Retry, dismiss); macOS shows "Sync failed" in the sidebar and the
   errors or last sync time in Settings → Sync. watchOS does not sync with iCloud. Tests:
   `CloudSyncManagerTests`. When the launch account check failed, Sync Now and Retry rerun it. An unavailable
-  iCloud account is still not shown, nor is a sync in progress (#84). Pulls can drop remote records silently
-  (#85); subscription errors are swallowed and non-recoverable CloudKit errors are retried (#86).
+  iCloud account is still not shown, nor is a sync in progress (#84). Subscription errors are swallowed and
+  non-recoverable CloudKit errors are retried (#86).
+- **Apple iCloud pulls read every record** (#85). `CloudKitStore.fetchAll(recordType:decode:)` follows the
+  query cursor to the last page (`collectPages`). A record that fails to load or decode is logged and kept as
+  a "record: reason" entry in `FetchResult.skipped`; the pull merges the readable records, then throws
+  `unreadableRecords`, so the banner reads "Saved hikes (download): 2 records could not be read: …". The
+  decoders are static and throwing. Tests: `CloudKitStoreTests`.
   Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
@@ -89,7 +94,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus
+- **Last PRs:** #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus
   Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple
   invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
@@ -98,7 +103,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **101/101 pass** (2026-11-17) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **105/105 pass** (2026-11-17) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -149,7 +154,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   overwrite an unsynced edit with the older cloud copy.
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #84: Apple iCloud shows nothing when the account is unavailable or a sync is already running.
-- #85: Apple iCloud pulls skip unreadable records and ignore the query cursor, yet report a clean sync.
 - #86: Apple iCloud subscription errors are logged at debug level; non-recoverable CloudKit errors are
   retried.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes

@@ -382,6 +382,9 @@ actor CloudSyncManager {
     /// - If not in local database: insert it
     /// - If in local database and remote is newer: update local
     /// - If in local database and local is newer: skip (will be pushed next cycle)
+    ///
+    /// Cloud records that could not be read are reported by throwing after the merge,
+    /// so the readable ones still sync (#85).
     private func pullRoutes() async throws {
         let remoteRoutes = try await retryWithBackoff {
             try await self.cloudStore.fetchAllRoutes()
@@ -390,7 +393,7 @@ actor CloudSyncManager {
         let localRoutes = try RouteStore.shared.fetchAll()
         let localRouteIDs = Set(localRoutes.map { $0.id })
 
-        for (recordID, remoteRoute) in remoteRoutes {
+        for (recordID, remoteRoute) in remoteRoutes.items {
             if localRouteIDs.contains(remoteRoute.id) {
                 // Route exists locally — check if remote is newer
                 if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {
@@ -412,6 +415,7 @@ actor CloudSyncManager {
                 try RouteStore.shared.insert(newRoute)
             }
         }
+        try remoteRoutes.throwIfSkipped()
     }
 
     /// Pulls waypoints from CloudKit and merges with local data.
@@ -425,7 +429,7 @@ actor CloudSyncManager {
         let localWaypoints = try WaypointStore.shared.fetchAll()
         let localWaypointIDs = Set(localWaypoints.map { $0.id })
 
-        for (recordID, remoteWaypoint) in remoteWaypoints {
+        for (recordID, remoteWaypoint) in remoteWaypoints.items {
             if localWaypointIDs.contains(remoteWaypoint.id) {
                 if let localWaypoint = localWaypoints.first(where: { $0.id == remoteWaypoint.id }) {
                     let localModified = localWaypoint.modifiedAt ?? localWaypoint.timestamp
@@ -445,6 +449,7 @@ actor CloudSyncManager {
                 try WaypointStore.shared.insert(newWaypoint)
             }
         }
+        try remoteWaypoints.throwIfSkipped()
     }
 
     /// Pulls planned routes from CloudKit and merges with local data.
@@ -464,7 +469,7 @@ actor CloudSyncManager {
         let localRouteIDs = Set(localRoutes.map { $0.id })
         var didChange = false
 
-        for (recordID, remoteRoute) in remotePlannedRoutes {
+        for (recordID, remoteRoute) in remotePlannedRoutes.items {
             if localRouteIDs.contains(remoteRoute.id) {
                 // Route exists locally — check if remote is newer
                 if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {
@@ -497,6 +502,7 @@ actor CloudSyncManager {
                 )
             }
         }
+        try remotePlannedRoutes.throwIfSkipped()
     }
 
     // MARK: - Retry Logic
