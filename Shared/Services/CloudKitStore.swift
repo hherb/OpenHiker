@@ -63,6 +63,9 @@ actor CloudKitStore {
     /// Maximum number of records per batch operation.
     static let batchSize = 50
 
+    /// How many unreadable records the error text names; the rest are counted (all are logged).
+    static let maxListedUnreadableRecords = 3
+
     // MARK: - Error Types
 
     /// Errors that can occur during CloudKit operations.
@@ -75,6 +78,8 @@ actor CloudKitStore {
         case recordNotFound
         /// The record data could not be serialized or deserialized.
         case serializationError(String)
+        /// A fetch skipped records it could not load or decode; one "record: reason" each.
+        case unreadableRecords([String])
 
         var errorDescription: String? {
             switch self {
@@ -86,7 +91,34 @@ actor CloudKitStore {
                 return "CloudKit record not found"
             case .serializationError(let message):
                 return "CloudKit serialization error: \(message)"
+            case .unreadableRecords(let entries):
+                let noun = entries.count == 1 ? "record" : "records"
+                var listed = entries.prefix(CloudKitStore.maxListedUnreadableRecords).joined(separator: "; ")
+                let unlisted = entries.count - CloudKitStore.maxListedUnreadableRecords
+                if unlisted > 0 {
+                    listed += "; and \(unlisted) more"
+                }
+                return "\(entries.count) \(noun) could not be read: \(listed)"
             }
+        }
+    }
+
+    /// One page of query results, as `CKDatabase.records(matching:)` returns them.
+    typealias MatchResults = [(CKRecord.ID, Result<CKRecord, any Error>)]
+
+    /// The records a fetch could read, and the ones it had to skip.
+    ///
+    /// A pull merges ``items`` and then calls ``throwIfSkipped()``, so the readable
+    /// records still sync while the user learns that some could not be read (#85).
+    struct FetchResult<Item> {
+        /// Each readable record's CloudKit record name and decoded item.
+        var items: [(recordID: String, item: Item)] = []
+        /// One "record name: reason" entry per record that could not be loaded or decoded.
+        var skipped: [String] = []
+
+        /// Throws ``CloudKitStoreError/unreadableRecords(_:)`` if any record was skipped.
+        func throwIfSkipped() throws {
+            if !skipped.isEmpty { throw CloudKitStoreError.unreadableRecords(skipped) }
         }
     }
 
@@ -164,34 +196,11 @@ actor CloudKitStore {
     /// Returns lightweight metadata for conflict resolution — the full track data
     /// is included because it's needed for local storage.
     ///
-    /// - Returns: An array of tuples containing the record ID and decoded route.
+    /// - Returns: Each readable record's ID and decoded route, and the records that could
+    ///   not be read (see ``FetchResult``).
     /// - Throws: ``CloudKitStoreError`` if the query fails.
-    func fetchAllRoutes() async throws -> [(recordID: String, route: SavedRoute)] {
-        let query = CKQuery(
-            recordType: Self.savedRouteRecordType,
-            predicate: NSPredicate(value: true)
-        )
-        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
-        // fields as queryable/sortable. Sort locally after fetching instead.
-
-        var results: [(String, SavedRoute)] = []
-
-        do {
-            let (matchResults, _) = try await database.records(matching: query)
-            for (_, result) in matchResults {
-                guard let record = try? result.get() else { continue }
-                if let route = decodeRoute(from: record) {
-                    results.append((record.recordID.recordName, route))
-                }
-            }
-        } catch where Self.isSchemaNotReadyError(error) {
-            Self.logger.debug("Record type \(Self.savedRouteRecordType) not in schema yet (expected on first launch)")
-            return []
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
-
-        return results
+    func fetchAllRoutes() async throws -> FetchResult<SavedRoute> {
+        try await fetchAll(recordType: Self.savedRouteRecordType, decode: Self.decodeRoute)
     }
 
     /// Deletes a ``SavedRoute`` record from CloudKit.
@@ -239,34 +248,11 @@ actor CloudKitStore {
 
     /// Fetches all ``Waypoint`` records from CloudKit.
     ///
-    /// - Returns: An array of tuples containing the record ID and decoded waypoint.
+    /// - Returns: Each readable record's ID and decoded waypoint, and the records that could
+    ///   not be read (see ``FetchResult``).
     /// - Throws: ``CloudKitStoreError`` if the query fails.
-    func fetchAllWaypoints() async throws -> [(recordID: String, waypoint: Waypoint)] {
-        let query = CKQuery(
-            recordType: Self.waypointRecordType,
-            predicate: NSPredicate(value: true)
-        )
-        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
-        // fields as queryable/sortable. Sort locally after fetching instead.
-
-        var results: [(String, Waypoint)] = []
-
-        do {
-            let (matchResults, _) = try await database.records(matching: query)
-            for (_, result) in matchResults {
-                guard let record = try? result.get() else { continue }
-                if let waypoint = decodeWaypoint(from: record) {
-                    results.append((record.recordID.recordName, waypoint))
-                }
-            }
-        } catch where Self.isSchemaNotReadyError(error) {
-            Self.logger.debug("Record type \(Self.waypointRecordType) not in schema yet (expected on first launch)")
-            return []
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
-
-        return results
+    func fetchAllWaypoints() async throws -> FetchResult<Waypoint> {
+        try await fetchAll(recordType: Self.waypointRecordType, decode: Self.decodeWaypoint)
     }
 
     /// Deletes a ``Waypoint`` record from CloudKit.
@@ -320,34 +306,11 @@ actor CloudKitStore {
 
     /// Fetches all ``PlannedRoute`` records from CloudKit.
     ///
-    /// - Returns: An array of tuples containing the record ID and decoded route.
+    /// - Returns: Each readable record's ID and decoded route, and the records that could
+    ///   not be read (see ``FetchResult``).
     /// - Throws: ``CloudKitStoreError`` if the query fails.
-    func fetchAllPlannedRoutes() async throws -> [(recordID: String, route: PlannedRoute)] {
-        let query = CKQuery(
-            recordType: Self.plannedRouteRecordType,
-            predicate: NSPredicate(value: true)
-        )
-        // Note: No sortDescriptors — CloudKit auto-created schemas don't mark
-        // fields as queryable/sortable. Sort locally after fetching instead.
-
-        var results: [(String, PlannedRoute)] = []
-
-        do {
-            let (matchResults, _) = try await database.records(matching: query)
-            for (_, result) in matchResults {
-                guard let record = try? result.get() else { continue }
-                if let route = decodePlannedRoute(from: record) {
-                    results.append((record.recordID.recordName, route))
-                }
-            }
-        } catch where Self.isSchemaNotReadyError(error) {
-            Self.logger.debug("Record type \(Self.plannedRouteRecordType) not in schema yet (expected on first launch)")
-            return []
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
-
-        return results
+    func fetchAllPlannedRoutes() async throws -> FetchResult<PlannedRoute> {
+        try await fetchAll(recordType: Self.plannedRouteRecordType, decode: Self.decodePlannedRoute)
     }
 
     /// Deletes a ``PlannedRoute`` record from CloudKit.
@@ -446,42 +409,138 @@ actor CloudKitStore {
 
     // MARK: - Error Helpers
 
-    /// Checks if a CloudKit error indicates the schema isn't ready for queries.
+    /// Checks if a CloudKit error says the record type does not exist yet.
     ///
-    /// This covers two cases on a fresh or newly-created CloudKit schema:
-    /// - Record type doesn't exist yet (no records have been saved)
-    /// - Fields aren't marked queryable (auto-created schema lacks indexes)
+    /// That is expected before any record of the type was saved: CloudKit creates
+    /// the type on first save, so the query has nothing to return.
     ///
-    /// Both are transient: CloudKit auto-creates record types on first save,
-    /// and these errors resolve once the schema is properly initialized.
-    private static func isSchemaNotReadyError(_ error: Error) -> Bool {
-        let description = error.localizedDescription
-        return description.contains("Did not find record type")
-            || description.contains("is not marked queryable")
+    /// "is not marked queryable" is not matched: it means the schema lacks the
+    /// `recordName` query index, which never fixes itself, so every pull would
+    /// silently return nothing. It is reported as a failed fetch instead.
+    private static func isRecordTypeMissingError(_ error: Error) -> Bool {
+        error.localizedDescription.contains("Did not find record type")
     }
 
-    // MARK: - Private Decoders
+    // MARK: - Paged Fetch
+
+    /// Fetches every record of one type, following the query cursor to the last page.
+    ///
+    /// - Parameters:
+    ///   - recordType: The CKRecord type to query.
+    ///   - decode: Turns one record into an item; throws if the record is incomplete.
+    /// - Returns: The decoded items and the records that were skipped (also logged).
+    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if any page fails to load.
+    private func fetchAll<Item>(
+        recordType: CKRecord.RecordType,
+        decode: (CKRecord) throws -> Item
+    ) async throws -> FetchResult<Item> {
+        let database = self.database
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        // No sortDescriptors: CloudKit auto-created schemas don't mark fields
+        // sortable. Callers don't need an order.
+        do {
+            let matches = try await Self.collectPages(
+                first: { try await database.records(matching: query) },
+                next: { try await database.records(continuingMatchFrom: $0) }
+            )
+            let result = Self.decodeAll(matches, decode: decode)
+            for entry in result.skipped {
+                Self.logger.error("Skipped unreadable \(recordType) record \(entry)")
+            }
+            return result
+        } catch where Self.isRecordTypeMissingError(error) {
+            Self.logger.debug("Record type \(recordType) not in schema yet (expected on first launch)")
+            return FetchResult()
+        } catch {
+            throw CloudKitStoreError.operationFailed(error.localizedDescription)
+        }
+    }
+
+    /// Loads the first page of a query and every page after it.
+    ///
+    /// `records(matching:)` returns at most one batch plus a cursor for the rest;
+    /// dropping the cursor would leave the later records unsynced (#85).
+    ///
+    /// - Parameters:
+    ///   - first: Loads the first page and the cursor to the next one, if any.
+    ///   - next: Loads the page a cursor points to.
+    /// - Returns: The results of all pages, in order.
+    /// - Throws: The first error from `first` or `next`.
+    static func collectPages<Cursor>(
+        first: () async throws -> (matchResults: MatchResults, queryCursor: Cursor?),
+        next: (Cursor) async throws -> (matchResults: MatchResults, queryCursor: Cursor?)
+    ) async throws -> MatchResults {
+        var (matches, cursor) = try await first()
+        while let current = cursor {
+            let page = try await next(current)
+            matches += page.matchResults
+            cursor = page.queryCursor
+        }
+        return matches
+    }
+
+    /// Decodes query results, keeping a "record name: reason" entry for each one that fails.
+    ///
+    /// - Parameters:
+    ///   - matches: Query results; a record can fail to load on its own.
+    ///   - decode: Turns one record into an item; throws if the record is incomplete.
+    /// - Returns: The decoded items and the skipped records.
+    static func decodeAll<Item>(
+        _ matches: MatchResults,
+        decode: (CKRecord) throws -> Item
+    ) -> FetchResult<Item> {
+        var result = FetchResult<Item>()
+        for (recordID, match) in matches {
+            do {
+                let record = try match.get()
+                result.items.append((record.recordID.recordName, try decode(record)))
+            } catch {
+                result.skipped.append("\(recordID.recordName): \(error.localizedDescription)")
+            }
+        }
+        return result
+    }
+
+    /// The error a decoder throws when a record lacks a field it needs.
+    private static let missingFieldsError = CloudKitStoreError.serializationError("missing required fields")
+
+    /// Reads an optional UUID field.
+    ///
+    /// A record that has the field but not a valid UUID in it is broken, not unlinked:
+    /// accepting it as `nil` would overwrite the local link on merge.
+    ///
+    /// - Parameters:
+    ///   - key: The field name.
+    ///   - record: The record to read.
+    /// - Returns: The UUID, or `nil` if the field is absent.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if the field holds no valid UUID.
+    static func optionalUUID(_ key: String, in record: CKRecord) throws -> UUID? {
+        guard let string = record[key] as? String else { return nil }
+        guard let uuid = UUID(uuidString: string) else {
+            throw CloudKitStoreError.serializationError("invalid \(key)")
+        }
+        return uuid
+    }
+
+    // MARK: - Decoders
 
     /// Decodes a ``SavedRoute`` from a CloudKit record.
     ///
     /// - Parameter record: The CKRecord to decode.
-    /// - Returns: A ``SavedRoute`` if all required fields are present, or `nil`.
-    private func decodeRoute(from record: CKRecord) -> SavedRoute? {
+    /// - Returns: The decoded ``SavedRoute``.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing
+    ///   or a UUID field is invalid.
+    static func decodeRoute(from record: CKRecord) throws -> SavedRoute {
         guard let localIDString = record["localID"] as? String,
               let id = UUID(uuidString: localIDString),
               let name = record["name"] as? String,
               let startTime = record["startTime"] as? Date,
               let endTime = record["endTime"] as? Date,
               let trackData = record["trackData"] as? Data else {
-            return nil
+            throw missingFieldsError
         }
 
-        let regionId: UUID?
-        if let regionIdString = record["regionId"] as? String {
-            regionId = UUID(uuidString: regionIdString)
-        } else {
-            regionId = nil
-        }
+        let regionId = try optionalUUID("regionId", in: record)
 
         return SavedRoute(
             id: id,
@@ -515,50 +574,51 @@ actor CloudKitStore {
     /// `modifiedAt` from the record's server modification date.
     ///
     /// - Parameter record: The CKRecord to decode.
-    /// - Returns: A ``PlannedRoute`` if the data can be decoded, or `nil`.
-    private func decodePlannedRoute(from record: CKRecord) -> PlannedRoute? {
+    /// - Returns: The decoded ``PlannedRoute``.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if `routeData` is missing or
+    ///   is not a valid route.
+    static func decodePlannedRoute(from record: CKRecord) throws -> PlannedRoute {
         guard let routeData = record["routeData"] as? Data else {
-            return nil
+            throw missingFieldsError
         }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        var route: PlannedRoute
         do {
-            var route = try decoder.decode(PlannedRoute.self, from: routeData)
-            route.cloudKitRecordID = record.recordID.recordName
-            route.modifiedAt = record.modificationDate
-            return route
+            route = try decoder.decode(PlannedRoute.self, from: routeData)
         } catch {
-            Self.logger.error("Failed to decode PlannedRoute: \(error.localizedDescription)")
-            return nil
+            throw CloudKitStoreError.serializationError("invalid routeData: \(error.localizedDescription)")
         }
+        route.cloudKitRecordID = record.recordID.recordName
+        route.modifiedAt = record.modificationDate
+        return route
     }
 
     /// Decodes a ``Waypoint`` from a CloudKit record.
     ///
     /// - Parameter record: The CKRecord to decode.
-    /// - Returns: A ``Waypoint`` if all required fields are present, or `nil`.
-    private func decodeWaypoint(from record: CKRecord) -> Waypoint? {
+    /// - Returns: The decoded ``Waypoint``.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if a required field is missing
+    ///   or a UUID field is invalid.
+    static func decodeWaypoint(from record: CKRecord) throws -> Waypoint {
         guard let localIDString = record["localID"] as? String,
               let id = UUID(uuidString: localIDString),
-              let timestamp = record["timestamp"] as? Date else {
-            return nil
+              let timestamp = record["timestamp"] as? Date,
+              let latitude = record["latitude"] as? Double,
+              let longitude = record["longitude"] as? Double else {
+            throw missingFieldsError
         }
 
         let categoryString = record["category"] as? String ?? "custom"
         let category = WaypointCategory(rawValue: categoryString) ?? .custom
 
-        let hikeId: UUID?
-        if let hikeIdString = record["hikeId"] as? String {
-            hikeId = UUID(uuidString: hikeIdString)
-        } else {
-            hikeId = nil
-        }
+        let hikeId = try optionalUUID("hikeId", in: record)
 
         return Waypoint(
             id: id,
-            latitude: record["latitude"] as? Double ?? 0,
-            longitude: record["longitude"] as? Double ?? 0,
+            latitude: latitude,
+            longitude: longitude,
             altitude: record["altitude"] as? Double,
             timestamp: timestamp,
             label: record["label"] as? String ?? "",
