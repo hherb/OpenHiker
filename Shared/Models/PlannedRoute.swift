@@ -470,10 +470,11 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a planned route from disk and the in-memory cache.
     ///
-    /// If the route was synced to iCloud, its record is queued in the deletion queue
-    /// so the next sync deletes it there too (#89). The record ID is read from the
-    /// file. A file that cannot be read is still deleted but queues nothing, so a
-    /// cloud copy of it comes back on the next pull.
+    /// Its iCloud record is queued in the deletion queue so the next sync deletes it
+    /// there too (#89). The record name is the file's `cloudKitRecordID`, or the route's
+    /// UUID when it has none or the file cannot be read: an upload still in flight names
+    /// the new record after the UUID. A record that never reached iCloud costs one
+    /// harmless delete call.
     ///
     /// - Parameter id: The UUID of the route to delete.
     /// - Throws: File system errors.
@@ -482,17 +483,17 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
             let fileURL = storageDirectory.appendingPathComponent("\(id.uuidString).json")
 
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                var cloudKitRecordID: String?
+                var recordName = id.uuidString
                 do {
                     let data = try Data(contentsOf: fileURL)
-                    cloudKitRecordID = try decoder.decode(PlannedRoute.self, from: data).cloudKitRecordID
+                    if let cloudKitRecordID = try decoder.decode(PlannedRoute.self, from: data).cloudKitRecordID {
+                        recordName = cloudKitRecordID
+                    }
                 } catch {
-                    print("Planned route \(id.uuidString): cannot read iCloud record ID before delete: \(error.localizedDescription)")
+                    print("Planned route \(id.uuidString): cannot read iCloud record ID before delete, using the UUID: \(error.localizedDescription)")
                 }
                 try FileManager.default.removeItem(at: fileURL)
-                if let cloudKitRecordID {
-                    deletionQueue.add(recordID: cloudKitRecordID, recordType: CloudKitStore.plannedRouteRecordType)
-                }
+                deletionQueue.add(recordID: recordName, recordType: CloudKitStore.plannedRouteRecordType)
             }
 
             DispatchQueue.main.async {

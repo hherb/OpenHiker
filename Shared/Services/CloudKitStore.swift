@@ -206,18 +206,27 @@ actor CloudKitStore {
     /// Deletes one record of any type from CloudKit.
     ///
     /// A record that is already gone (for example deleted from another device) counts
-    /// as deleted, so a queued deletion does not fail forever.
+    /// as deleted, so a queued deletion does not fail forever. So does a record that never
+    /// reached iCloud: stores queue an unsynced item under its UUID (#89).
     ///
     /// - Parameter recordID: The CloudKit record name (the item's `cloudKitRecordID`).
     /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the deletion fails.
     func delete(recordID: String) async throws {
         do {
             try await database.deleteRecord(withID: CKRecord.ID(recordName: recordID))
-        } catch let error as CKError where error.code == .unknownItem {
+        } catch where Self.isAlreadyDeleted(error) {
             Self.logger.debug("Record \(recordID) already deleted from iCloud")
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
         }
+    }
+
+    /// Whether a delete failed only because the record does not exist in iCloud.
+    ///
+    /// - Parameter error: The error `deleteRecord(withID:)` threw.
+    /// - Returns: `true` for `CKError.unknownItem`; the deletion then counts as done.
+    static func isAlreadyDeleted(_ error: Error) -> Bool {
+        (error as? CKError)?.code == .unknownItem
     }
 
     // MARK: - Waypoint Operations

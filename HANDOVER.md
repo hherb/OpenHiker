@@ -70,12 +70,13 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   "is not marked queryable" (missing `recordName` index) is now reported, not read as an empty result. Tests:
   `CloudKitStoreTests`. Deferred: #90 (unreadable records never heal, merge write errors).
 - **Apple iCloud deletions** (#89). `RouteStore`, `WaypointStore` and `PlannedRouteStore` `delete(id:)` queue
-  the record of a synced item (one with a `cloudKitRecordID`) in `CloudDeletionQueue`
-  (`Shared/Services/`, kept in `UserDefaults`; a no-op on watchOS, which does not sync with iCloud). Each sync
-  runs a "(delete)" step per type before its upload (`CloudKitStore.delete(recordID:)`; a record already gone
-  counts as deleted), and pulls skip queued records so a deleted item does not come back. Deletions made on
-  another device are still not applied locally (#91). Tests: `CloudSyncManagerTests`,
-  `PlannedRouteStoreTests`.
+  the item's record name (its `cloudKitRecordID`, else its UUID, which an in-flight upload uses) in
+  `CloudDeletionQueue` (`Shared/Services/`, kept in `UserDefaults`; a no-op on watchOS, which does not sync
+  with iCloud). Each sync runs a "(delete)" step per type before its upload (`CloudKitStore.delete(recordID:)`;
+  a record already gone counts as deleted; a failed record moves to the back of the queue). Uploads do not
+  write back a queued item, and pulls skip queued records, so a deleted item does not come back. Deletions
+  made on another device are still not applied locally (#91). Tests: `CloudSyncManagerTests`,
+  `PlannedRouteStoreTests`, `CloudKitStoreTests`.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -104,16 +105,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android
-  #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint
-  altitude, #65), #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
+  #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
+  (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **114/114 pass** (2026-11-20) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **119/119 pass** (2026-11-20) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |

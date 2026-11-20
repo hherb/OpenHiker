@@ -105,6 +105,9 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
     /// Serial dispatch queue ensuring thread-safe database access.
     private let queue = DispatchQueue(label: "com.openhiker.routestore", qos: .userInitiated)
 
+    /// Where ``delete(id:)`` queues the iCloud records of deleted routes.
+    private let deletionQueue: CloudDeletionQueue
+
     /// ISO 8601 date formatter used for persisting timestamps.
     ///
     /// Using a shared formatter avoids creating a new one per operation.
@@ -120,9 +123,13 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
     ///
     /// The database is not opened until ``open()`` is called.
     ///
-    /// - Parameter path: File system path to the SQLite database.
-    init(path: String) {
+    /// - Parameters:
+    ///   - path: File system path to the SQLite database.
+    ///   - deletionQueue: Where ``delete(id:)`` queues iCloud deletions. The app uses the
+    ///     shared queue; tests pass their own.
+    init(path: String, deletionQueue: CloudDeletionQueue = .shared) {
         self.path = path
+        self.deletionQueue = deletionQueue
     }
 
     deinit {
@@ -337,13 +344,16 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a saved route by its UUID.
     ///
-    /// If the route was synced to iCloud, its record is queued in ``CloudDeletionQueue``
-    /// so the next sync deletes it there too (#89).
+    /// Its iCloud record is queued in ``CloudDeletionQueue`` so the next sync deletes it
+    /// there too (#89). The record name is the route's `cloudKitRecordID`, or its UUID
+    /// when it has none or the row cannot be parsed: an upload still in flight names the
+    /// new record after the UUID. A record that never reached iCloud costs one harmless
+    /// delete call. A database error while reading the route aborts the delete.
     ///
     /// - Parameter id: The UUID of the route to delete.
     /// - Throws: ``RouteStoreError`` if the delete fails or the route doesn't exist.
     func delete(id: UUID) throws {
-        let cloudKitRecordID = try fetch(id: id)?.cloudKitRecordID
+        let recordName = try fetch(id: id)?.cloudKitRecordID ?? id.uuidString
         try queue.sync {
             guard let db = db else {
                 throw RouteStoreError.databaseNotOpen
@@ -368,9 +378,7 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
                 throw RouteStoreError.routeNotFound
             }
         }
-        if let cloudKitRecordID {
-            CloudDeletionQueue.shared.add(recordID: cloudKitRecordID, recordType: CloudKitStore.savedRouteRecordType)
-        }
+        deletionQueue.add(recordID: recordName, recordType: CloudKitStore.savedRouteRecordType)
     }
 
     // MARK: - Fetch

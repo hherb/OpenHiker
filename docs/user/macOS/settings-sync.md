@@ -33,8 +33,9 @@ OpenHiker syncs the following data across your Apple devices:
 ### How Sync Works
 
 1. **On launch** — The app automatically syncs with iCloud
-2. **On sync** — Items you create, edit, or delete reach iCloud at the next sync (on launch, "Sync now", or
-   after renaming or planning a route). A deletion made offline is sent when iCloud is reachable again
+2. **On sync** — Items you create, edit, or delete reach iCloud at the next sync: on launch, "Sync now",
+   after renaming a route or region, after a region download, or when you choose "Sync to iPhone" after
+   planning a route. A deletion made offline is sent at the first sync after iCloud is reachable again
 3. **From other devices** — New and edited items from your iPhone arrive at the next sync. An item deleted on
    another device stays on this Mac for now
 

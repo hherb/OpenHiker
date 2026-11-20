@@ -58,14 +58,14 @@ final class CloudSyncStatus: ObservableObject {
 /// Implements a "last-writer-wins" conflict resolution strategy using `modifiedAt`
 /// timestamps. The sync flow is:
 ///
-/// 1. **Push**: Upload local records that have no `cloudKitRecordID` or whose
-///    `modifiedAt` is newer than the remote `CKRecord.modificationDate`.
-/// 2. **Pull**: Download remote records that don't exist locally or are newer
-///    than the local `modifiedAt`.
-/// 3. **Delete**: Items deleted on this device are queued in ``CloudDeletionQueue``
-///    by the local stores. Each sync deletes them from iCloud before uploading, and
+/// 1. **Delete**: Items deleted on this device are queued in ``CloudDeletionQueue``
+///    by the local stores. Each sync deletes them from iCloud first, and uploads and
 ///    pulls skip queued records so a deleted item does not come back (#89). Deletions
-///    made on another device are not yet applied here: the local copy stays.
+///    made on another device are not yet applied here: the local copy stays (#91).
+/// 2. **Push**: Upload local records that have no `cloudKitRecordID` or whose
+///    `modifiedAt` is newer than the remote `CKRecord.modificationDate`.
+/// 3. **Pull**: Download remote records that don't exist locally or are newer
+///    than the local `modifiedAt`.
 ///
 /// ## Sync Triggers
 /// - App launch (via ``syncOnLaunch()``)
@@ -193,8 +193,9 @@ actor CloudSyncManager {
             Self.logger.debug("Schema not ready, force-pushing all local records")
         }
 
-        // Delete, upload and download are separate steps: a record that fails to upload
-        // must not block downloads. Pulls never delete locally and keep newer local edits.
+        // Delete, upload and download are separate steps, so a failure in one does not
+        // block the next. Pulls skip queued deletions, never delete locally, and keep
+        // newer local edits.
         let errors = await Self.runSteps([
             (Self.delete(Self.savedHikesLabel), { try await self.pushDeletions(CloudKitStore.savedRouteRecordType) }),
             (Self.upload(Self.savedHikesLabel), { try await self.pushRoutes(forceAll: forceAll) }),
@@ -289,7 +290,8 @@ actor CloudSyncManager {
     /// Deletes from iCloud the records of one type that were deleted on this device.
     ///
     /// - Parameter recordType: The CloudKit record type, e.g. ``CloudKitStore/waypointRecordType``.
-    /// - Throws: The first deletion that fails after retries; it and later records stay queued.
+    /// - Throws: The first deletion that fails after retries; it and the untried records
+    ///   stay queued.
     private func pushDeletions(_ recordType: String) async throws {
         try await Self.pushDeletions(recordType: recordType, queue: deletionQueue) { recordID in
             try await self.retryWithBackoff { try await self.cloudStore.delete(recordID: recordID) }
@@ -299,11 +301,15 @@ actor CloudSyncManager {
     /// Runs `delete` for each queued record of one type, oldest first, and removes each
     /// record from the queue once its deletion succeeded.
     ///
+    /// Stops at the first failure, so an offline sync makes one failed attempt rather
+    /// than one per record. The failed record moves to the back of the queue, so a
+    /// record that keeps failing does not block the others on later syncs.
+    ///
     /// - Parameters:
     ///   - recordType: The CloudKit record type whose queue to work through.
     ///   - queue: The deletion queue; the app uses ``CloudDeletionQueue/shared``.
     ///   - delete: Deletes one record from iCloud by record name.
-    /// - Throws: The first error from `delete`; that record and the ones after it stay
+    /// - Throws: The first error from `delete`; that record and the untried ones stay
     ///   queued for the next sync.
     static func pushDeletions(
         recordType: String,
@@ -311,8 +317,13 @@ actor CloudSyncManager {
         delete: (String) async throws -> Void
     ) async throws {
         for recordID in queue.pending(recordType: recordType) {
-            try await delete(recordID)
-            queue.remove(recordID: recordID, recordType: recordType)
+            do {
+                try await delete(recordID)
+                queue.remove(recordID: recordID, recordType: recordType)
+            } catch {
+                queue.moveToBack(recordID: recordID, recordType: recordType)
+                throw error
+            }
         }
     }
 
@@ -340,6 +351,8 @@ actor CloudSyncManager {
                 try await self.cloudStore.save(route: routeToSave)
             }
 
+            if isQueuedForDeletion(recordID, CloudKitStore.savedRouteRecordType) { continue }
+
             // Update local record with CloudKit ID
             route.cloudKitRecordID = recordID
             route.modifiedAt = nil // Clear modification flag
@@ -362,6 +375,8 @@ actor CloudSyncManager {
             let recordID = try await retryWithBackoff {
                 try await self.cloudStore.save(waypoint: waypointToSave)
             }
+
+            if isQueuedForDeletion(recordID, CloudKitStore.waypointRecordType) { continue }
 
             waypoint.cloudKitRecordID = recordID
             waypoint.modifiedAt = nil
@@ -387,11 +402,29 @@ actor CloudSyncManager {
                 try await self.cloudStore.save(plannedRoute: routeToSave)
             }
 
+            // Writing the file back would bring the deleted route back on this device.
+            if isQueuedForDeletion(recordID, CloudKitStore.plannedRouteRecordType) { continue }
+
             // Update local record with CloudKit ID
             route.cloudKitRecordID = recordID
             route.modifiedAt = nil
             try PlannedRouteStore.shared.save(route)
         }
+    }
+
+    /// Whether an item was deleted on this device while its upload was in flight.
+    ///
+    /// The upload then must not write the item back (#89): its record is already queued
+    /// for deletion, and the next sync deletes the record it just uploaded. A delete in
+    /// the instant between this check and the write-back still makes the write-back fail
+    /// (or, for a planned route, restores the file).
+    ///
+    /// - Parameters:
+    ///   - recordID: The CloudKit record name the upload returned.
+    ///   - recordType: The CloudKit record type of the item.
+    /// - Returns: `true` if the record is in ``CloudDeletionQueue``.
+    private func isQueuedForDeletion(_ recordID: String, _ recordType: String) -> Bool {
+        deletionQueue.pending(recordType: recordType).contains(recordID)
     }
 
     /// Reads the local planned routes for a push or pull.

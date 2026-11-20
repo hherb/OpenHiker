@@ -44,7 +44,6 @@ OpenHiker automatically syncs the following data across your Apple devices via i
 
 Sync happens automatically when:
 - The app launches
-- Changes are made on another device (push notification)
 
 You can trigger a manual sync from the Watch tab or by pulling to refresh in list views.
 

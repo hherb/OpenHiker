@@ -102,6 +102,9 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
     /// Serial dispatch queue ensuring thread-safe database access.
     private let queue = DispatchQueue(label: "com.openhiker.waypointstore", qos: .userInitiated)
 
+    /// Where ``delete(id:)`` queues the iCloud records of deleted waypoints.
+    private let deletionQueue: CloudDeletionQueue
+
     /// ISO 8601 date formatter used for persisting timestamps.
     ///
     /// Using a shared formatter avoids creating a new one per operation.
@@ -117,9 +120,13 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
     ///
     /// The database is not opened until ``open()`` is called.
     ///
-    /// - Parameter path: File system path to the SQLite database.
-    init(path: String) {
+    /// - Parameters:
+    ///   - path: File system path to the SQLite database.
+    ///   - deletionQueue: Where ``delete(id:)`` queues iCloud deletions. The app uses the
+    ///     shared queue; tests pass their own.
+    init(path: String, deletionQueue: CloudDeletionQueue = .shared) {
         self.path = path
+        self.deletionQueue = deletionQueue
     }
 
     deinit {
@@ -365,17 +372,19 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a waypoint by its UUID.
     ///
-    /// Also removes any associated photo data from the database. If the waypoint was
-    /// synced to iCloud, its record is queued in ``CloudDeletionQueue`` so the next sync
-    /// deletes it there too (#89).
+    /// Also removes any associated photo data from the database. Its iCloud record is
+    /// queued in ``CloudDeletionQueue`` so the next sync deletes it there too (#89). The
+    /// record name is the waypoint's `cloudKitRecordID`, or its UUID when it has none or
+    /// the row cannot be parsed: an upload still in flight names the new record after
+    /// the UUID. A database error while reading the waypoint aborts the delete.
     ///
     /// - Parameter id: The UUID of the waypoint to delete.
     /// - Throws: ``WaypointStoreError`` if the delete fails or the waypoint doesn't exist.
     func delete(id: UUID) throws {
         // A UUID string contains no quotes, so interpolating it into the SQL is safe.
-        let cloudKitRecordID = try fetchWaypoints(
+        let recordName = try fetchWaypoints(
             sql: "SELECT * FROM waypoints WHERE id = '\(id.uuidString)'"
-        ).first?.cloudKitRecordID
+        ).first?.cloudKitRecordID ?? id.uuidString
         try queue.sync {
             guard let db = db else {
                 throw WaypointStoreError.databaseNotOpen
@@ -400,9 +409,7 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
                 throw WaypointStoreError.waypointNotFound
             }
         }
-        if let cloudKitRecordID {
-            CloudDeletionQueue.shared.add(recordID: cloudKitRecordID, recordType: CloudKitStore.waypointRecordType)
-        }
+        deletionQueue.add(recordID: recordName, recordType: CloudKitStore.waypointRecordType)
         reloadWaypoints()
     }
 

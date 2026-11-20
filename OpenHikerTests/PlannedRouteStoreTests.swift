@@ -99,8 +99,9 @@ final class PlannedRouteStoreTests: XCTestCase {
         XCTAssertEqual(try store.fetchForRegion(regionId).map(\.id), [inRegion.id])
     }
 
-    /// Deleting a synced route queues its iCloud record; an unsynced one queues nothing (#89).
-    func testDeleteQueuesSyncedRouteForICloud() throws {
+    /// Deleting a route queues its iCloud record name, or its UUID if it has none or its
+    /// file cannot be read (#89).
+    func testDeleteQueuesRecordNameOrUUID() throws {
         let suite = "PlannedRouteStoreTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -111,12 +112,18 @@ final class PlannedRouteStoreTests: XCTestCase {
         let unsynced = route()
         try store.save(synced)
         try store.save(unsynced)
+        let broken = UUID()
+        try Data("not json".utf8).write(to: routesDir.appendingPathComponent("\(broken.uuidString).json"))
 
         try store.delete(id: synced.id)
         try store.delete(id: unsynced.id)
+        try store.delete(id: broken)
 
-        XCTAssertEqual(queue.pending(recordType: CloudKitStore.plannedRouteRecordType), ["record-1"])
-        XCTAssertTrue(try store.loadAllFromDisk().routes.isEmpty)
+        XCTAssertEqual(
+            queue.pending(recordType: CloudKitStore.plannedRouteRecordType),
+            ["record-1", unsynced.id.uuidString, broken.uuidString]
+        )
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: routesDir.path).isEmpty)
     }
 
     /// One broken file must not block a region transfer, and must reach the route lists.

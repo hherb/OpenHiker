@@ -16,11 +16,12 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import os
 
 /// iCloud records deleted on this device that are not yet deleted in iCloud (#89).
 ///
-/// When a local store deletes an item that was synced (it has a `cloudKitRecordID`),
-/// it adds the record here. The next sync deletes each queued record from iCloud and
+/// When a local store deletes an item, it adds the item's record here (its
+/// `cloudKitRecordID`, or its UUID if it has none yet). The next sync deletes each queued record from iCloud and
 /// then removes it from the queue. Until then, pulls skip queued records, so the
 /// deleted item does not come back. The queue lives in `UserDefaults`, so a deletion
 /// made offline survives an app restart.
@@ -40,6 +41,12 @@ final class CloudDeletionQueue: @unchecked Sendable {
 
     /// Serialises the read-modify-write of the stored dictionary.
     private let lock = NSLock()
+
+    /// Logs a stored queue that cannot be read.
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.openhiker",
+        category: "CloudDeletionQueue"
+    )
 
     /// Creates a queue stored in the given defaults.
     ///
@@ -88,9 +95,31 @@ final class CloudDeletionQueue: @unchecked Sendable {
         }
     }
 
+    /// Moves a record to the back of its queue after its deletion failed, so it does not
+    /// block the records behind it on the next sync. Does nothing if it is not queued.
+    ///
+    /// - Parameters:
+    ///   - recordID: The CloudKit record name.
+    ///   - recordType: The CloudKit record type.
+    func moveToBack(recordID: String, recordType: String) {
+        modify { queue in
+            guard queue[recordType]?.contains(recordID) == true else { return }
+            queue[recordType]?.removeAll { $0 == recordID }
+            queue[recordType]?.append(recordID)
+        }
+    }
+
     /// Reads the stored dictionary. Call with ``lock`` held.
+    ///
+    /// A stored value of the wrong shape reads as empty and is logged; the next change
+    /// overwrites it.
     private func stored() -> [String: [String]] {
-        defaults.dictionary(forKey: Self.defaultsKey) as? [String: [String]] ?? [:]
+        guard let raw = defaults.object(forKey: Self.defaultsKey) else { return [:] }
+        guard let queue = raw as? [String: [String]] else {
+            Self.logger.error("Unreadable iCloud deletion queue, discarding it: \(String(describing: raw))")
+            return [:]
+        }
+        return queue
     }
 
     /// Applies a change to the stored dictionary under the lock.

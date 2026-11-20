@@ -220,4 +220,11 @@ final class CloudKitStoreTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("invalid routeData"))
         }
     }
+
+    /// Only a missing record counts as already deleted; other failures must stay queued (#89).
+    func testIsAlreadyDeletedOnlyForUnknownItem() {
+        XCTAssertTrue(CloudKitStore.isAlreadyDeleted(CKError(.unknownItem)))
+        XCTAssertFalse(CloudKitStore.isAlreadyDeleted(CKError(.networkUnavailable)))
+        XCTAssertFalse(CloudKitStore.isAlreadyDeleted(NSError(domain: "test", code: 1)))
+    }
 }
