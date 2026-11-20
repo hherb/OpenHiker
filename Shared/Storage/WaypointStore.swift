@@ -365,11 +365,17 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a waypoint by its UUID.
     ///
-    /// Also removes any associated photo data from the database.
+    /// Also removes any associated photo data from the database. If the waypoint was
+    /// synced to iCloud, its record is queued in ``CloudDeletionQueue`` so the next sync
+    /// deletes it there too (#89).
     ///
     /// - Parameter id: The UUID of the waypoint to delete.
     /// - Throws: ``WaypointStoreError`` if the delete fails or the waypoint doesn't exist.
     func delete(id: UUID) throws {
+        // A UUID string contains no quotes, so interpolating it into the SQL is safe.
+        let cloudKitRecordID = try fetchWaypoints(
+            sql: "SELECT * FROM waypoints WHERE id = '\(id.uuidString)'"
+        ).first?.cloudKitRecordID
         try queue.sync {
             guard let db = db else {
                 throw WaypointStoreError.databaseNotOpen
@@ -393,6 +399,9 @@ final class WaypointStore: @unchecked Sendable, ObservableObject {
             if sqlite3_changes(db) == 0 {
                 throw WaypointStoreError.waypointNotFound
             }
+        }
+        if let cloudKitRecordID {
+            CloudDeletionQueue.shared.add(recordID: cloudKitRecordID, recordType: CloudKitStore.waypointRecordType)
         }
         reloadWaypoints()
     }

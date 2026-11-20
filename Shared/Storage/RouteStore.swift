@@ -337,9 +337,13 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a saved route by its UUID.
     ///
+    /// If the route was synced to iCloud, its record is queued in ``CloudDeletionQueue``
+    /// so the next sync deletes it there too (#89).
+    ///
     /// - Parameter id: The UUID of the route to delete.
     /// - Throws: ``RouteStoreError`` if the delete fails or the route doesn't exist.
     func delete(id: UUID) throws {
+        let cloudKitRecordID = try fetch(id: id)?.cloudKitRecordID
         try queue.sync {
             guard let db = db else {
                 throw RouteStoreError.databaseNotOpen
@@ -363,6 +367,9 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             if sqlite3_changes(db) == 0 {
                 throw RouteStoreError.routeNotFound
             }
+        }
+        if let cloudKitRecordID {
+            CloudDeletionQueue.shared.add(recordID: cloudKitRecordID, recordType: CloudKitStore.savedRouteRecordType)
         }
     }
 

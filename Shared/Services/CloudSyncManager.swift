@@ -62,8 +62,10 @@ final class CloudSyncStatus: ObservableObject {
 ///    `modifiedAt` is newer than the remote `CKRecord.modificationDate`.
 /// 2. **Pull**: Download remote records that don't exist locally or are newer
 ///    than the local `modifiedAt`.
-/// 3. **Delete**: Remote deletions are detected by comparing local record IDs
-///    against the remote set. (Local deletions are synced immediately.)
+/// 3. **Delete**: Items deleted on this device are queued in ``CloudDeletionQueue``
+///    by the local stores. Each sync deletes them from iCloud before uploading, and
+///    pulls skip queued records so a deleted item does not come back (#89). Deletions
+///    made on another device are not yet applied here: the local copy stays.
 ///
 /// ## Sync Triggers
 /// - App launch (via ``syncOnLaunch()``)
@@ -102,6 +104,9 @@ actor CloudSyncManager {
 
     /// The CloudKit store for remote operations.
     private let cloudStore: CloudKitStore
+
+    /// Records deleted on this device that iCloud has not deleted yet.
+    private let deletionQueue = CloudDeletionQueue.shared
 
     /// Whether a sync is currently in progress (prevents concurrent syncs).
     private var isSyncing = false
@@ -188,13 +193,16 @@ actor CloudSyncManager {
             Self.logger.debug("Schema not ready, force-pushing all local records")
         }
 
-        // Upload and download are separate steps: a record that fails to upload must
-        // not block downloads. Pulls never delete and keep newer local edits.
+        // Delete, upload and download are separate steps: a record that fails to upload
+        // must not block downloads. Pulls never delete locally and keep newer local edits.
         let errors = await Self.runSteps([
+            (Self.delete(Self.savedHikesLabel), { try await self.pushDeletions(CloudKitStore.savedRouteRecordType) }),
             (Self.upload(Self.savedHikesLabel), { try await self.pushRoutes(forceAll: forceAll) }),
             (Self.download(Self.savedHikesLabel), { try await self.pullRoutes() }),
+            (Self.delete(Self.waypointsLabel), { try await self.pushDeletions(CloudKitStore.waypointRecordType) }),
             (Self.upload(Self.waypointsLabel), { try await self.pushWaypoints(forceAll: forceAll) }),
             (Self.download(Self.waypointsLabel), { try await self.pullWaypoints() }),
+            (Self.delete(Self.plannedRoutesLabel), { try await self.pushDeletions(CloudKitStore.plannedRouteRecordType) }),
             (Self.upload(Self.plannedRoutesLabel), { try await self.pushPlannedRoutes(forceAll: forceAll) }),
             (Self.download(Self.plannedRoutesLabel), { try await self.pullPlannedRoutes() }),
         ])
@@ -240,6 +248,9 @@ actor CloudSyncManager {
     /// Label of the download half of a part, e.g. "Waypoints (download)".
     static func download(_ part: String) -> String { "\(part) (download)" }
 
+    /// Label of the deletion step of a part, e.g. "Waypoints (delete)".
+    static func delete(_ part: String) -> String { "\(part) (delete)" }
+
     /// Runs every step in order, even after an earlier one fails.
     ///
     /// - Parameter steps: Pairs of a user-facing label and the work to run.
@@ -274,6 +285,36 @@ actor CloudSyncManager {
     }
 
     // MARK: - Push Operations
+
+    /// Deletes from iCloud the records of one type that were deleted on this device.
+    ///
+    /// - Parameter recordType: The CloudKit record type, e.g. ``CloudKitStore/waypointRecordType``.
+    /// - Throws: The first deletion that fails after retries; it and later records stay queued.
+    private func pushDeletions(_ recordType: String) async throws {
+        try await Self.pushDeletions(recordType: recordType, queue: deletionQueue) { recordID in
+            try await self.retryWithBackoff { try await self.cloudStore.delete(recordID: recordID) }
+        }
+    }
+
+    /// Runs `delete` for each queued record of one type, oldest first, and removes each
+    /// record from the queue once its deletion succeeded.
+    ///
+    /// - Parameters:
+    ///   - recordType: The CloudKit record type whose queue to work through.
+    ///   - queue: The deletion queue; the app uses ``CloudDeletionQueue/shared``.
+    ///   - delete: Deletes one record from iCloud by record name.
+    /// - Throws: The first error from `delete`; that record and the ones after it stay
+    ///   queued for the next sync.
+    static func pushDeletions(
+        recordType: String,
+        queue: CloudDeletionQueue,
+        delete: (String) async throws -> Void
+    ) async throws {
+        for recordID in queue.pending(recordType: recordType) {
+            try await delete(recordID)
+            queue.remove(recordID: recordID, recordType: recordType)
+        }
+    }
 
     /// Pushes locally modified routes to CloudKit.
     ///
@@ -382,6 +423,7 @@ actor CloudSyncManager {
     /// - If not in local database: insert it
     /// - If in local database and remote is newer: update local
     /// - If in local database and local is newer: skip (will be pushed next cycle)
+    /// - If deleted on this device and still queued in ``CloudDeletionQueue``: skip
     ///
     /// Cloud records that could not be read are reported by throwing after the merge,
     /// so the readable ones still sync (#85).
@@ -392,8 +434,10 @@ actor CloudSyncManager {
 
         let localRoutes = try RouteStore.shared.fetchAll()
         let localRouteIDs = Set(localRoutes.map { $0.id })
+        // Deleted here but not yet in iCloud: inserting them again would undo the deletion.
+        let deleted = Set(deletionQueue.pending(recordType: CloudKitStore.savedRouteRecordType))
 
-        for (recordID, remoteRoute) in remoteRoutes.items {
+        for (recordID, remoteRoute) in remoteRoutes.items where !deleted.contains(recordID) {
             if localRouteIDs.contains(remoteRoute.id) {
                 // Route exists locally — check if remote is newer
                 if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {
@@ -429,8 +473,9 @@ actor CloudSyncManager {
 
         let localWaypoints = try WaypointStore.shared.fetchAll()
         let localWaypointIDs = Set(localWaypoints.map { $0.id })
+        let deleted = Set(deletionQueue.pending(recordType: CloudKitStore.waypointRecordType))
 
-        for (recordID, remoteWaypoint) in remoteWaypoints.items {
+        for (recordID, remoteWaypoint) in remoteWaypoints.items where !deleted.contains(recordID) {
             if localWaypointIDs.contains(remoteWaypoint.id) {
                 if let localWaypoint = localWaypoints.first(where: { $0.id == remoteWaypoint.id }) {
                     let localModified = localWaypoint.modifiedAt ?? localWaypoint.timestamp
@@ -469,9 +514,10 @@ actor CloudSyncManager {
 
         let localRoutes = try loadLocalPlannedRoutes()
         let localRouteIDs = Set(localRoutes.map { $0.id })
+        let deleted = Set(deletionQueue.pending(recordType: CloudKitStore.plannedRouteRecordType))
         var didChange = false
 
-        for (recordID, remoteRoute) in remotePlannedRoutes.items {
+        for (recordID, remoteRoute) in remotePlannedRoutes.items where !deleted.contains(recordID) {
             if localRouteIDs.contains(remoteRoute.id) {
                 // Route exists locally — check if remote is newer
                 if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {

@@ -87,4 +87,60 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(cleared, [])
         XCTAssertNotNil(lastSuccess)
     }
+
+    /// A deletion queue in its own `UserDefaults` suite, removed when the test ends.
+    private func makeDeletionQueue() throws -> CloudDeletionQueue {
+        let suite = "CloudSyncManagerTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return CloudDeletionQueue(defaults: defaults)
+    }
+
+    /// The queue keeps each record once, per record type, and survives a new instance (#89).
+    func testDeletionQueueAddsOncePerTypeAndRemoves() throws {
+        let suite = "CloudSyncManagerTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let queue = CloudDeletionQueue(defaults: defaults)
+
+        queue.add(recordID: "a", recordType: "Waypoint")
+        queue.add(recordID: "b", recordType: "Waypoint")
+        queue.add(recordID: "a", recordType: "Waypoint")
+        queue.add(recordID: "a", recordType: "SavedRoute")
+
+        let reopened = CloudDeletionQueue(defaults: defaults)
+        XCTAssertEqual(reopened.pending(recordType: "Waypoint"), ["a", "b"])
+        XCTAssertEqual(reopened.pending(recordType: "SavedRoute"), ["a"])
+
+        reopened.remove(recordID: "a", recordType: "Waypoint")
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), ["b"])
+        XCTAssertEqual(queue.pending(recordType: "SavedRoute"), ["a"])
+        XCTAssertEqual(queue.pending(recordType: "PlannedRoute"), [])
+    }
+
+    /// Deleted records leave the queue; on a failure, it and the later records stay (#89).
+    func testPushDeletionsStopsAtFirstFailureAndKeepsTheRest() async throws {
+        let queue = try makeDeletionQueue()
+        for id in ["a", "b", "c"] { queue.add(recordID: id, recordType: "Waypoint") }
+        queue.add(recordID: "x", recordType: "SavedRoute")
+        var deleted: [String] = []
+
+        do {
+            try await CloudSyncManager.pushDeletions(recordType: "Waypoint", queue: queue) { id in
+                if id == "b" { throw StepError(errorDescription: "offline") }
+                deleted.append(id)
+            }
+            XCTFail("Expected the failed deletion to throw")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "offline")
+        }
+        XCTAssertEqual(deleted, ["a"])
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), ["b", "c"])
+        XCTAssertEqual(queue.pending(recordType: "SavedRoute"), ["x"])
+
+        try await CloudSyncManager.pushDeletions(recordType: "Waypoint", queue: queue) { deleted.append($0) }
+        XCTAssertEqual(deleted, ["a", "b", "c"])
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), [])
+        XCTAssertEqual(CloudSyncManager.delete("Waypoints"), "Waypoints (delete)")
+    }
 }

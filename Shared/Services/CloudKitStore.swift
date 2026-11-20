@@ -203,14 +203,18 @@ actor CloudKitStore {
         try await fetchAll(recordType: Self.savedRouteRecordType, decode: Self.decodeRoute)
     }
 
-    /// Deletes a ``SavedRoute`` record from CloudKit.
+    /// Deletes one record of any type from CloudKit.
     ///
-    /// - Parameter recordID: The CloudKit record ID string.
-    /// - Throws: ``CloudKitStoreError`` if the deletion fails.
-    func deleteRoute(recordID: String) async throws {
-        let ckRecordID = CKRecord.ID(recordName: recordID)
+    /// A record that is already gone (for example deleted from another device) counts
+    /// as deleted, so a queued deletion does not fail forever.
+    ///
+    /// - Parameter recordID: The CloudKit record name (the item's `cloudKitRecordID`).
+    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the deletion fails.
+    func delete(recordID: String) async throws {
         do {
-            try await database.deleteRecord(withID: ckRecordID)
+            try await database.deleteRecord(withID: CKRecord.ID(recordName: recordID))
+        } catch let error as CKError where error.code == .unknownItem {
+            Self.logger.debug("Record \(recordID) already deleted from iCloud")
         } catch {
             throw CloudKitStoreError.operationFailed(error.localizedDescription)
         }
@@ -253,19 +257,6 @@ actor CloudKitStore {
     /// - Throws: ``CloudKitStoreError`` if the query fails.
     func fetchAllWaypoints() async throws -> FetchResult<Waypoint> {
         try await fetchAll(recordType: Self.waypointRecordType, decode: Self.decodeWaypoint)
-    }
-
-    /// Deletes a ``Waypoint`` record from CloudKit.
-    ///
-    /// - Parameter recordID: The CloudKit record ID string.
-    /// - Throws: ``CloudKitStoreError`` if the deletion fails.
-    func deleteWaypoint(recordID: String) async throws {
-        let ckRecordID = CKRecord.ID(recordName: recordID)
-        do {
-            try await database.deleteRecord(withID: ckRecordID)
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
     }
 
     // MARK: - PlannedRoute Operations
@@ -311,19 +302,6 @@ actor CloudKitStore {
     /// - Throws: ``CloudKitStoreError`` if the query fails.
     func fetchAllPlannedRoutes() async throws -> FetchResult<PlannedRoute> {
         try await fetchAll(recordType: Self.plannedRouteRecordType, decode: Self.decodePlannedRoute)
-    }
-
-    /// Deletes a ``PlannedRoute`` record from CloudKit.
-    ///
-    /// - Parameter recordID: The CloudKit record ID string.
-    /// - Throws: ``CloudKitStoreError`` if the deletion fails.
-    func deletePlannedRoute(recordID: String) async throws {
-        let ckRecordID = CKRecord.ID(recordName: recordID)
-        do {
-            try await database.deleteRecord(withID: ckRecordID)
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
-        }
     }
 
     // MARK: - Subscription

@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-17.
+Last updated: 2026-11-20.
 
 ---
 
@@ -68,8 +68,14 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   decoders are static and throwing; a waypoint without coordinates or a record with a broken `hikeId` or
   `regionId` counts as unreadable. The error names at most 3 records and counts the rest. A query error
   "is not marked queryable" (missing `recordName` index) is now reported, not read as an empty result. Tests:
-  `CloudKitStoreTests`. Deferred: #89 (deletions never reach iCloud), #90 (unreadable records never heal,
-  merge write errors).
+  `CloudKitStoreTests`. Deferred: #90 (unreadable records never heal, merge write errors).
+- **Apple iCloud deletions** (#89). `RouteStore`, `WaypointStore` and `PlannedRouteStore` `delete(id:)` queue
+  the record of a synced item (one with a `cloudKitRecordID`) in `CloudDeletionQueue`
+  (`Shared/Services/`, kept in `UserDefaults`; a no-op on watchOS, which does not sync with iCloud). Each sync
+  runs a "(delete)" step per type before its upload (`CloudKitStore.delete(recordID:)`; a record already gone
+  counts as deleted), and pulls skip queued records so a deleted item does not come back. Deletions made on
+  another device are still not applied locally (#91). Tests: `CloudSyncManagerTests`,
+  `PlannedRouteStoreTests`.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -98,7 +104,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android
+- **Last PRs:** this branch `fix/apple-icloud-deletions-89` (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android
   #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint
   altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
@@ -107,7 +113,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **111/111 pass** (2026-11-17) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **114/114 pass** (2026-11-20) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -160,6 +166,10 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #84: Apple iCloud shows nothing when the account is unavailable or a sync is already running.
 - #86: Apple iCloud subscription errors are logged at debug level; non-recoverable CloudKit errors are
   retried.
+- #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
+  them.
+- #91: Apple iCloud deletions made on another device are never applied, and that device can upload the
+  item again.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example

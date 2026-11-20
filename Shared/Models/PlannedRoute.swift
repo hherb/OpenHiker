@@ -352,15 +352,25 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     /// The directory where planned route JSON files are stored.
     private let storageDirectory: URL
 
+    /// Where ``delete(id:)`` queues the iCloud records of deleted routes.
+    private let deletionQueue: CloudDeletionQueue
+
     /// Creates a store that keeps its route files in `storageDirectory`.
     ///
-    /// - Parameter storageDirectory: Folder for the `<uuid>.json` files. The app uses the
-    ///   default, `Documents/planned_routes/`; tests pass a temporary folder.
-    init(storageDirectory: URL = FileManager.default.urls(
-        for: .documentDirectory,
-        in: .userDomainMask
-    ).first!.appendingPathComponent("planned_routes", isDirectory: true)) {
+    /// - Parameters:
+    ///   - storageDirectory: Folder for the `<uuid>.json` files. The app uses the
+    ///     default, `Documents/planned_routes/`; tests pass a temporary folder.
+    ///   - deletionQueue: Where deletions of synced routes are queued for iCloud.
+    ///     The app uses the shared queue; tests pass their own.
+    init(
+        storageDirectory: URL = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first!.appendingPathComponent("planned_routes", isDirectory: true),
+        deletionQueue: CloudDeletionQueue = .shared
+    ) {
         self.storageDirectory = storageDirectory
+        self.deletionQueue = deletionQueue
     }
 
     // MARK: - Lifecycle
@@ -460,6 +470,11 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
 
     /// Deletes a planned route from disk and the in-memory cache.
     ///
+    /// If the route was synced to iCloud, its record is queued in the deletion queue
+    /// so the next sync deletes it there too (#89). The record ID is read from the
+    /// file. A file that cannot be read is still deleted but queues nothing, so a
+    /// cloud copy of it comes back on the next pull.
+    ///
     /// - Parameter id: The UUID of the route to delete.
     /// - Throws: File system errors.
     func delete(id: UUID) throws {
@@ -467,7 +482,17 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
             let fileURL = storageDirectory.appendingPathComponent("\(id.uuidString).json")
 
             if FileManager.default.fileExists(atPath: fileURL.path) {
+                var cloudKitRecordID: String?
+                do {
+                    let data = try Data(contentsOf: fileURL)
+                    cloudKitRecordID = try decoder.decode(PlannedRoute.self, from: data).cloudKitRecordID
+                } catch {
+                    print("Planned route \(id.uuidString): cannot read iCloud record ID before delete: \(error.localizedDescription)")
+                }
                 try FileManager.default.removeItem(at: fileURL)
+                if let cloudKitRecordID {
+                    deletionQueue.add(recordID: cloudKitRecordID, recordType: CloudKitStore.plannedRouteRecordType)
+                }
             }
 
             DispatchQueue.main.async {
