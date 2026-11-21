@@ -18,7 +18,8 @@
 import XCTest
 @testable import OpenHiker
 
-/// Tests for the iCloud sync step runner (#81) and the published sync result (#78).
+/// Tests for the iCloud sync step runner (#81), the published sync result (#78), and
+/// the iCloud deletion queue and the stores that fill it (#89).
 final class CloudSyncManagerTests: XCTestCase {
 
     /// A test error with a fixed message.
@@ -86,5 +87,140 @@ final class CloudSyncManagerTests: XCTestCase {
         let lastSuccess = await status.lastSuccess
         XCTAssertEqual(cleared, [])
         XCTAssertNotNil(lastSuccess)
+    }
+
+    /// A deletion queue in its own `UserDefaults` suite, removed when the test ends.
+    private func makeDeletionQueue() throws -> CloudDeletionQueue {
+        let suite = "CloudSyncManagerTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return CloudDeletionQueue(defaults: defaults)
+    }
+
+    /// The queue keeps each record once, per record type, and survives a new instance (#89).
+    func testDeletionQueueAddsOncePerTypeAndRemoves() throws {
+        let suite = "CloudSyncManagerTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let queue = CloudDeletionQueue(defaults: defaults)
+
+        queue.add(recordID: "a", recordType: "Waypoint")
+        queue.add(recordID: "b", recordType: "Waypoint")
+        queue.add(recordID: "a", recordType: "Waypoint")
+        queue.add(recordID: "a", recordType: "SavedRoute")
+
+        let reopened = CloudDeletionQueue(defaults: defaults)
+        XCTAssertEqual(reopened.pending(recordType: "Waypoint"), ["a", "b"])
+        XCTAssertEqual(reopened.pending(recordType: "SavedRoute"), ["a"])
+
+        reopened.remove(recordID: "a", recordType: "Waypoint")
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), ["b"])
+        XCTAssertEqual(queue.pending(recordType: "SavedRoute"), ["a"])
+        XCTAssertEqual(queue.pending(recordType: "PlannedRoute"), [])
+    }
+
+    /// Deleted records leave the queue. A failure stops the run and moves the failed
+    /// record to the back, so it does not block the others next time (#89).
+    func testPushDeletionsStopsAtFirstFailureAndMovesItToTheBack() async throws {
+        let queue = try makeDeletionQueue()
+        for id in ["a", "b", "c"] { queue.add(recordID: id, recordType: "Waypoint") }
+        queue.add(recordID: "x", recordType: "SavedRoute")
+        var deleted: [String] = []
+
+        do {
+            try await CloudSyncManager.pushDeletions(recordType: "Waypoint", queue: queue) { id in
+                if id == "b" { throw StepError(errorDescription: "offline") }
+                deleted.append(id)
+            }
+            XCTFail("Expected the failed deletion to throw")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "offline")
+        }
+        XCTAssertEqual(deleted, ["a"])
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), ["c", "b"])
+        XCTAssertEqual(queue.pending(recordType: "SavedRoute"), ["x"])
+
+        try await CloudSyncManager.pushDeletions(recordType: "Waypoint", queue: queue) { deleted.append($0) }
+        XCTAssertEqual(deleted, ["a", "c", "b"])
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), [])
+    }
+
+    /// Moving a record that is not queued must not add it.
+    func testMoveToBackIgnoresUnqueuedRecord() throws {
+        let queue = try makeDeletionQueue()
+        queue.add(recordID: "a", recordType: "Waypoint")
+        queue.moveToBack(recordID: "z", recordType: "Waypoint")
+        queue.moveToBack(recordID: "a", recordType: "SavedRoute")
+        XCTAssertEqual(queue.pending(recordType: "Waypoint"), ["a"])
+        XCTAssertEqual(queue.pending(recordType: "SavedRoute"), [])
+    }
+
+    /// The deletion step is labelled like the upload and download steps.
+    func testDeleteStepLabel() {
+        XCTAssertEqual(CloudSyncManager.delete("Waypoints"), "Waypoints (delete)")
+    }
+
+    /// A temporary database path, removed when the test ends.
+    private func makeDatabasePath() -> String {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CloudSyncManagerTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir.appendingPathComponent("store.db").path
+    }
+
+    /// Deleting a hike queues its iCloud record name, or its UUID if it has none; a failed
+    /// delete queues nothing (#89).
+    func testRouteStoreDeleteQueuesRecordName() throws {
+        let queue = try makeDeletionQueue()
+        let store = RouteStore(path: makeDatabasePath(), deletionQueue: queue)
+        try store.open()
+        defer { store.close() }
+        func route(_ recordID: String?) -> SavedRoute {
+            SavedRoute(
+                name: "Hike", startLatitude: 0, startLongitude: 0, endLatitude: 0, endLongitude: 0,
+                startTime: Date(), endTime: Date(), totalDistance: 0, elevationGain: 0,
+                elevationLoss: 0, walkingTime: 0, restingTime: 0, trackData: Data(),
+                cloudKitRecordID: recordID
+            )
+        }
+        let synced = route("record-1")
+        let unsynced = route(nil)
+        try store.insert(synced)
+        try store.insert(unsynced)
+
+        try store.delete(id: synced.id)
+        try store.delete(id: unsynced.id)
+        XCTAssertThrowsError(try store.delete(id: UUID()))
+
+        XCTAssertEqual(
+            queue.pending(recordType: CloudKitStore.savedRouteRecordType),
+            ["record-1", unsynced.id.uuidString]
+        )
+        XCTAssertEqual(queue.pending(recordType: CloudKitStore.waypointRecordType), [])
+        XCTAssertTrue(try store.fetchAll().isEmpty)
+    }
+
+    /// Deleting a waypoint queues its iCloud record name, or its UUID if it has none; a
+    /// failed delete queues nothing (#89).
+    func testWaypointStoreDeleteQueuesRecordName() throws {
+        let queue = try makeDeletionQueue()
+        let store = WaypointStore(path: makeDatabasePath(), deletionQueue: queue)
+        try store.open()
+        defer { store.close() }
+        let synced = Waypoint(latitude: 1, longitude: 2, cloudKitRecordID: "record-1")
+        let unsynced = Waypoint(latitude: 3, longitude: 4)
+        try store.insert(synced)
+        try store.insert(unsynced)
+
+        try store.delete(id: synced.id)
+        try store.delete(id: unsynced.id)
+        XCTAssertThrowsError(try store.delete(id: UUID()))
+
+        XCTAssertEqual(
+            queue.pending(recordType: CloudKitStore.waypointRecordType),
+            ["record-1", unsynced.id.uuidString]
+        )
+        XCTAssertEqual(queue.pending(recordType: CloudKitStore.savedRouteRecordType), [])
+        XCTAssertTrue(try store.fetchAll().isEmpty)
     }
 }

@@ -52,6 +52,7 @@ Photos are automatically compressed for efficient storage.
 Waypoints sync across all your Apple devices via iCloud:
 - Created on iPhone → appears on Mac and Watch
 - Created on Watch → appears on Mac and iPhone
-- Deleted on any device → removed everywhere
+- Deleted on this Mac → removed from iCloud at the next sync (a deletion made on another device is not
+  yet applied here)
 
 If waypoints aren't appearing, click "Sync now" in the sidebar.

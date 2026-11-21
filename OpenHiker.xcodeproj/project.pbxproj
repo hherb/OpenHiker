@@ -51,6 +51,7 @@
 		1A0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 		1A0000010000000000000045 /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1A0000010000000000000046 /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
+		1A0000010000000000000065 /* CloudDeletionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000065 /* CloudDeletionQueue.swift */; };
 		1A0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
 		1A0000010000000000000048 /* PDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000048 /* PDFExporter.swift */; };
 		1A0000010000000000000049 /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000049 /* ExportSheet.swift */; };
@@ -106,6 +107,7 @@
 		1B0000010000000000000044 /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000044 /* RouteExporter.swift */; };
 		1B0000010000000000000045 /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1B0000010000000000000046 /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
+		1B0000010000000000000066 /* CloudDeletionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000065 /* CloudDeletionQueue.swift */; };
 		1B0000010000000000000047 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
 		1B0000010000000000000048 /* UVIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000014 /* UVIndexManager.swift */; };
 		1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0000010000000000000015 /* UVIndexOverlay.swift */; };
@@ -133,6 +135,7 @@
 		1C000001000000000000000A /* MacPDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C000001000000000000000A /* MacPDFExporter.swift */; };
 		1C000001000000000000000B /* HikeSummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000045 /* HikeSummaryExporter.swift */; };
 		1C000001000000000000000C /* CloudKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000046 /* CloudKitStore.swift */; };
+		1C0000010000000000000033 /* CloudDeletionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000065 /* CloudDeletionQueue.swift */; };
 		1C000001000000000000000D /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000047 /* CloudSyncManager.swift */; };
 		1C000001000000000000000E /* TileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000010 /* TileStore.swift */; };
 		1C000001000000000000000F /* TileCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000010000000000000011 /* TileCoordinate.swift */; };
@@ -257,6 +260,7 @@
 		2A0000010000000000000044 /* RouteExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteExporter.swift; sourceTree = "<group>"; };
 		2A0000010000000000000045 /* HikeSummaryExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HikeSummaryExporter.swift; sourceTree = "<group>"; };
 		2A0000010000000000000046 /* CloudKitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitStore.swift; sourceTree = "<group>"; };
+		2A0000010000000000000065 /* CloudDeletionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDeletionQueue.swift; sourceTree = "<group>"; };
 		2A0000010000000000000047 /* CloudSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncManager.swift; sourceTree = "<group>"; };
 		2A0000010000000000000048 /* PDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExporter.swift; sourceTree = "<group>"; };
 		2A0000010000000000000049 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
@@ -595,6 +599,7 @@
 				2A0000010000000000000042 /* GitHubRouteService.swift */,
 				2A0000010000000000000045 /* HikeSummaryExporter.swift */,
 				2A0000010000000000000046 /* CloudKitStore.swift */,
+				2A0000010000000000000065 /* CloudDeletionQueue.swift */,
 				2A0000010000000000000047 /* CloudSyncManager.swift */,
 				2A000001000000000000004F /* PeerTransferService.swift */,
 			);
@@ -876,6 +881,7 @@
 				1A0000010000000000000044 /* RouteExporter.swift in Sources */,
 				1A0000010000000000000045 /* HikeSummaryExporter.swift in Sources */,
 				1A0000010000000000000046 /* CloudKitStore.swift in Sources */,
+				1A0000010000000000000065 /* CloudDeletionQueue.swift in Sources */,
 				1A0000010000000000000047 /* CloudSyncManager.swift in Sources */,
 				1A0000010000000000000048 /* PDFExporter.swift in Sources */,
 				1A0000010000000000000049 /* ExportSheet.swift in Sources */,
@@ -936,6 +942,7 @@
 				1B0000010000000000000044 /* RouteExporter.swift in Sources */,
 				1B0000010000000000000045 /* HikeSummaryExporter.swift in Sources */,
 				1B0000010000000000000046 /* CloudKitStore.swift in Sources */,
+				1B0000010000000000000066 /* CloudDeletionQueue.swift in Sources */,
 				1B0000010000000000000047 /* CloudSyncManager.swift in Sources */,
 				1B0000010000000000000048 /* UVIndexManager.swift in Sources */,
 				1B0000010000000000000049 /* UVIndexOverlay.swift in Sources */,
@@ -970,6 +977,7 @@
 				1C000001000000000000000A /* MacPDFExporter.swift in Sources */,
 				1C000001000000000000000B /* HikeSummaryExporter.swift in Sources */,
 				1C000001000000000000000C /* CloudKitStore.swift in Sources */,
+				1C0000010000000000000033 /* CloudDeletionQueue.swift in Sources */,
 				1C000001000000000000000D /* CloudSyncManager.swift in Sources */,
 				1C000001000000000000000E /* TileStore.swift in Sources */,
 				1C000001000000000000000F /* TileCoordinate.swift in Sources */,
