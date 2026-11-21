@@ -125,6 +125,12 @@ runtimes: `iPhone 17,OS=27.0` and `Apple Watch Ultra 3 (49mm),OS=26.5` (watchOS 
 
 ## In flight
 
+### CloudKit schema not yet in Production
+
+The `recordName` QUERYABLE indexes (`SavedRoute`, `Waypoint`, `PlannedRoute`) were added in the CloudKit
+Console on 2026-11-21, in Development only. Before the first TestFlight or App Store build, run Schema →
+Deploy Schema Changes… (details in `docs/developer/QUICKSTART.md`, "iCloud sync").
+
 ### Device check after PR #40 (merged 2026-11-13)
 
 PR #40 moved the Info.plist usage strings into `INFOPLIST_KEY_*` build settings, dropped the unused iOS

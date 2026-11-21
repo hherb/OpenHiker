@@ -282,6 +282,10 @@ The routing data pipeline works as follows:
 
 On first launch, CloudKit subscriptions may fail because the record types (`SavedRoute`, `Waypoint`, `PlannedRoute`) don't exist in the schema yet. The sync manager handles this gracefully: it performs an initial sync (which creates the types via first push), then retries subscriptions. Subsequent launches succeed on the first try.
 
+**CloudKit schema setup (manual, in the CloudKit Console).** The schema lives on Apple's servers per container and environment, not in the app. Pulls query each record type with `TRUEPREDICATE`, which needs a **QUERYABLE** index on `recordName` for `SavedRoute`, `Waypoint` and `PlannedRoute` (Schema → Indexes). Without it, sync shows "Field 'recordName' is not marked queryable". These indexes are set up in the Development environment of `iCloud.com.openhiker.ios`. A build with its own container needs them added by hand.
+
+**Before any TestFlight or App Store release**, run Schema → Deploy Schema Changes… in the CloudKit Console. Xcode builds use Development; TestFlight and App Store builds use Production, which only changes on deploy. Deploy again whenever a release adds a record type or field. Production schema is add-only: deployed types and fields can't be deleted or retyped.
+
 ## Required Capabilities & Permissions
 
 ### watchOS
