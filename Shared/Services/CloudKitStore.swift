@@ -37,7 +37,8 @@ import os
 /// This is a Swift Actor, so all methods are automatically serialized.
 ///
 /// ## Error Handling
-/// Network errors are wrapped in ``CloudKitStoreError`` with descriptive messages.
+/// Network errors are wrapped in ``CloudKitStoreError`` with descriptive messages, except
+/// that ``delete(recordID:)`` throws the `CKError` itself so callers can read its code.
 /// Callers (typically ``CloudSyncManager``) handle retry logic with exponential backoff.
 actor CloudKitStore {
 
@@ -129,8 +130,10 @@ actor CloudKitStore {
     /// A record deleted on some device, kept in iCloud so other devices delete it too (#91).
     ///
     /// The deleting device saves the tombstone before it deletes the record. Other devices
-    /// delete their local copy and never upload or download the record again. Tombstones
-    /// live in the user's own account, so signing in to another account deletes nothing.
+    /// delete their synced copy and skip the record in uploads and pulls. A device that
+    /// uploads a never-synced item under a tombstoned name (the user added it again, e.g.
+    /// by re-downloading a community route) deletes the tombstone first. Tombstones live
+    /// in the user's own account, so signing in to another account deletes nothing.
     struct Tombstone: Hashable {
         /// The CloudKit record type of the deleted record, e.g. ``CloudKitStore/waypointRecordType``.
         let recordType: String
@@ -247,6 +250,22 @@ actor CloudKitStore {
         _ = try await saveWithOverwrite(Self.makeTombstoneRecord(tombstone))
     }
 
+    /// Deletes a tombstone, because the user added its record again on some device.
+    ///
+    /// - Parameter tombstone: The record that is no longer deleted.
+    /// - Throws: The `CKError` if the deletion fails; a missing tombstone is not an error.
+    func delete(tombstone: Tombstone) async throws {
+        try await delete(recordID: Self.tombstoneRecordName(tombstone))
+    }
+
+    /// The record name of a tombstone: "type.name", so each deleted record has one.
+    ///
+    /// - Parameter tombstone: The deleted record.
+    /// - Returns: The `DeletedRecord` record's name.
+    static func tombstoneRecordName(_ tombstone: Tombstone) -> String {
+        "\(tombstone.recordType).\(tombstone.recordName)"
+    }
+
     /// Fetches every tombstone, of all record types.
     ///
     /// - Returns: The readable tombstones, and the ones that could not be read.
@@ -257,14 +276,15 @@ actor CloudKitStore {
 
     /// Builds the CloudKit record of a tombstone.
     ///
-    /// Its record name is "type.name", so each deleted record has exactly one tombstone.
+    /// Its record name is ``tombstoneRecordName(_:)``, so each deleted record has exactly
+    /// one tombstone.
     ///
     /// - Parameter tombstone: The deleted record.
     /// - Returns: A `DeletedRecord` record holding the deleted record's type and name.
     static func makeTombstoneRecord(_ tombstone: Tombstone) -> CKRecord {
         let record = CKRecord(
             recordType: deletedRecordType,
-            recordID: CKRecord.ID(recordName: "\(tombstone.recordType).\(tombstone.recordName)")
+            recordID: CKRecord.ID(recordName: tombstoneRecordName(tombstone))
         )
         record["itemType"] = tombstone.recordType
         record["itemName"] = tombstone.recordName

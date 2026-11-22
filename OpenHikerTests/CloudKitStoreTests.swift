@@ -236,6 +236,7 @@ final class CloudKitStoreTests: XCTestCase {
 
         XCTAssertEqual(record.recordType, CloudKitStore.deletedRecordType)
         XCTAssertEqual(record.recordID.recordName, "Waypoint.w-1")
+        XCTAssertEqual(CloudKitStore.tombstoneRecordName(tombstone), "Waypoint.w-1")
         XCTAssertEqual(try CloudKitStore.decodeTombstone(from: record), tombstone)
     }
 

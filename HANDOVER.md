@@ -78,12 +78,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `CloudSyncManagerTests`, `PlannedRouteStoreTests`, `CloudKitStoreTests`.
 - **Apple iCloud deletions from other devices** (#91). The "(delete)" step saves a `DeletedRecord` tombstone
   (`CloudKitStore.Tombstone`, record name "type.name") before it deletes the record. Each sync starts with
-  "Deletions from other devices": it fetches every tombstone and deletes the matching local items, even with
-  unsynced edits (deletion wins, as on Android). Uploads and pulls skip tombstoned records. Tombstones are
-  never pruned. Tombstones, not "missing from iCloud", mark a deletion, so signing in to another iCloud
-  account deletes nothing. The #92 review follow-ups (#93) landed with it: a tested pull filter
-  (`itemsToMerge`), the write-back race closed, `RouteStore.delete` reads only `cloudkit_record_id`, and
-  `CloudKitStore.delete` throws the `CKError` itself.
+  "Deletions from other devices": it fetches every tombstone and deletes the matching synced local items,
+  even with unsynced edits (deletion wins, as on Android). One failed local delete does not stop the others.
+  Uploads and pulls skip tombstoned records, and uploads fail with "Skipped until deletions from other
+  devices can be checked" when this sync could not read the tombstones. Tombstones are never pruned. A
+  never-synced item under a tombstoned UUID was added again (a re-downloaded community route, a P2P import,
+  a watch hike), so its upload deletes the tombstone instead (`CloudSyncManager.uploadAction`). P2P import
+  drops the sender's `cloudKitRecordID`. Tombstones, not "missing from iCloud", mark a deletion, so signing
+  in to another iCloud account deletes nothing. The #92 review follow-ups (#93) landed with it: a tested
+  pull filter (`itemsToMerge`), the write-back race closed, `RouteStore.delete` reads only
+  `cloudkit_record_id`, and `CloudKitStore.delete` throws the `CKError` itself.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -112,16 +116,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
-  #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
-  (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple
+  #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes
+  #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **123/123 pass** (2026-11-22) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **125/125 pass** (2026-11-22) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -184,6 +188,7 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   retried.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
   them.
+- #95: Android sync deletes an item re-added within 30 days of its deletion (Apple fixed in #94).
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example

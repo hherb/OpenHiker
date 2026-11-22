@@ -716,7 +716,8 @@ extension PeerTransferService: MCSessionDelegate {
                 decoder.dateDecodingStrategy = .iso8601
                 let data = try Data(contentsOf: localURL)
                 let routes = try decoder.decode([SavedRoute].self, from: data)
-                for route in routes {
+                for var route in routes {
+                    route.cloudKitRecordID = nil // the sender's iCloud, not ours (#91)
                     try RouteStore.shared.insert(route)
                 }
                 print("PeerTransferService: Imported \(routes.count) saved route(s)")
@@ -730,7 +731,8 @@ extension PeerTransferService: MCSessionDelegate {
                 decoder.dateDecodingStrategy = .iso8601
                 let data = try Data(contentsOf: localURL)
                 let routes = try decoder.decode([PlannedRoute].self, from: data)
-                for route in routes {
+                for var route in routes {
+                    route.cloudKitRecordID = nil // the sender's iCloud, not ours (#91)
                     try PlannedRouteStore.shared.save(route)
                 }
                 print("PeerTransferService: Imported \(routes.count) planned route(s)")
@@ -744,7 +746,8 @@ extension PeerTransferService: MCSessionDelegate {
                 decoder.dateDecodingStrategy = .iso8601
                 let data = try Data(contentsOf: localURL)
                 let waypoints = try decoder.decode([Waypoint].self, from: data)
-                for waypoint in waypoints {
+                for var waypoint in waypoints {
+                    waypoint.cloudKitRecordID = nil // the sender's iCloud, not ours (#91)
                     try WaypointStore.shared.insert(waypoint)
                 }
                 print("PeerTransferService: Imported \(waypoints.count) waypoint(s)")

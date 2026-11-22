@@ -402,10 +402,12 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
 
             sqlite3_bind_text(statement, 1, id.uuidString, -1, Self.sqliteTransient)
 
-            guard sqlite3_step(statement) == SQLITE_ROW,
-                  let text = sqlite3_column_text(statement, 0) else {
-                return nil
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { return nil }
+            guard result == SQLITE_ROW else {
+                throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
             }
+            guard let text = sqlite3_column_text(statement, 0) else { return nil }
             return String(cString: text)
         }
     }
