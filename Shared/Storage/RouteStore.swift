@@ -346,14 +346,14 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
     ///
     /// Its iCloud record is queued in ``CloudDeletionQueue`` so the next sync deletes it
     /// there too (#89). The record name is the route's `cloudKitRecordID`, or its UUID
-    /// when it has none or the row cannot be parsed: an upload still in flight names the
-    /// new record after the UUID. A record that never reached iCloud costs one harmless
-    /// delete call. A database error while reading the route aborts the delete.
+    /// when it has none: an upload still in flight names the new record after the UUID.
+    /// A record that never reached iCloud costs one harmless delete call. A database
+    /// error while reading the record ID aborts the delete.
     ///
     /// - Parameter id: The UUID of the route to delete.
     /// - Throws: ``RouteStoreError`` if the delete fails or the route doesn't exist.
     func delete(id: UUID) throws {
-        let recordName = try fetch(id: id)?.cloudKitRecordID ?? id.uuidString
+        let recordName = try cloudKitRecordID(id: id) ?? id.uuidString
         try queue.sync {
             guard let db = db else {
                 throw RouteStoreError.databaseNotOpen
@@ -379,6 +379,37 @@ final class RouteStore: @unchecked Sendable, ObservableObject {
             }
         }
         deletionQueue.add(recordID: recordName, recordType: CloudKitStore.savedRouteRecordType)
+    }
+
+    /// Reads only a route's iCloud record name, without loading its track (#93).
+    ///
+    /// - Parameter id: The UUID of the route.
+    /// - Returns: The route's `cloudkit_record_id`, or `nil` if it has none or does not exist.
+    /// - Throws: ``RouteStoreError`` if the query fails.
+    private func cloudKitRecordID(id: UUID) throws -> String? {
+        try queue.sync {
+            guard let db = db else {
+                throw RouteStoreError.databaseNotOpen
+            }
+
+            let sql = "SELECT cloudkit_record_id FROM saved_routes WHERE id = ?"
+            var statement: OpaquePointer?
+
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            defer { sqlite3_finalize(statement) }
+
+            sqlite3_bind_text(statement, 1, id.uuidString, -1, Self.sqliteTransient)
+
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { return nil }
+            guard result == SQLITE_ROW else {
+                throw RouteStoreError.databaseError(String(cString: sqlite3_errmsg(db)))
+            }
+            guard let text = sqlite3_column_text(statement, 0) else { return nil }
+            return String(cString: text)
+        }
     }
 
     // MARK: - Fetch

@@ -284,6 +284,8 @@ On first launch, CloudKit subscriptions may fail because the record types (`Save
 
 **CloudKit schema setup (manual, in the CloudKit Console).** The schema lives on Apple's servers per container and environment, not in the app. Pulls query each record type with `TRUEPREDICATE`, which needs a **QUERYABLE** index on `recordName` for `SavedRoute`, `Waypoint` and `PlannedRoute` (Schema → Indexes). Without it, sync shows "Field 'recordName' is not marked queryable". These indexes are set up in the Development environment of `iCloud.com.openhiker.ios`. A build with its own container needs them added by hand.
 
+**Tombstones (`DeletedRecord`).** When an item is deleted, the sync saves a `DeletedRecord` tombstone (fields `itemType`, `itemName`) before it deletes the item's record. Each sync then deletes the local items that other devices deleted (#91). CloudKit creates the type in Development on the first deletion. Then add a QUERYABLE `recordName` index to it as well; until you do, sync shows "Deletions from other devices: … not marked queryable". Tombstones are never removed.
+
 **Before any TestFlight or App Store release**, run Schema → Deploy Schema Changes… in the CloudKit Console. Xcode builds use Development; TestFlight and App Store builds use Production, which only changes on deploy. Deploy again whenever a release adds a record type or field. Production schema is add-only: deployed types and fields can't be deleted or retyped.
 
 ## Required Capabilities & Permissions

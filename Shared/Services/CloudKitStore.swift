@@ -28,6 +28,7 @@ import os
 /// - `SavedRoute` — maps to CKRecord type "SavedRoute"
 /// - `Waypoint` — maps to CKRecord type "Waypoint"
 /// - `PlannedRoute` — maps to CKRecord type "PlannedRoute"
+/// - `DeletedRecord` — a tombstone for a record deleted on any device (see ``Tombstone``)
 ///
 /// ## Container
 /// Uses the default iCloud container: `iCloud.com.openhiker.ios`.
@@ -36,7 +37,8 @@ import os
 /// This is a Swift Actor, so all methods are automatically serialized.
 ///
 /// ## Error Handling
-/// Network errors are wrapped in ``CloudKitStoreError`` with descriptive messages.
+/// Network errors are wrapped in ``CloudKitStoreError`` with descriptive messages, except
+/// that ``delete(recordID:)`` throws the `CKError` itself so callers can read its code.
 /// Callers (typically ``CloudSyncManager``) handle retry logic with exponential backoff.
 actor CloudKitStore {
 
@@ -59,6 +61,9 @@ actor CloudKitStore {
 
     /// CKRecord type name for planned routes.
     static let plannedRouteRecordType = "PlannedRoute"
+
+    /// CKRecord type name for tombstones: one per record deleted on any device (#91).
+    static let deletedRecordType = "DeletedRecord"
 
     /// Maximum number of records per batch operation.
     static let batchSize = 50
@@ -120,6 +125,20 @@ actor CloudKitStore {
         func throwIfSkipped() throws {
             if !skipped.isEmpty { throw CloudKitStoreError.unreadableRecords(skipped) }
         }
+    }
+
+    /// A record deleted on some device, kept in iCloud so other devices delete it too (#91).
+    ///
+    /// The deleting device saves the tombstone before it deletes the record. Other devices
+    /// delete their synced copy and skip the record in uploads and pulls. A device that
+    /// uploads a never-synced item under a tombstoned name (the user added it again, e.g.
+    /// by re-downloading a community route) deletes the tombstone first. Tombstones live
+    /// in the user's own account, so signing in to another account deletes nothing.
+    struct Tombstone: Hashable {
+        /// The CloudKit record type of the deleted record, e.g. ``CloudKitStore/waypointRecordType``.
+        let recordType: String
+        /// The deleted record's name: the item's `cloudKitRecordID`, or its UUID.
+        let recordName: String
     }
 
     // MARK: - Properties
@@ -210,15 +229,79 @@ actor CloudKitStore {
     /// reached iCloud: stores queue an unsynced item under its UUID (#89).
     ///
     /// - Parameter recordID: The CloudKit record name (the item's `cloudKitRecordID`).
-    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the deletion fails.
+    /// - Throws: The `CKError` itself if the deletion fails, so its code is kept (#93).
     func delete(recordID: String) async throws {
         do {
             try await database.deleteRecord(withID: CKRecord.ID(recordName: recordID))
         } catch where Self.isAlreadyDeleted(error) {
             Self.logger.debug("Record \(recordID) already deleted from iCloud")
-        } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
         }
+    }
+
+    // MARK: - Tombstone Operations
+
+    /// Saves a tombstone for a record that this device is about to delete (#91).
+    ///
+    /// Saving it again overwrites the same tombstone, so a retried deletion adds nothing.
+    ///
+    /// - Parameter tombstone: The record being deleted.
+    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the save fails.
+    func save(tombstone: Tombstone) async throws {
+        _ = try await saveWithOverwrite(Self.makeTombstoneRecord(tombstone))
+    }
+
+    /// Deletes a tombstone, because the user added its record again on some device.
+    ///
+    /// - Parameter tombstone: The record that is no longer deleted.
+    /// - Throws: The `CKError` if the deletion fails; a missing tombstone is not an error.
+    func delete(tombstone: Tombstone) async throws {
+        try await delete(recordID: Self.tombstoneRecordName(tombstone))
+    }
+
+    /// The record name of a tombstone: "type.name", so each deleted record has one.
+    ///
+    /// - Parameter tombstone: The deleted record.
+    /// - Returns: The `DeletedRecord` record's name.
+    static func tombstoneRecordName(_ tombstone: Tombstone) -> String {
+        "\(tombstone.recordType).\(tombstone.recordName)"
+    }
+
+    /// Fetches every tombstone, of all record types.
+    ///
+    /// - Returns: The readable tombstones, and the ones that could not be read.
+    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the query fails.
+    func fetchAllTombstones() async throws -> FetchResult<Tombstone> {
+        try await fetchAll(recordType: Self.deletedRecordType, decode: Self.decodeTombstone)
+    }
+
+    /// Builds the CloudKit record of a tombstone.
+    ///
+    /// Its record name is ``tombstoneRecordName(_:)``, so each deleted record has exactly
+    /// one tombstone.
+    ///
+    /// - Parameter tombstone: The deleted record.
+    /// - Returns: A `DeletedRecord` record holding the deleted record's type and name.
+    static func makeTombstoneRecord(_ tombstone: Tombstone) -> CKRecord {
+        let record = CKRecord(
+            recordType: deletedRecordType,
+            recordID: CKRecord.ID(recordName: tombstoneRecordName(tombstone))
+        )
+        record["itemType"] = tombstone.recordType
+        record["itemName"] = tombstone.recordName
+        return record
+    }
+
+    /// Decodes a tombstone from a CloudKit record.
+    ///
+    /// - Parameter record: A `DeletedRecord` record.
+    /// - Returns: The deleted record's type and name.
+    /// - Throws: ``CloudKitStoreError/serializationError(_:)`` if either field is missing.
+    static func decodeTombstone(from record: CKRecord) throws -> Tombstone {
+        guard let recordType = record["itemType"] as? String,
+              let recordName = record["itemName"] as? String else {
+            throw missingFieldsError
+        }
+        return Tombstone(recordType: recordType, recordName: recordName)
     }
 
     /// Whether a delete failed only because the record does not exist in iCloud.

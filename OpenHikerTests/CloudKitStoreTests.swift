@@ -227,4 +227,23 @@ final class CloudKitStoreTests: XCTestCase {
         XCTAssertFalse(CloudKitStore.isAlreadyDeleted(CKError(.networkUnavailable)))
         XCTAssertFalse(CloudKitStore.isAlreadyDeleted(NSError(domain: "test", code: 1)))
     }
+
+    /// A tombstone survives the trip through its CloudKit record, which is named after
+    /// the deleted record's type and name so each deletion has one tombstone (#91).
+    func testTombstoneRecordRoundTrip() throws {
+        let tombstone = CloudKitStore.Tombstone(recordType: CloudKitStore.waypointRecordType, recordName: "w-1")
+        let record = CloudKitStore.makeTombstoneRecord(tombstone)
+
+        XCTAssertEqual(record.recordType, CloudKitStore.deletedRecordType)
+        XCTAssertEqual(record.recordID.recordName, "Waypoint.w-1")
+        XCTAssertEqual(CloudKitStore.tombstoneRecordName(tombstone), "Waypoint.w-1")
+        XCTAssertEqual(try CloudKitStore.decodeTombstone(from: record), tombstone)
+    }
+
+    /// A tombstone record without the deleted record's name is unreadable, not ignored.
+    func testTombstoneDecoderThrowsForIncompleteRecord() {
+        let record = CKRecord(recordType: CloudKitStore.deletedRecordType)
+        record["itemType"] = CloudKitStore.waypointRecordType
+        XCTAssertThrowsError(try CloudKitStore.decodeTombstone(from: record))
+    }
 }

@@ -160,6 +160,58 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(CloudSyncManager.delete("Waypoints"), "Waypoints (delete)")
     }
 
+    /// Pulls merge only records that no device deleted (#93).
+    func testItemsToMergeSkipsDeletedRecords() {
+        let fetched: [(recordID: String, item: Int)] = [("a", 1), ("b", 2), ("c", 3)]
+
+        let merged = CloudSyncManager.itemsToMerge(fetched, skipping: ["b", "z"])
+
+        XCTAssertEqual(merged.map(\.recordID), ["a", "c"])
+        XCTAssertEqual(merged.map(\.item), [1, 3])
+        XCTAssertEqual(CloudSyncManager.itemsToMerge(fetched, skipping: []).count, 3)
+    }
+
+    /// Tombstones are grouped by record type, so a waypoint's deletion never deletes a
+    /// hike with the same record name (#91).
+    func testRecordNamesByTypeGroupsTombstones() {
+        let tombstones = [
+            CloudKitStore.Tombstone(recordType: CloudKitStore.waypointRecordType, recordName: "x"),
+            CloudKitStore.Tombstone(recordType: CloudKitStore.waypointRecordType, recordName: "y"),
+            CloudKitStore.Tombstone(recordType: CloudKitStore.savedRouteRecordType, recordName: "z"),
+        ]
+
+        let byType = CloudSyncManager.recordNamesByType(tombstones)
+
+        XCTAssertEqual(byType[CloudKitStore.waypointRecordType], ["x", "y"])
+        XCTAssertEqual(byType[CloudKitStore.savedRouteRecordType], ["z"])
+        XCTAssertNil(byType[CloudKitStore.plannedRouteRecordType])
+        XCTAssertTrue(CloudSyncManager.recordNamesByType([]).isEmpty)
+    }
+
+    /// Uploads skip deleted items, but an item added again after its deletion (never
+    /// synced, under a tombstoned UUID) restores itself instead of vanishing (#91).
+    func testUploadActionSkipsDeletedAndRestoresReAddedItems() {
+        let id = UUID()
+        let name = id.uuidString
+
+        XCTAssertEqual(CloudSyncManager.uploadAction(cloudKitRecordID: nil, id: id, queued: [], tombstoned: []), .upload)
+        XCTAssertEqual(CloudSyncManager.uploadAction(cloudKitRecordID: name, id: id, queued: [], tombstoned: []), .upload)
+        // Deleted here, not yet in iCloud.
+        XCTAssertEqual(CloudSyncManager.uploadAction(cloudKitRecordID: nil, id: id, queued: [name], tombstoned: [name]), .skip)
+        // Synced copy deleted on another device.
+        XCTAssertEqual(CloudSyncManager.uploadAction(cloudKitRecordID: "r", id: id, queued: [], tombstoned: ["r"]), .skip)
+        // Re-downloaded or P2P-imported after its deletion.
+        XCTAssertEqual(CloudSyncManager.uploadAction(cloudKitRecordID: nil, id: id, queued: [], tombstoned: [name]), .restoreThenUpload)
+    }
+
+    /// Only synced items are deleted by another device's tombstone; a never-synced item
+    /// with a tombstoned UUID was added again and stays (#91).
+    func testIsDeletedRemotelyOnlyForSyncedItems() {
+        XCTAssertTrue(CloudSyncManager.isDeletedRemotely(cloudKitRecordID: "r", tombstoned: ["r"]))
+        XCTAssertFalse(CloudSyncManager.isDeletedRemotely(cloudKitRecordID: "r", tombstoned: ["s"]))
+        XCTAssertFalse(CloudSyncManager.isDeletedRemotely(cloudKitRecordID: nil, tombstoned: ["r"]))
+    }
+
     /// A temporary database path, removed when the test ends.
     private func makeDatabasePath() -> String {
         let dir = FileManager.default.temporaryDirectory
