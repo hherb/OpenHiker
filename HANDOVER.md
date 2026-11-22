@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-20.
+Last updated: 2026-11-22.
 
 ---
 
@@ -74,9 +74,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `CloudDeletionQueue` (`Shared/Services/`, kept in `UserDefaults`; a no-op on watchOS, which does not sync
   with iCloud). Each sync runs a "(delete)" step per type before its upload (`CloudKitStore.delete(recordID:)`;
   a record already gone counts as deleted; a failed record moves to the back of the queue). Uploads do not
-  write back a queued item, and pulls skip queued records, so a deleted item does not come back. Deletions
-  made on another device are still not applied locally (#91). Tests: `CloudSyncManagerTests`,
-  `PlannedRouteStoreTests`, `CloudKitStoreTests`.
+  write back a queued item, and pulls skip queued records, so a deleted item does not come back. Tests:
+  `CloudSyncManagerTests`, `PlannedRouteStoreTests`, `CloudKitStoreTests`.
+- **Apple iCloud deletions from other devices** (#91). The "(delete)" step saves a `DeletedRecord` tombstone
+  (`CloudKitStore.Tombstone`, record name "type.name") before it deletes the record. Each sync starts with
+  "Deletions from other devices": it fetches every tombstone and deletes the matching local items, even with
+  unsynced edits (deletion wins, as on Android). Uploads and pulls skip tombstoned records. Tombstones are
+  never pruned. Tombstones, not "missing from iCloud", mark a deletion, so signing in to another iCloud
+  account deletes nothing. The #92 review follow-ups (#93) landed with it: a tested pull filter
+  (`itemsToMerge`), the write-back race closed, `RouteStore.delete` reads only `cloudkit_record_id`, and
+  `CloudKitStore.delete` throws the `CKError` itself.
 - **Apple route guidance** (iOS `iOSRouteGuidance`, watchOS `RouteGuidance`; shared helpers in
   `Shared/Models/`, compiled into the iOS and watchOS targets only):
   - `RouteProjection` places each fix on the route. Among segments within 20 m of the nearest one or within
@@ -105,7 +112,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
+- **Last PRs:** #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
   #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
   (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
@@ -114,7 +121,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **119/119 pass** (2026-11-20) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **123/123 pass** (2026-11-22) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
@@ -128,8 +135,10 @@ runtimes: `iPhone 17,OS=27.0` and `Apple Watch Ultra 3 (49mm),OS=26.5` (watchOS 
 ### CloudKit schema not yet in Production
 
 The `recordName` QUERYABLE indexes (`SavedRoute`, `Waypoint`, `PlannedRoute`) were added in the CloudKit
-Console on 2026-11-21, in Development only. Before the first TestFlight or App Store build, run Schema →
-Deploy Schema Changes… (details in `docs/developer/QUICKSTART.md`, "iCloud sync").
+Console on 2026-11-21, in Development only. The new `DeletedRecord` type (#91) needs the same index: delete
+one item from a Development build so CloudKit creates the type, then add the index. Until then, sync shows
+"Deletions from other devices: … not marked queryable". Before the first TestFlight or App Store build, run
+Schema → Deploy Schema Changes… (details in `docs/developer/QUICKSTART.md`, "iCloud sync").
 
 ### Device check after PR #40 (merged 2026-11-13)
 
@@ -175,8 +184,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   retried.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
   them.
-- #91: Apple iCloud deletions made on another device are never applied, and that device can upload the
-  item again.
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example
