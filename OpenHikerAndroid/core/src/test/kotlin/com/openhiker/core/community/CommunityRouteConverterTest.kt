@@ -22,8 +22,10 @@ import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.PlannedRoute
 import com.openhiker.core.model.RoutingMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import java.util.UUID
 
 /** Unit tests for [CommunityRouteConverter] format conversion functions. */
 class CommunityRouteConverterTest {
@@ -63,11 +65,16 @@ class CommunityRouteConverterTest {
 
     @Test
     fun `generates new UUID for converted planned route`() {
-        val shared = makeSampleSharedRoute()
+        // A UUID id like real community routes carry, so reusing it would pass the length check.
+        val shared = makeSampleSharedRoute().copy(id = UUID.randomUUID().toString())
         val planned = CommunityRouteConverter.sharedRouteToPlannedRoute(shared)
         assertNotNull(planned.id)
         // Must be a valid UUID format (36 chars with dashes)
         assertEquals(36, planned.id.length)
+        // A fresh id per download keeps a re-downloaded route clear of the old copy's sync
+        // tombstone, which would delete it on the next sync (#95).
+        assertNotEquals(shared.id, planned.id)
+        assertNotEquals(planned.id, CommunityRouteConverter.sharedRouteToPlannedRoute(shared).id)
     }
 
     @Test

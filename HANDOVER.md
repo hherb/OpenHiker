@@ -113,12 +113,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   such fixes add nothing to gain or loss. Android: `resolveTrackAltitude` (#59, PR #62). iOS and watchOS:
   `Shared/Models/TrackAltitude.swift` (`verticalAccuracy < 0`; #63, PR #64). Waypoints store no altitude
   for such a fix: Apple `Waypoint.fromLocation`, Android `waypointAltitude` (#65, PR #67).
+- **Android ids are never reused** (#95, not reproducible). Every path that creates a planned route, hike
+  or waypoint uses a fresh UUID, the community download included (`CommunityRouteConverter`, pinned by
+  its test). So a re-added item never meets the old copy's tombstone, and Apple's #94 fix is not needed.
+  A future import that keeps the sender's UUID (P2P, GPX) would need it.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple
-  #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes
-  #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78,
+  #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and
+  waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -188,7 +192,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
   retried.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
   them.
-- #95: Android sync deletes an item re-added within 30 days of its deletion (Apple fixed in #94).
 - #66: watchOS `TrackCompression.decode` resets `verticalAccuracy` to 0, so restored placeholder altitudes
   look valid. Latent: `LocationManager.restoreTrackState` has no callers.
 - Android pure functions under test sit top-level and `internal` next to their callers (for example
