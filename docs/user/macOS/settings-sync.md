@@ -15,8 +15,10 @@ This preference applies throughout the app.
 ### Sync Tab
 
 #### iCloud Sync
-- **Status display** — Shows whether iCloud sync is active
-- **"Sync Now" button** — Manually trigger a sync cycle
+- **Status display** — Shows the last successful sync, what failed in the last sync, or why iCloud is off
+  (no account signed in)
+- **"Sync Now" button** — Manually trigger a sync cycle; disabled with "Syncing…" while a sync runs. The
+  sidebar's iCloud bar shows the same state.
 
 ## iCloud Sync
 

@@ -16,6 +16,7 @@
 // along with OpenHiker. If not, see <https://www.gnu.org/licenses/>.
 
 import XCTest
+import CloudKit
 @testable import OpenHiker
 
 /// Tests for the iCloud sync step runner (#81), the published sync result (#78), and
@@ -274,5 +275,109 @@ final class CloudSyncManagerTests: XCTestCase {
         )
         XCTAssertEqual(queue.pending(recordType: CloudKitStore.savedRouteRecordType), [])
         XCTAssertTrue(try store.fetchAll().isEmpty)
+    }
+
+    // MARK: - Sync progress, account notice and retries (#84, #86)
+
+    /// A status that remembers dismissals in its own `UserDefaults` suite.
+    @MainActor
+    private func makeStatus() throws -> (CloudSyncStatus, UserDefaults) {
+        let suite = "CloudSyncStatusTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return (CloudSyncStatus(defaults: defaults), defaults)
+    }
+
+    /// A sync is in progress from `beginSync` until its result or the account notice.
+    @MainActor
+    func testStatusIsSyncingUntilResultOrNotice() throws {
+        let (status, _) = try makeStatus()
+        XCTAssertFalse(status.isSyncing)
+        status.beginSync()
+        XCTAssertTrue(status.isSyncing)
+        status.record(errors: ["iCloud: offline"])
+        XCTAssertFalse(status.isSyncing)
+
+        status.beginSync()
+        status.showAccountNotice("Not signed in")
+        XCTAssertFalse(status.isSyncing)
+    }
+
+    /// The notice clears old sync errors without counting as a successful sync.
+    @MainActor
+    func testAccountNoticeClearsErrorsButNotLastSuccess() throws {
+        let (status, _) = try makeStatus()
+        status.record(errors: ["Waypoints (upload): offline"])
+        status.showAccountNotice("Not signed in")
+        XCTAssertEqual(status.errors, [])
+        XCTAssertNil(status.lastSuccess)
+        XCTAssertEqual(status.accountNotice, "Not signed in")
+    }
+
+    /// A dismissed notice stays hidden across launches until the account status changes.
+    @MainActor
+    func testDismissedAccountNoticeStaysHiddenUntilStatusChanges() throws {
+        let (status, defaults) = try makeStatus()
+        status.showAccountNotice("Not signed in")
+        status.dismissAccountNotice()
+        XCTAssertNil(status.accountNotice)
+
+        let relaunched = CloudSyncStatus(defaults: defaults)
+        relaunched.showAccountNotice("Not signed in")
+        XCTAssertNil(relaunched.accountNotice, "a dismissed notice must not come back on the next launch")
+
+        relaunched.clearAccountNotice()
+        relaunched.showAccountNotice("Not signed in")
+        XCTAssertEqual(relaunched.accountNotice, "Not signed in", "signing out again must show it again")
+    }
+
+    /// Subscription failures become one "iCloud:" entry; none means no entry.
+    func testSubscriptionsError() {
+        XCTAssertNil(CloudSyncManager.subscriptionsError([]))
+        XCTAssertEqual(
+            CloudSyncManager.subscriptionsError(["Waypoint: offline", "SavedRoute: offline"]),
+            "iCloud: change notifications unavailable (Waypoint: offline; SavedRoute: offline)"
+        )
+    }
+
+    /// A transient error is retried with 2, 4, 8 s backoff until the attempts run out.
+    func testRetryWithBackoffRetriesTransientErrors() async {
+        var attempts = 0
+        var delays: [TimeInterval] = []
+        do {
+            _ = try await CloudSyncManager.retryWithBackoff(sleep: { delays.append($0) }) { () async throws -> Int in
+                attempts += 1
+                throw CKError(.networkUnavailable)
+            }
+            XCTFail("must throw after the last attempt")
+        } catch {
+            XCTAssertEqual((error as? CKError)?.code, .networkUnavailable)
+        }
+        XCTAssertEqual(attempts, CloudSyncManager.maxRetryAttempts)
+        XCTAssertEqual(delays, [2, 4, 8])
+    }
+
+    /// A non-recoverable error fails at once; the server's retry-after delay wins over backoff.
+    func testRetryWithBackoffStopsOnPermanentErrorAndHonoursRetryAfter() async throws {
+        var attempts = 0
+        var delays: [TimeInterval] = []
+        do {
+            _ = try await CloudSyncManager.retryWithBackoff(sleep: { delays.append($0) }) { () async throws -> Int in
+                attempts += 1
+                throw CloudKitStore.CloudKitStoreError.cloudKit(CKError(.quotaExceeded))
+            }
+            XCTFail("must throw")
+        } catch {}
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(delays, [])
+
+        attempts = 0
+        let value = try await CloudSyncManager.retryWithBackoff(sleep: { delays.append($0) }) { () async throws -> Int in
+            attempts += 1
+            if attempts == 1 { throw CKError(.requestRateLimited, userInfo: [CKErrorRetryAfterKey: 30.0]) }
+            return 7
+        }
+        XCTAssertEqual(value, 7)
+        XCTAssertEqual(delays, [30])
     }
 }

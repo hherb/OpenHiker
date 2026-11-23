@@ -94,11 +94,23 @@ struct MacContentView: View {
 
     /// Displays the iCloud sync status at the bottom of the sidebar.
     ///
-    /// After a failed sync it shows a red "Sync failed" whose tooltip lists the errors;
-    /// Settings → Sync lists them too.
+    /// While a sync runs it shows "Syncing…" (#84). After a failed sync it shows a red
+    /// "Sync failed" whose tooltip lists the errors; with no account signed in, "iCloud
+    /// off" with the reason as tooltip. Settings → Sync lists them too.
     private var syncStatusBar: some View {
         HStack {
-            if syncStatus.errors.isEmpty {
+            if syncStatus.isSyncing {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Syncing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let notice = syncStatus.accountNotice, syncStatus.errors.isEmpty {
+                Label("iCloud off", systemImage: "icloud.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(notice)
+            } else if syncStatus.errors.isEmpty {
                 Image(systemName: "icloud")
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -121,6 +133,7 @@ struct MacContentView: View {
                     .font(.caption)
             }
             .buttonStyle(.borderless)
+            .disabled(syncStatus.isSyncing)
             .help("Sync now")
         }
         .padding(.horizontal, 16)

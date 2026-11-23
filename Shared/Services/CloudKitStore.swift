@@ -37,9 +37,10 @@ import os
 /// This is a Swift Actor, so all methods are automatically serialized.
 ///
 /// ## Error Handling
-/// Network errors are wrapped in ``CloudKitStoreError`` with descriptive messages, except
-/// that ``delete(recordID:)`` throws the `CKError` itself so callers can read its code.
-/// Callers (typically ``CloudSyncManager``) handle retry logic with exponential backoff.
+/// Saves and fetches throw ``CloudKitStoreError/cloudKit(_:)``, which keeps the `CKError`
+/// (see ``wrap(_:)``); ``delete(recordID:)`` throws the `CKError` itself. Callers
+/// (typically ``CloudSyncManager``) retry with exponential backoff where
+/// ``retryAdvice(for:)`` says a retry can help.
 actor CloudKitStore {
 
     // MARK: - Constants
@@ -77,8 +78,11 @@ actor CloudKitStore {
     enum CloudKitStoreError: Error, LocalizedError {
         /// The iCloud account is not available (user not signed in).
         case accountUnavailable
-        /// A CloudKit operation failed with the given underlying error.
+        /// A CloudKit operation failed with an error that is not a `CKError`.
         case operationFailed(String)
+        /// A CloudKit operation failed; the `CKError` is kept so callers can read its
+        /// code and retry hint (#86). See ``wrap(_:)``.
+        case cloudKit(CKError)
         /// The record could not be found in CloudKit.
         case recordNotFound
         /// The record data could not be serialized or deserialized.
@@ -92,6 +96,8 @@ actor CloudKitStore {
                 return "iCloud account is not available. Please sign in to iCloud in Settings."
             case .operationFailed(let message):
                 return "CloudKit operation failed: \(message)"
+            case .cloudKit(let error):
+                return "CloudKit operation failed: \(error.localizedDescription)"
             case .recordNotFound:
                 return "CloudKit record not found"
             case .serializationError(let message):
@@ -127,6 +133,33 @@ actor CloudKitStore {
         }
     }
 
+    /// What the iCloud account check found (#84).
+    enum AccountCheck: Equatable {
+        /// The account can sync.
+        case available
+        /// No iCloud account is signed in. Not an error: the user may not use iCloud,
+        /// so the app shows a neutral, dismissible notice with this text.
+        case notSignedIn(String)
+        /// The account exists but cannot sync (restricted, needs attention, unknown);
+        /// reported as a sync error with this text.
+        case unusable(String)
+    }
+
+    /// Whether and when to retry a failed CloudKit call (#86).
+    enum RetryAdvice: Equatable {
+        /// Retrying cannot help (quota exceeded, record too large, not authenticated, …).
+        case giveUp
+        /// Retry, after the delay the server asked for, or the caller's backoff if `nil`.
+        case retry(after: TimeInterval?)
+    }
+
+    /// `CKError` codes that can clear up by themselves, so a retry may succeed. Every
+    /// other `CKError` code fails the same way again.
+    static let transientErrorCodes: Set<CKError.Code> = [
+        .networkUnavailable, .networkFailure, .serviceUnavailable,
+        .requestRateLimited, .zoneBusy, .serverResponseLost,
+    ]
+
     /// A record deleted on some device, kept in iCloud so other devices delete it too (#91).
     ///
     /// The deleting device saves the tombstone before it deletes the record. Other devices
@@ -159,13 +192,79 @@ actor CloudKitStore {
 
     // MARK: - Account Status
 
-    /// Checks whether the user's iCloud account is available for CloudKit operations.
+    /// Checks whether the user's iCloud account can be used for CloudKit operations.
     ///
-    /// - Returns: `true` if the account status is `.available`.
-    /// - Throws: ``CloudKitStoreError`` if the account check fails.
-    func isAccountAvailable() async throws -> Bool {
-        let status = try await container.accountStatus()
-        return status == .available
+    /// - Returns: The result of ``accountCheck(for:)`` for the account's status.
+    /// - Throws: The error of the account status request.
+    func checkAccount() async throws -> AccountCheck {
+        Self.accountCheck(for: try await container.accountStatus())
+    }
+
+    /// Turns an iCloud account status into what the user should see.
+    ///
+    /// - Parameter status: The status `CKContainer.accountStatus()` returned.
+    /// - Returns: `.available`, `.notSignedIn` for no account, or `.unusable` with the
+    ///   reason for every other status.
+    static func accountCheck(for status: CKAccountStatus) -> AccountCheck {
+        switch status {
+        case .available:
+            return .available
+        case .noAccount:
+            return .notSignedIn("Not signed in to iCloud. Sign in to sync hikes, waypoints and planned routes.")
+        case .restricted:
+            return .unusable("iCloud is restricted on this device (Screen Time or device management).")
+        case .temporarilyUnavailable:
+            return .unusable("iCloud account needs attention. Open your Apple Account in Settings.")
+        case .couldNotDetermine:
+            return .unusable("Could not check the iCloud account.")
+        @unknown default:
+            return .unusable("iCloud account is not available.")
+        }
+    }
+
+    // MARK: - Error Classification
+
+    /// Wraps a CloudKit error so it keeps its `CKError`.
+    ///
+    /// A single-record `CKModifyRecordsOperation` reports a failed record as
+    /// `.partialFailure`; the record's own error is unwrapped, so its code (for example
+    /// `.quotaExceeded`) and message reach the caller.
+    ///
+    /// - Parameter error: The error CloudKit returned.
+    /// - Returns: ``CloudKitStoreError/cloudKit(_:)`` for a `CKError`, else
+    ///   ``CloudKitStoreError/operationFailed(_:)``.
+    static func wrap(_ error: Error) -> CloudKitStoreError {
+        guard let ckError = error as? CKError else {
+            return .operationFailed(error.localizedDescription)
+        }
+        if ckError.code == .partialFailure,
+           let errors = ckError.partialErrorsByItemID?.values,
+           errors.count == 1,
+           let itemError = errors.first as? CKError {
+            return .cloudKit(itemError)
+        }
+        return .cloudKit(ckError)
+    }
+
+    /// Decides whether a failed call is worth retrying.
+    ///
+    /// - Parameter error: A raw `CKError`, a wrapped one (``wrap(_:)``), or any other error.
+    /// - Returns: `.retry` for ``transientErrorCodes`` (with the server's retry-after delay
+    ///   if it gave one) and for errors that are not from CloudKit; `.giveUp` for other
+    ///   `CKError` codes and for serialization errors.
+    static func retryAdvice(for error: Error) -> RetryAdvice {
+        switch error {
+        case let ckError as CKError:
+            // Unwraps a single-record partial failure first.
+            return retryAdvice(for: wrap(ckError))
+        case CloudKitStoreError.cloudKit(let ckError):
+            guard transientErrorCodes.contains(ckError.code) else { return .giveUp }
+            return .retry(after: ckError.retryAfterSeconds)
+        case CloudKitStoreError.serializationError:
+            return .giveUp
+        default:
+            return .retry(after: nil)
+        }
     }
 
     // MARK: - SavedRoute Operations
@@ -245,7 +344,7 @@ actor CloudKitStore {
     /// Saving it again overwrites the same tombstone, so a retried deletion adds nothing.
     ///
     /// - Parameter tombstone: The record being deleted.
-    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the save fails.
+    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if the save fails.
     func save(tombstone: Tombstone) async throws {
         _ = try await saveWithOverwrite(Self.makeTombstoneRecord(tombstone))
     }
@@ -269,7 +368,7 @@ actor CloudKitStore {
     /// Fetches every tombstone, of all record types.
     ///
     /// - Returns: The readable tombstones, and the ones that could not be read.
-    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if the query fails.
+    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if the query fails.
     func fetchAllTombstones() async throws -> FetchResult<Tombstone> {
         try await fetchAll(recordType: Self.deletedRecordType, decode: Self.decodeTombstone)
     }
@@ -398,27 +497,45 @@ actor CloudKitStore {
 
     // MARK: - Subscription
 
-    /// Whether subscriptions have been successfully created for all record types.
-    /// When `false`, ``setupSubscriptions()`` will retry on the next sync cycle.
+    /// Whether subscriptions exist for all record types. While `false`,
+    /// ``CloudSyncManager`` force-pushes every record and calls ``setupSubscriptions()``
+    /// again at the end of each sync.
     private(set) var subscriptionsReady = false
 
-    /// Creates CloudKit subscriptions for change notifications.
+    /// Creates the CloudKit subscriptions for change notifications that do not exist yet.
     ///
-    /// Subscribes to changes in all three record types so the app can be notified
-    /// of remote changes via push notifications. Tolerates failures for individual
-    /// record types (e.g., when the schema hasn't been initialized yet) — the record
-    /// types are auto-created on first push, and subscriptions succeed on retry.
-    func setupSubscriptions() async throws {
+    /// Subscribes to changes in all three record types so the app can be notified of
+    /// remote changes via push notifications. It first lists the existing subscriptions
+    /// and saves only the missing ones, so any save error is a real failure (#86). A
+    /// record type that does not exist yet (the schema is not initialized, which happens
+    /// in Development before the first push) is logged and left for the next call; the
+    /// types are auto-created on first push.
+    ///
+    /// - Returns: One "record type: reason" entry per subscription that could not be
+    ///   created, or one entry if the existing subscriptions could not be listed. Empty
+    ///   if all exist or only record types were missing. Failures are also logged.
+    func setupSubscriptions() async -> [String] {
         let recordTypes = [
             Self.savedRouteRecordType,
             Self.waypointRecordType,
             Self.plannedRouteRecordType
         ]
 
-        var allSucceeded = true
+        let existing: Set<CKSubscription.ID>
+        do {
+            existing = Set(try await database.allSubscriptions().map(\.subscriptionID))
+        } catch {
+            Self.logger.error("Cannot list iCloud subscriptions: \(error.localizedDescription)")
+            subscriptionsReady = false
+            return ["subscriptions: \(error.localizedDescription)"]
+        }
+
+        var failures: [String] = []
+        var typesMissing = false
 
         for recordType in recordTypes {
             let subscriptionID = "subscription-\(recordType)"
+            guard !existing.contains(subscriptionID) else { continue }
             let subscription = CKQuerySubscription(
                 recordType: recordType,
                 predicate: NSPredicate(value: true),
@@ -432,19 +549,18 @@ actor CloudKitStore {
 
             do {
                 _ = try await database.save(subscription)
-            } catch let error as CKError where error.code == .serverRejectedRequest {
-                // Subscription already exists — this is fine
+            } catch where Self.isRecordTypeMissingError(error) {
+                // Expected before the first push creates the type; retried next sync.
+                Self.logger.debug("No subscription for \(recordType) yet (type not in schema): \(error.localizedDescription)")
+                typesMissing = true
             } catch {
-                // Record type may not exist yet (schema not initialized). This is
-                // expected on first launch before any records have been pushed.
-                // The types are auto-created on first save, and subscriptions will
-                // succeed on the next sync cycle.
-                Self.logger.debug("Skipping subscription for \(recordType) (will retry after first sync): \(error.localizedDescription)")
-                allSucceeded = false
+                Self.logger.error("Cannot subscribe to \(recordType) changes: \(error.localizedDescription)")
+                failures.append("\(recordType): \(error.localizedDescription)")
             }
         }
 
-        subscriptionsReady = allSucceeded
+        subscriptionsReady = failures.isEmpty && !typesMissing
+        return failures
     }
 
     // MARK: - Save Helper
@@ -470,7 +586,7 @@ actor CloudKitStore {
                 case .success:
                     continuation.resume(returning: record.recordID.recordName)
                 case .failure(let error):
-                    continuation.resume(throwing: CloudKitStoreError.operationFailed(error.localizedDescription))
+                    continuation.resume(throwing: Self.wrap(error))
                 }
             }
             database.add(operation)
@@ -499,7 +615,7 @@ actor CloudKitStore {
     ///   - recordType: The CKRecord type to query.
     ///   - decode: Turns one record into an item; throws if the record is incomplete.
     /// - Returns: The decoded items and the records that were skipped (also logged).
-    /// - Throws: ``CloudKitStoreError/operationFailed(_:)`` if any page fails to load.
+    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if any page fails to load.
     private func fetchAll<Item>(
         recordType: CKRecord.RecordType,
         decode: (CKRecord) throws -> Item
@@ -522,7 +638,7 @@ actor CloudKitStore {
             Self.logger.debug("Record type \(recordType) not in schema yet (expected on first launch)")
             return FetchResult()
         } catch {
-            throw CloudKitStoreError.operationFailed(error.localizedDescription)
+            throw Self.wrap(error)
         }
     }
 

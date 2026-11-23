@@ -19,6 +19,12 @@ On Android, `CloudDriveSyncEngine` already syncs each `SyncChannel` on its own a
 - Keep the last sync result (time of the last clean sync, error list) where the UI can observe it, for both
   "Sync now" and `SyncWorker`.
 - Show the errors outside Settings while the last sync failed (for example a banner), with retry and dismiss.
+- Show that a sync is running, so retry and "Sync now" do not seem to do nothing (Apple #84: the retry button
+  turns into a spinner).
+- Tell a sync folder that is not set up from a failed sync: Apple shows a grey, dismissible "iCloud off"
+  notice when no account is signed in, not an error (#84).
+- Retry only failures that can clear up by themselves, and report the others at once (Apple #86,
+  `CloudKitStore.retryAdvice(for:)`).
 
 ## Status
 

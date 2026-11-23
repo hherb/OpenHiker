@@ -57,7 +57,10 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            CloudSyncErrorBanner(errors: syncStatus.errors)
+            VStack(spacing: 0) {
+                CloudSyncErrorBanner(errors: syncStatus.errors, isSyncing: syncStatus.isSyncing)
+                CloudAccountNoticeBanner(notice: syncStatus.accountNotice)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: DirectionsRequestHandler.routeComputedNotification
@@ -184,11 +187,15 @@ struct ContentView: View {
 
 /// Red banner listing the parts of the last iCloud sync that failed (#78).
 ///
-/// Shows nothing when `errors` is empty. "Retry" starts a new sync; the close button
-/// hides the banner until a later sync fails again.
+/// Shows nothing when `errors` is empty. "Retry" starts a new sync and turns into a
+/// spinner while it runs (#84); the close button hides the banner until a later sync
+/// fails again.
 struct CloudSyncErrorBanner: View {
     /// Entries from ``CloudSyncStatus/errors``.
     let errors: [String]
+
+    /// ``CloudSyncStatus/isSyncing``: shows a spinner instead of "Retry".
+    let isSyncing: Bool
 
     var body: some View {
         if !errors.isEmpty {
@@ -200,10 +207,15 @@ struct CloudSyncErrorBanner: View {
                 .font(.footnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button("Retry") {
-                    Task { await CloudSyncManager.shared.performSync() }
+                if isSyncing {
+                    ProgressView()
+                        .accessibilityLabel("Syncing")
+                } else {
+                    Button("Retry") {
+                        Task { await CloudSyncManager.shared.performSync() }
+                    }
+                    .font(.footnote)
                 }
-                .font(.footnote)
 
                 Button {
                     CloudSyncStatus.shared.dismissErrors()
@@ -214,6 +226,35 @@ struct CloudSyncErrorBanner: View {
             }
             .padding()
             .background(.red.opacity(0.15))
+        }
+    }
+}
+
+/// Grey notice that iCloud sync is off because no account is signed in (#84).
+///
+/// Not an error: the user may not use iCloud. Shows nothing when `notice` is `nil`; the
+/// close button hides it until the account status changes.
+struct CloudAccountNoticeBanner: View {
+    /// ``CloudSyncStatus/accountNotice``.
+    let notice: String?
+
+    var body: some View {
+        if let notice {
+            HStack(alignment: .top) {
+                Label(notice, systemImage: "icloud.slash")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    CloudSyncStatus.shared.dismissAccountNotice()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Dismiss")
+            }
+            .padding()
+            .background(.gray.opacity(0.15))
         }
     }
 }
