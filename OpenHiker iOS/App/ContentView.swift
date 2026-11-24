@@ -233,7 +233,7 @@ struct CloudSyncErrorBanner: View {
 /// Grey notice that iCloud sync is off because no account is signed in (#84).
 ///
 /// Not an error: the user may not use iCloud. Shows nothing when `notice` is `nil`; the
-/// close button hides it until the account status changes.
+/// close button hides it until a sync finds the account status changed.
 struct CloudAccountNoticeBanner: View {
     /// ``CloudSyncStatus/accountNotice``.
     let notice: String?

@@ -367,7 +367,11 @@ final class CloudSyncManagerTests: XCTestCase {
                 throw CloudKitStore.CloudKitStoreError.cloudKit(CKError(.quotaExceeded))
             }
             XCTFail("must throw")
-        } catch {}
+        } catch CloudKitStore.CloudKitStoreError.cloudKit(let ckError) {
+            XCTAssertEqual(ckError.code, .quotaExceeded, "the original error must reach the caller")
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
         XCTAssertEqual(attempts, 1)
         XCTAssertEqual(delays, [])
 
@@ -379,5 +383,52 @@ final class CloudSyncManagerTests: XCTestCase {
         }
         XCTAssertEqual(value, 7)
         XCTAssertEqual(delays, [30])
+    }
+
+    /// A server delay above ``CloudSyncManager/maxServerRetryDelay`` fails at once rather
+    /// than keep the sync (and its spinner) waiting for minutes.
+    func testRetryWithBackoffGivesUpWhenServerDelayIsTooLong() async {
+        var attempts = 0
+        var delays: [TimeInterval] = []
+        let tooLong = CloudSyncManager.maxServerRetryDelay + 1
+        do {
+            _ = try await CloudSyncManager.retryWithBackoff(sleep: { delays.append($0) }) { () async throws -> Int in
+                attempts += 1
+                throw CKError(.requestRateLimited, userInfo: [CKErrorRetryAfterKey: tooLong])
+            }
+            XCTFail("must throw")
+        } catch {
+            XCTAssertEqual((error as? CKError)?.code, .requestRateLimited)
+        }
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(delays, [])
+    }
+
+    /// Each account check result reaches the status: available clears the notice, no
+    /// account shows it without an error, and everything else is an "iCloud:" error.
+    @MainActor
+    func testPublishAccountCheck() async throws {
+        let (status, _) = try makeStatus()
+
+        let signedOut = await CloudSyncManager.publish(.success(.notSignedIn("Not signed in")), to: status)
+        XCTAssertFalse(signedOut)
+        XCTAssertEqual(status.accountNotice, "Not signed in")
+        XCTAssertEqual(status.errors, [])
+
+        let available = await CloudSyncManager.publish(.success(.available), to: status)
+        XCTAssertTrue(available)
+        XCTAssertNil(status.accountNotice, "signing in must hide the notice")
+
+        status.showAccountNotice("Not signed in")
+        let restricted = await CloudSyncManager.publish(.success(.unusable("restricted")), to: status)
+        XCTAssertFalse(restricted)
+        XCTAssertNil(status.accountNotice, "an unusable account is an error, not the grey notice")
+        XCTAssertEqual(status.errors, ["iCloud: restricted"])
+
+        let failed = await CloudSyncManager.publish(.failure(CKError(.networkUnavailable)), to: status)
+        XCTAssertFalse(failed)
+        XCTAssertEqual(status.errors.count, 1)
+        XCTAssertTrue(status.errors[0].hasPrefix("iCloud: "))
+        XCTAssertFalse(status.isSyncing)
     }
 }

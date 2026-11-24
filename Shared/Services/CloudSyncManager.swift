@@ -23,7 +23,8 @@ import os
 ///
 /// ``CloudSyncManager`` records every sync here. The iOS app shows a red banner while
 /// ``errors`` is not empty and a grey one while ``accountNotice`` is set; macOS shows
-/// the state in the sidebar and in Settings. Both show ``isSyncing``.
+/// the state in the sidebar and in Settings. macOS always shows ``isSyncing``; iOS shows
+/// it as a spinner in place of Retry in the red banner.
 @MainActor
 final class CloudSyncStatus: ObservableObject {
 
@@ -46,8 +47,8 @@ final class CloudSyncStatus: ObservableObject {
     @Published private(set) var isSyncing = false
 
     /// Why iCloud is off when no account is signed in, or `nil`. Not an error: the user
-    /// may not use iCloud. `nil` too once the user dismissed this notice, until the
-    /// account status changes.
+    /// may not use iCloud. `nil` too once the user dismissed this notice, until a sync
+    /// finds the account status changed.
     @Published private(set) var accountNotice: String?
 
     /// Where the dismissed notice is remembered across launches.
@@ -163,6 +164,11 @@ actor CloudSyncManager {
     /// Base delay for exponential backoff in seconds.
     static let baseRetryDelay: TimeInterval = 2
 
+    /// Longest server-requested retry delay a sync waits for, in seconds. A longer one
+    /// fails the step at once, so the spinner does not run for minutes; the user can
+    /// retry later.
+    static let maxServerRetryDelay: TimeInterval = 30
+
     // MARK: - Error Types
 
     /// Errors of the sync steps themselves, as opposed to CloudKit's.
@@ -208,7 +214,7 @@ actor CloudSyncManager {
     /// Whether a sync is currently in progress (prevents concurrent syncs).
     private var isSyncing = false
 
-    /// Whether iCloud is available for this user.
+    /// Whether the last account check found an account that can sync.
     private var isAvailable = false
 
     // MARK: - Singleton
@@ -225,71 +231,75 @@ actor CloudSyncManager {
 
     // MARK: - Public API
 
-    /// Checks iCloud availability and performs an initial sync.
+    /// Performs the first sync after app launch; see ``performSync()``.
     ///
-    /// Call this once on app launch. Sets up CloudKit subscriptions for push
-    /// notifications and triggers the first sync.
-    ///
-    /// If no account is signed in, it publishes a neutral notice in ``CloudSyncStatus``
-    /// and returns (#84). An account that cannot sync, or a failed account check, is
-    /// recorded as an "iCloud: reason" error.
+    /// Call this once on app launch.
     func syncOnLaunch() async {
-        let status = CloudSyncStatus.shared
-        await status.beginSync()
-
-        let account: CloudKitStore.AccountCheck
-        do {
-            account = try await cloudStore.checkAccount()
-        } catch {
-            await Self.report(["iCloud: \(error.localizedDescription)"], to: status)
-            return
-        }
-
-        switch account {
-        case .available:
-            isAvailable = true
-            await status.clearAccountNotice()
-        case .notSignedIn(let notice):
-            isAvailable = false
-            Self.logger.info("iCloud account not signed in, skipping sync")
-            await status.showAccountNotice(notice)
-            return
-        case .unusable(let reason):
-            isAvailable = false
-            await status.clearAccountNotice()
-            await Self.report(["iCloud: \(reason)"], to: status)
-            return
-        }
-
-        // May fail before the first push creates the record types; performSync()
-        // retries and reports what still fails.
-        _ = await cloudStore.setupSubscriptions()
-
-        // Perform initial sync (this creates record types via first push)
         await performSync()
+    }
+
+    /// Checks the iCloud account and publishes what it found.
+    ///
+    /// - Returns: Whether the account can sync.
+    private func checkAccount() async -> Bool {
+        let check: Result<CloudKitStore.AccountCheck, Error>
+        do {
+            check = .success(try await cloudStore.checkAccount())
+        } catch {
+            check = .failure(error)
+        }
+        isAvailable = await Self.publish(check, to: CloudSyncStatus.shared)
+        return isAvailable
+    }
+
+    /// Publishes the result of an account check in `status` (#84).
+    ///
+    /// No account shows the neutral notice and no error. An account that cannot sync, or
+    /// a failed check, is an "iCloud: reason" error. Each ends the sync in `status`
+    /// except `.available`, whose sync goes on.
+    ///
+    /// - Parameters:
+    ///   - check: What ``CloudKitStore/checkAccount()`` returned or threw.
+    ///   - status: Where to publish it; the app passes ``CloudSyncStatus/shared``.
+    /// - Returns: Whether the account can sync.
+    static func publish(
+        _ check: Result<CloudKitStore.AccountCheck, Error>,
+        to status: CloudSyncStatus
+    ) async -> Bool {
+        switch check {
+        case .success(.available):
+            await status.clearAccountNotice()
+            return true
+        case .success(.notSignedIn(let notice)):
+            logger.info("iCloud account not signed in, skipping sync")
+            await status.showAccountNotice(notice)
+            return false
+        case .success(.unusable(let reason)):
+            await status.clearAccountNotice()
+            await report(["iCloud: \(reason)"], to: status)
+            return false
+        case .failure(let error):
+            await report(["iCloud: \(error.localizedDescription)"], to: status)
+            return false
+        }
     }
 
     /// Performs a full bidirectional sync: for saved hikes, waypoints and planned routes
     /// in turn, push local changes, then pull remote changes.
     ///
-    /// Each upload and each download is its own step, so a failure in one (for example
-    /// an unreadable `planned_routes/` folder) does not stop the others (#81). Skips if
-    /// a sync is already in progress; ``CloudSyncStatus/isSyncing`` shows that one to the
-    /// user. Records the result in ``CloudSyncStatus``.
+    /// It checks the iCloud account first, every time, so signing in or out while the
+    /// app runs is noticed at the next sync (#84); with no usable account it publishes
+    /// the notice or error and stops. Each upload and each download is its own step, so
+    /// a failure in one (for example an unreadable `planned_routes/` folder) does not
+    /// stop the others (#81). Skips if a sync is already in progress;
+    /// ``CloudSyncStatus/isSyncing`` shows that one to the user. Records the result in
+    /// ``CloudSyncStatus``.
     ///
-    /// If change-notification subscriptions are still missing, it tries to create them
-    /// after the steps and reports what fails as "iCloud: change notifications
-    /// unavailable (…)" (#86), so one failed attempt at launch does not make every later
-    /// sync force-push all records.
-    ///
-    /// If iCloud was not available at the last check (for example the launch check
-    /// failed while offline), this reruns ``syncOnLaunch()`` instead, so Retry and
-    /// "Sync Now" check the account again rather than doing nothing.
+    /// While change-notification subscriptions are missing, it tries to create them
+    /// before the steps (so existing ones are found and records are not force-pushed)
+    /// and again after them (a first push may just have created the record types), and
+    /// reports what still fails as "iCloud: change notifications unavailable (…)" (#86).
     func performSync() async {
-        guard isAvailable else {
-            await syncOnLaunch()
-            return
-        }
         guard !isSyncing else {
             Self.logger.debug("Sync already in progress, skipping")
             return
@@ -298,6 +308,11 @@ actor CloudSyncManager {
         isSyncing = true
         defer { isSyncing = false }
         await CloudSyncStatus.shared.beginSync()
+
+        guard await checkAccount() else { return }
+        if await !cloudStore.subscriptionsReady {
+            _ = await cloudStore.setupSubscriptions()
+        }
 
         // When subscriptions aren't ready the CloudKit schema may not exist
         // (e.g. fresh container or development schema reset). Force-push all
@@ -933,8 +948,9 @@ actor CloudSyncManager {
     /// Makes up to ``maxRetryAttempts`` attempts, waiting 2s, 4s, 8s between them, or the
     /// delay the server asked for (`CKError.retryAfterSeconds`). It stops at once when
     /// ``CloudKitStore/retryAdvice(for:)`` says a retry cannot help, such as an exceeded
-    /// quota or a record that is too large (#86), and does not wait after the last
-    /// attempt, so the error reaches the user sooner.
+    /// quota or a record that is too large (#86), or when the server asks for a wait
+    /// longer than ``maxServerRetryDelay``. It does not wait after the last attempt, so
+    /// the error reaches the user sooner.
     ///
     /// - Parameters:
     ///   - sleep: Waits the given number of seconds; tests pass one that only records it.
@@ -952,7 +968,8 @@ actor CloudSyncManager {
             } catch {
                 attempt += 1
                 guard attempt < maxRetryAttempts,
-                      case .retry(let serverDelay) = CloudKitStore.retryAdvice(for: error) else {
+                      case .retry(let serverDelay) = CloudKitStore.retryAdvice(for: error),
+                      (serverDelay ?? 0) <= maxServerRetryDelay else {
                     throw error
                 }
                 let delay = serverDelay ?? baseRetryDelay * pow(2.0, Double(attempt - 1))

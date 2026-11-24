@@ -261,6 +261,18 @@ final class CloudKitStoreTests: XCTestCase {
             }
             XCTAssertFalse(reason.isEmpty)
         }
+        guard case .unusable(let attention) = CloudKitStore.accountCheck(for: .temporarilyUnavailable),
+              case .notSignedIn(let signIn) = CloudKitStore.accountCheck(for: .noAccount) else {
+            return XCTFail("unexpected account check")
+        }
+        XCTAssertTrue(attention.contains(CloudKitStore.settingsAppName), "must name this platform's Settings app")
+        XCTAssertTrue(signIn.contains(CloudKitStore.settingsAppName), "must say where to sign in")
+    }
+
+    /// A full iCloud says what to do instead of CloudKit's generic text.
+    func testQuotaExceededMessageIsActionable() {
+        let message = CloudKitStore.CloudKitStoreError.cloudKit(CKError(.quotaExceeded)).errorDescription
+        XCTAssertEqual(message, CloudKitStore.quotaExceededMessage)
     }
 
     /// Wrapping keeps the `CKError` and unwraps a single-record partial failure, so the
@@ -278,6 +290,18 @@ final class CloudKitStoreTests: XCTestCase {
             return XCTFail("a partial failure must stay a CKError")
         }
         XCTAssertEqual(item.code, .limitExceeded)
+
+        let multi = CKError(.partialFailure, userInfo: [
+            CKPartialErrorsByItemIDKey: [
+                CKRecord.ID(recordName: "a"): CKError(.zoneBusy),
+                CKRecord.ID(recordName: "b"): CKError(.zoneBusy),
+            ],
+        ])
+        guard case .cloudKit(let whole) = CloudKitStore.wrap(multi) else {
+            return XCTFail("a partial failure must stay a CKError")
+        }
+        XCTAssertEqual(whole.code, .partialFailure, "several failed records keep the partial failure")
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: multi), .giveUp)
 
         guard case .operationFailed = CloudKitStore.wrap(NSError(domain: "test", code: 1)) else {
             return XCTFail("a non-CloudKit error must become operationFailed")

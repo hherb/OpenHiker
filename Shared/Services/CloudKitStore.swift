@@ -37,10 +37,12 @@ import os
 /// This is a Swift Actor, so all methods are automatically serialized.
 ///
 /// ## Error Handling
-/// Saves and fetches throw ``CloudKitStoreError/cloudKit(_:)``, which keeps the `CKError`
-/// (see ``wrap(_:)``); ``delete(recordID:)`` throws the `CKError` itself. Callers
-/// (typically ``CloudSyncManager``) retry with exponential backoff where
-/// ``retryAdvice(for:)`` says a retry can help.
+/// CloudKit failures of saves and fetches are thrown as
+/// ``CloudKitStoreError/cloudKit(_:)``, which keeps the `CKError`
+/// (``CloudKitStoreError/operationFailed(_:)`` if the error is not a `CKError`; see
+/// ``wrap(_:)``); ``delete(recordID:)`` throws the `CKError` itself. Callers (typically
+/// ``CloudSyncManager``) retry with exponential backoff where ``retryAdvice(for:)`` says
+/// a retry can help.
 actor CloudKitStore {
 
     // MARK: - Constants
@@ -72,6 +74,16 @@ actor CloudKitStore {
     /// How many unreadable records the error text names; the rest are counted (all are logged).
     static let maxListedUnreadableRecords = 3
 
+    /// Name of the app where the user manages their Apple Account, for messages.
+    #if os(macOS)
+    static let settingsAppName = "System Settings"
+    #else
+    static let settingsAppName = "Settings"
+    #endif
+
+    /// Shown instead of CloudKit's own text when iCloud storage is full (#86).
+    static let quotaExceededMessage = "iCloud storage is full. Free up space in iCloud, then sync again."
+
     // MARK: - Error Types
 
     /// Errors that can occur during CloudKit operations.
@@ -96,6 +108,8 @@ actor CloudKitStore {
                 return "iCloud account is not available. Please sign in to iCloud in Settings."
             case .operationFailed(let message):
                 return "CloudKit operation failed: \(message)"
+            case .cloudKit(let error) where error.code == .quotaExceeded:
+                return CloudKitStore.quotaExceededMessage
             case .cloudKit(let error):
                 return "CloudKit operation failed: \(error.localizedDescription)"
             case .recordNotFound:
@@ -153,8 +167,8 @@ actor CloudKitStore {
         case retry(after: TimeInterval?)
     }
 
-    /// `CKError` codes that can clear up by themselves, so a retry may succeed. Every
-    /// other `CKError` code fails the same way again.
+    /// `CKError` codes that can clear up by themselves, so a retry may succeed. Retrying
+    /// other codes right away will not help.
     static let transientErrorCodes: Set<CKError.Code> = [
         .networkUnavailable, .networkFailure, .serviceUnavailable,
         .requestRateLimited, .zoneBusy, .serverResponseLost,
@@ -210,13 +224,13 @@ actor CloudKitStore {
         case .available:
             return .available
         case .noAccount:
-            return .notSignedIn("Not signed in to iCloud. Sign in to sync hikes, waypoints and planned routes.")
+            return .notSignedIn("Not signed in to iCloud. Sign in to iCloud in \(settingsAppName) to sync hikes, waypoints and planned routes.")
         case .restricted:
             return .unusable("iCloud is restricted on this device (Screen Time or device management).")
         case .temporarilyUnavailable:
-            return .unusable("iCloud account needs attention. Open your Apple Account in Settings.")
+            return .unusable("iCloud account needs attention. Open your Apple Account in \(settingsAppName).")
         case .couldNotDetermine:
-            return .unusable("Could not check the iCloud account.")
+            return .unusable("Could not check the iCloud account. Check your connection and try again.")
         @unknown default:
             return .unusable("iCloud account is not available.")
         }
@@ -344,7 +358,7 @@ actor CloudKitStore {
     /// Saving it again overwrites the same tombstone, so a retried deletion adds nothing.
     ///
     /// - Parameter tombstone: The record being deleted.
-    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if the save fails.
+    /// - Throws: The error from ``wrap(_:)`` if the save fails.
     func save(tombstone: Tombstone) async throws {
         _ = try await saveWithOverwrite(Self.makeTombstoneRecord(tombstone))
     }
@@ -368,7 +382,7 @@ actor CloudKitStore {
     /// Fetches every tombstone, of all record types.
     ///
     /// - Returns: The readable tombstones, and the ones that could not be read.
-    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if the query fails.
+    /// - Throws: The error from ``wrap(_:)`` if the query fails.
     func fetchAllTombstones() async throws -> FetchResult<Tombstone> {
         try await fetchAll(recordType: Self.deletedRecordType, decode: Self.decodeTombstone)
     }
@@ -499,7 +513,7 @@ actor CloudKitStore {
 
     /// Whether subscriptions exist for all record types. While `false`,
     /// ``CloudSyncManager`` force-pushes every record and calls ``setupSubscriptions()``
-    /// again at the end of each sync.
+    /// again in each full sync.
     private(set) var subscriptionsReady = false
 
     /// Creates the CloudKit subscriptions for change notifications that do not exist yet.
@@ -615,7 +629,7 @@ actor CloudKitStore {
     ///   - recordType: The CKRecord type to query.
     ///   - decode: Turns one record into an item; throws if the record is incomplete.
     /// - Returns: The decoded items and the records that were skipped (also logged).
-    /// - Throws: ``CloudKitStoreError/cloudKit(_:)`` if any page fails to load.
+    /// - Throws: The error from ``wrap(_:)`` if any page fails to load.
     private func fetchAll<Item>(
         recordType: CKRecord.RecordType,
         decode: (CKRecord) throws -> Item

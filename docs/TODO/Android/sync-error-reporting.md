@@ -22,9 +22,11 @@ On Android, `CloudDriveSyncEngine` already syncs each `SyncChannel` on its own a
 - Show that a sync is running, so retry and "Sync now" do not seem to do nothing (Apple #84: the retry button
   turns into a spinner).
 - Tell a sync folder that is not set up from a failed sync: Apple shows a grey, dismissible "iCloud off"
-  notice when no account is signed in, not an error (#84).
+  notice when no account is signed in, not an error (#84). Apple checks the account at the start of every
+  sync, so signing in or out while the app runs is noticed at the next sync.
 - Retry only failures that can clear up by themselves, and report the others at once (Apple #86,
-  `CloudKitStore.retryAdvice(for:)`).
+  `CloudKitStore.retryAdvice(for:)`). Apple honours a server-requested delay only up to 30 s
+  (`CloudSyncManager.maxServerRetryDelay`) and fails the step at once beyond that.
 
 ## Status
 
