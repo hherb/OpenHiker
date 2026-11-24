@@ -33,6 +33,7 @@ import androidx.work.WorkerParameters
 import com.openhiker.android.data.repository.UserPreferencesRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -80,6 +81,8 @@ class SyncWorker @AssistedInject constructor(
                 Log.w(TAG, "Sync completed with errors: ${result.errors}")
             }
             workResultFor(result)
+        } catch (e: CancellationException) {
+            throw e // WorkManager stopped the work (constraint lost, sync turned off)
         } catch (e: Exception) {
             Log.e(TAG, "Sync worker failed", e)
             Result.retry()

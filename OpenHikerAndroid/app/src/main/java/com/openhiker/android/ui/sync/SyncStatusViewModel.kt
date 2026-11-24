@@ -42,7 +42,7 @@ import javax.inject.Inject
  *
  * @property messages Lines to show; the banner is hidden when this is empty.
  * @property isSyncing True while a sync runs: the banner shows a spinner instead of "Retry".
- * @property canRetry True when the last sync failed and a sync folder is set, so "Retry" can run.
+ * @property canRetry True when "Retry" can run; see [canRetry].
  */
 data class SyncBannerState(
     val messages: List<String> = emptyList(),
@@ -68,6 +68,18 @@ internal fun syncBannerMessages(state: SyncState?, actionError: String?): List<S
     if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
     actionError?.let { add(it) }
 }
+
+/**
+ * Whether the banner offers "Retry": only after a failed sync, while sync is on and a folder is
+ * set. The reset notice alone is not a failure, so it offers no Retry.
+ *
+ * @param state The stored sync state, or null before it was first read.
+ * @param syncEnabled Whether the user has sync turned on.
+ * @param folderUri The sync folder URI, or null if none is set.
+ * @return True if "Retry" should show.
+ */
+internal fun canRetry(state: SyncState?, syncEnabled: Boolean, folderUri: String?): Boolean =
+    state?.lastErrors?.isNotEmpty() == true && syncEnabled && folderUri != null
 
 /** Heading above the last sync's errors. */
 internal const val SYNC_FAILED_HEADING = "Cloud sync failed:"
@@ -107,7 +119,7 @@ class SyncStatusViewModel @Inject constructor(
         SyncBannerState(
             messages = syncBannerMessages(state, error),
             isSyncing = syncing,
-            canRetry = state?.lastErrors?.isNotEmpty() == true && prefs.syncFolderUri != null
+            canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncBannerState())
 

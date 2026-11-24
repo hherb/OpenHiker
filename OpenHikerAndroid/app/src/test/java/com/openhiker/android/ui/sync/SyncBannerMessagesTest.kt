@@ -20,9 +20,11 @@ package com.openhiker.android.ui.sync
 
 import com.openhiker.android.data.sync.SyncState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Unit tests for [syncBannerMessages]. */
+/** Unit tests for [syncBannerMessages] and [canRetry]. */
 class SyncBannerMessagesTest {
 
     @Test
@@ -45,6 +47,18 @@ class SyncBannerMessagesTest {
         assertEquals(
             listOf(STATE_RESET_NOTICE),
             syncBannerMessages(SyncState(stateWasReset = true), null)
+        )
+    }
+
+    @Test
+    fun `retry shows only after a failed sync, with sync on and a folder set`() {
+        val failed = SyncState(lastErrors = listOf("boom"))
+        assertTrue(canRetry(failed, syncEnabled = true, folderUri = "content://f"))
+        assertFalse(canRetry(null, syncEnabled = true, folderUri = "content://f"))
+        assertFalse(canRetry(failed, syncEnabled = true, folderUri = null))
+        assertFalse(canRetry(failed, syncEnabled = false, folderUri = "content://f"))
+        assertFalse(
+            canRetry(SyncState(stateWasReset = true), syncEnabled = true, folderUri = "content://f")
         )
     }
 }

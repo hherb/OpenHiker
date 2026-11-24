@@ -77,9 +77,11 @@ Tap to select or change the sync folder. The current folder path is displayed be
 ### Sync Errors
 If a sync fails, automatic or manual, a red banner above every screen lists what failed. Tap **Retry** to
 sync again, or the close button to hide the banner until a later sync fails. If the banner says the sync
-folder is unavailable, the app lost access to it: choose it again under **Sync Folder**. If the folder
-cannot be reached, it was removed or its storage provider is offline; sync tries again later. If the app's own sync records were damaged, the banner says so: items you deleted shortly
-before may come back, and you can delete them again.
+folder is unavailable, the app lost access to it: choose it again under **Sync Folder**, and the app
+syncs right away. If the folder cannot be reached, it was removed or its storage provider is offline;
+sync tries again later. If the app's own sync records were damaged, the banner says so: items you deleted
+shortly before may come back, and you can delete them again. Turning **Auto-Sync** off clears the
+banner.
 
 <!-- Screenshot: Settings screen -->
 > **[Screenshot placeholder]** *Android settings screen showing GPS accuracy (Balanced selected), Units (Metric), and Cloud Sync section with Google Drive folder selected*

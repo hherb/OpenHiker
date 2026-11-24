@@ -32,12 +32,14 @@ import com.openhiker.android.service.sync.CloudDriveSyncEngine
 import com.openhiker.android.service.sync.SyncWorker
 import com.openhiker.core.model.TileServer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 /**
@@ -231,8 +233,8 @@ class SettingsViewModel @Inject constructor(
     /**
      * Sets the cloud sync folder from a SAF tree URI.
      *
-     * Persists the URI, takes persistable permission, and enables sync
-     * with a scheduled WorkManager job.
+     * Persists the URI, takes persistable permission, enables sync
+     * with a scheduled WorkManager job, and syncs once right away.
      *
      * @param uri The SAF tree URI selected by the user.
      */
@@ -261,13 +263,17 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 syncFolderDisplayName = uri.lastPathSegment ?: "Cloud folder"
             )
+            // Sync now: schedule() keeps an existing periodic run, so the banner would show
+            // the old "choose the folder again" error until the next period.
+            runSync(uri)
         }
     }
 
     /**
      * Toggles automatic cloud sync on or off.
      *
-     * When disabled, cancels the periodic WorkManager job. When enabled,
+     * When disabled, cancels the periodic WorkManager job and clears the
+     * last sync's errors. When enabled,
      * schedules periodic sync (requires a folder to be configured).
      *
      * @param enabled True to enable, false to disable.
@@ -280,6 +286,15 @@ class SettingsViewModel @Inject constructor(
                 SyncWorker.schedule(application)
             } else {
                 SyncWorker.cancel(application)
+                // No sync will clear them now, so the banner would stay on every tab.
+                try {
+                    syncStateStore.dismissErrors()
+                } catch (e: IOException) {
+                    Log.e(TAG, "Cannot clear the sync errors", e)
+                    _uiState.value = _uiState.value.copy(
+                        error = "Cannot clear the sync errors: ${e.message}"
+                    )
+                }
             }
         }
     }
@@ -298,20 +313,30 @@ class SettingsViewModel @Inject constructor(
 
         _uiState.value = _uiState.value.copy(error = null)
 
-        viewModelScope.launch {
-            try {
-                val result = syncEngine.sync(Uri.parse(folderUri))
-                _uiState.value = _uiState.value.copy(
-                    lastSyncResult = if (result.isSuccess) {
-                        "Synced: ${result.uploaded} up, ${result.downloaded} down"
-                    } else {
-                        "Sync errors: ${result.errors.joinToString("; ")}"
-                    }
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Manual sync failed", e)
-                _uiState.value = _uiState.value.copy(error = "Sync failed: ${e.message}")
-            }
+        viewModelScope.launch { runSync(Uri.parse(folderUri)) }
+    }
+
+    /**
+     * Syncs [folderUri] now and reports the result via [SettingsUiState.lastSyncResult], or a
+     * failure via [SettingsUiState.error].
+     *
+     * @param folderUri The SAF tree URI of the sync folder.
+     */
+    private suspend fun runSync(folderUri: Uri) {
+        try {
+            val result = syncEngine.sync(folderUri)
+            _uiState.value = _uiState.value.copy(
+                lastSyncResult = if (result.isSuccess) {
+                    "Synced: ${result.uploaded} up, ${result.downloaded} down"
+                } else {
+                    "Sync errors: ${result.errors.joinToString("; ")}"
+                }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Manual sync failed", e)
+            _uiState.value = _uiState.value.copy(error = "Sync failed: ${e.message}")
         }
     }
 

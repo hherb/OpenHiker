@@ -42,7 +42,10 @@ Done (#72), except for two rules that do not carry over as they stand:
   sync error, so it does not hold back the last-sync time.
 - A revoked folder permission is reported as "Sync folder unavailable" (`SyncResult.folderUnavailable`),
   and `SyncWorker` returns `Result.failure()` for it instead of retrying. Other errors still get
-  `Result.retry()`, including a folder that cannot be reached (removed, or its provider offline). The engine does not yet sort per-item errors into transient and
-  permanent ones as Apple's `retryAdvice` does.
+  `Result.retry()`, including a folder that cannot be reached (removed, or its provider offline). The
+  engine does not yet sort per-item errors into transient and permanent ones as Apple's `retryAdvice`
+  does. Deferred: #100.
+- Choosing the sync folder starts a sync at once, so a stale "choose the folder again" error clears.
+  Turning sync off clears the errors, and Retry shows only while sync is on.
 - There is no grey "not set up" notice: sync on Android is opt-in, so having no folder is not a problem to
   report.

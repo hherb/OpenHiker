@@ -35,9 +35,12 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   until the app opens) and publishes `isSyncing`. `SyncStatusBanner` (`ui/sync/`) shows them above every
   tab, with Retry (a spinner during any sync) and Dismiss. Settings shows the last clean sync time. A
   revoked folder permission gives "Sync folder unavailable" (`folderUnavailable`), and `SyncWorker`
-  returns `failure()` for it, `retry()` for other errors, such as a folder it cannot reach. A corrupt `sync_state.json` sets
-  `stateWasReset`, shown until dismissed. Settings no longer saves a folder whose permission it could not
-  keep. Per-item errors are not yet split into transient and permanent ones (Apple `retryAdvice`).
+  returns `failure()` for it, `retry()` for other errors, such as a folder it cannot reach. A corrupt
+  `sync_state.json` is copied aside and sets `stateWasReset`, shown until dismissed. Settings no longer
+  saves a folder whose permission it could not keep, syncs right after a folder is chosen (so a stale
+  "choose the folder again" error clears), and clears the errors when sync is turned off. An outcome that
+  cannot be saved still reaches the banner. Deferred: #100 (permanent errors are retried with backoff;
+  per-item errors are not split into transient and permanent ones as Apple's `retryAdvice` does).
 - **Android `PlannedRouteRepository.save` and `delete` throw** on a failed write or delete and then leave the
   in-memory list unchanged, as Apple's `PlannedRouteStore` does. `save` writes a temp file and renames it, so
   a failed write keeps the old copy. Callers show the error; the route detail screen closes only after a
@@ -142,10 +145,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple
-  #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync
-  of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid
-  altitudes, #63).
+- **Last PRs:** #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92
+  (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68),
+  #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude,
+  #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -155,7 +158,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **138/138 pass** (2026-11-24) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 188/188 per variant; 2026-11-24) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 193/193 per variant; 2026-11-24) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current

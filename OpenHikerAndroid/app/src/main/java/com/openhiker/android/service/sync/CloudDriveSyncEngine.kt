@@ -217,7 +217,9 @@ class CloudDriveSyncEngine @Inject constructor(
                 result
             } catch (e: IOException) {
                 Log.e(TAG, "Cannot record the sync outcome", e)
-                result.copy(errors = result.errors + "Cannot save the sync status: ${e.message}")
+                result.copy(
+                    errors = result.errors + "${SyncStateStore.SAVE_FAILED_MESSAGE}: ${e.message}"
+                )
             }
         } finally {
             _isSyncing.value = false

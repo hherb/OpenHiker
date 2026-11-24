@@ -35,6 +35,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -98,7 +99,7 @@ class SyncStateStore internal constructor(
      * Reads the current state.
      *
      * @return The stored state, or a fresh [SyncState] if none is stored or the file is corrupt.
-     * @throws java.io.IOException if the file exists but cannot be read.
+     * @throws IOException if the file exists but cannot be read.
      */
     suspend fun load(): SyncState = mutex.withLock { read() }
 
@@ -145,9 +146,18 @@ class SyncStateStore internal constructor(
      * sync ran in the background.
      *
      * @param errors The sync's errors; empty for a clean sync.
+     * @throws IOException if the state cannot be saved; [state] then still shows [errors], plus
+     *   a [SAVE_FAILED_MESSAGE] line.
      */
     suspend fun recordOutcome(errors: List<String>) = mutex.withLock {
-        write(read().copy(lastErrors = errors))
+        try {
+            write(read().copy(lastErrors = errors))
+        } catch (e: IOException) {
+            // Publish in memory anyway, so the banner shows this outcome, not the last saved one.
+            _state.value = (_state.value ?: SyncState())
+                .copy(lastErrors = errors + "$SAVE_FAILED_MESSAGE: ${e.message}")
+            throw e
+        }
     }
 
     /** Hides the last sync's errors and the reset notice until a later sync fails again. */
@@ -158,7 +168,7 @@ class SyncStateStore internal constructor(
     /**
      * Reads the state file; the caller holds [mutex].
      *
-     * A corrupt file is moved aside to `sync_state.json.corrupt` and replaced by a fresh state
+     * A corrupt file is copied aside to `sync_state.json.corrupt` and replaced by a fresh state
      * with [SyncState.stateWasReset] set, so the user learns of it: that costs a full sync and
      * may let deleted items return, but never blocks deleting.
      * A read error is thrown instead, so a passing I/O fault cannot wipe pending deletions.
@@ -169,8 +179,10 @@ class SyncStateStore internal constructor(
         try {
             json.decodeFromString<SyncState>(text).also { _state.value = it }
         } catch (e: SerializationException) {
-            logError("Corrupt sync state, moved aside; starting fresh", e)
-            file.renameTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"))
+            logError("Corrupt sync state, copied aside; starting fresh", e)
+            // Copy, not rename: copyTo throws on failure, and if write then fails the corrupt
+            // file stays, so the next read resets again and the notice is not lost.
+            file.copyTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"), overwrite = true)
             SyncState(stateWasReset = true).also { write(it) }
         }
     }
@@ -180,14 +192,17 @@ class SyncStateStore internal constructor(
         val tmp = File(file.parentFile, "${file.name}.tmp")
         tmp.writeText(json.encodeToString(state))
         if (!tmp.renameTo(file)) {
-            throw java.io.IOException("Cannot replace sync state file ${file.path}")
+            throw IOException("Cannot replace sync state file ${file.path}")
         }
         _state.value = state
     }
 
-    private companion object {
-        const val TAG = "SyncStateStore"
-        const val FILE_NAME = "sync_state.json"
-        const val CORRUPT_SUFFIX = ".corrupt"
+    companion object {
+        /** Prefix of the error line added when the sync outcome cannot be saved. */
+        internal const val SAVE_FAILED_MESSAGE = "Cannot save the sync status"
+
+        private const val TAG = "SyncStateStore"
+        private const val FILE_NAME = "sync_state.json"
+        private const val CORRUPT_SUFFIX = ".corrupt"
     }
 }
