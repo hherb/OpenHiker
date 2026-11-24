@@ -135,6 +135,12 @@ class SyncRulesTest {
     }
 
     @Test
+    fun `an IO failure wrapping another IO failure is transient`() {
+        // readManifest also wraps a provider that is offline.
+        assertTrue(isTransient(IOException("Cannot read manifest.json", IOException("offline"))))
+    }
+
+    @Test
     fun `other exceptions are not transient`() {
         assertFalse(isTransient(IllegalStateException("database closed")))
     }

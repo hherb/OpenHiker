@@ -147,10 +147,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92
-  (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68),
-  #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude,
-  #65), #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94
+  (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
+  #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
+  (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -160,7 +160,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **138/138 pass** (2026-11-24) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 199/199 per variant; 2026-11-25) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 200/200 per variant; 2026-11-25) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
