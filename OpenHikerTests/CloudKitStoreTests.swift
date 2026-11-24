@@ -246,4 +246,94 @@ final class CloudKitStoreTests: XCTestCase {
         record["itemType"] = CloudKitStore.waypointRecordType
         XCTAssertThrowsError(try CloudKitStore.decodeTombstone(from: record))
     }
+
+    // MARK: - Account check and retry advice (#84, #86)
+
+    /// No account is a neutral notice; every other non-available status is an error.
+    func testAccountCheckSeparatesSignedOutFromUnusable() {
+        XCTAssertEqual(CloudKitStore.accountCheck(for: .available), .available)
+        guard case .notSignedIn = CloudKitStore.accountCheck(for: .noAccount) else {
+            return XCTFail("no account must be a notice, not an error")
+        }
+        for status in [CKAccountStatus.restricted, .couldNotDetermine, .temporarilyUnavailable] {
+            guard case .unusable(let reason) = CloudKitStore.accountCheck(for: status) else {
+                return XCTFail("\(status) must be reported as an error")
+            }
+            XCTAssertFalse(reason.isEmpty)
+        }
+        guard case .unusable(let attention) = CloudKitStore.accountCheck(for: .temporarilyUnavailable),
+              case .notSignedIn(let signIn) = CloudKitStore.accountCheck(for: .noAccount) else {
+            return XCTFail("unexpected account check")
+        }
+        XCTAssertTrue(attention.contains(CloudKitStore.settingsAppName), "must name this platform's Settings app")
+        XCTAssertTrue(signIn.contains(CloudKitStore.settingsAppName), "must say where to sign in")
+    }
+
+    /// A full iCloud says what to do instead of CloudKit's generic text.
+    func testQuotaExceededMessageIsActionable() {
+        let message = CloudKitStore.CloudKitStoreError.cloudKit(CKError(.quotaExceeded)).errorDescription
+        XCTAssertEqual(message, CloudKitStore.quotaExceededMessage)
+    }
+
+    /// Wrapping keeps the `CKError` and unwraps a single-record partial failure, so the
+    /// record's own code reaches the caller.
+    func testWrapKeepsCKErrorAndUnwrapsSingleRecordPartialFailure() {
+        guard case .cloudKit(let plain) = CloudKitStore.wrap(CKError(.quotaExceeded)) else {
+            return XCTFail("a CKError must stay a CKError")
+        }
+        XCTAssertEqual(plain.code, .quotaExceeded)
+
+        let partial = CKError(.partialFailure, userInfo: [
+            CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "r"): CKError(.limitExceeded)],
+        ])
+        guard case .cloudKit(let item) = CloudKitStore.wrap(partial) else {
+            return XCTFail("a partial failure must stay a CKError")
+        }
+        XCTAssertEqual(item.code, .limitExceeded)
+
+        let multi = CKError(.partialFailure, userInfo: [
+            CKPartialErrorsByItemIDKey: [
+                CKRecord.ID(recordName: "a"): CKError(.zoneBusy),
+                CKRecord.ID(recordName: "b"): CKError(.zoneBusy),
+            ],
+        ])
+        guard case .cloudKit(let whole) = CloudKitStore.wrap(multi) else {
+            return XCTFail("a partial failure must stay a CKError")
+        }
+        XCTAssertEqual(whole.code, .partialFailure, "several failed records keep the partial failure")
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: multi), .giveUp)
+
+        guard case .operationFailed = CloudKitStore.wrap(NSError(domain: "test", code: 1)) else {
+            return XCTFail("a non-CloudKit error must become operationFailed")
+        }
+    }
+
+    /// Transient codes are retried, honouring the server's delay; others give up (#86).
+    func testRetryAdviceRetriesOnlyTransientErrors() {
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: CKError(.networkUnavailable)), .retry(after: nil))
+        XCTAssertEqual(
+            CloudKitStore.retryAdvice(for: CKError(.requestRateLimited, userInfo: [CKErrorRetryAfterKey: 30.0])),
+            .retry(after: 30)
+        )
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: CKError(.quotaExceeded)), .giveUp)
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: CKError(.notAuthenticated)), .giveUp)
+        XCTAssertEqual(
+            CloudKitStore.retryAdvice(for: CloudKitStore.CloudKitStoreError.cloudKit(CKError(.limitExceeded))),
+            .giveUp
+        )
+        XCTAssertEqual(
+            CloudKitStore.retryAdvice(for: CloudKitStore.CloudKitStoreError.serializationError("bad")),
+            .giveUp
+        )
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: NSError(domain: "test", code: 1)), .retry(after: nil))
+    }
+
+    /// A partial failure is judged by the failed record's own code.
+    func testRetryAdviceLooksInsideSingleRecordPartialFailure() {
+        func partial(_ code: CKError.Code) -> CKError {
+            CKError(.partialFailure, userInfo: [CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "r"): CKError(code)]])
+        }
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: partial(.zoneBusy)), .retry(after: nil))
+        XCTAssertEqual(CloudKitStore.retryAdvice(for: partial(.quotaExceeded)), .giveUp)
+    }
 }

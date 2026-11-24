@@ -44,8 +44,12 @@ OpenHiker automatically syncs the following data across your Apple devices via i
 
 Sync happens automatically when:
 - The app launches
+- You rename a planned route
 
-You can trigger a manual sync from the Watch tab or by pulling to refresh in list views.
+If a sync fails, a red banner above every tab lists what failed. Tap **Retry** to sync again; a spinner
+replaces the button while the sync runs. If no iCloud account is signed in, a grey notice says that sync is
+off. Close it with the **×** button; it stays hidden until OpenHiker sees that you signed in or out of iCloud
+(at the next sync).
 
 > **Note:** Map tiles (MBTiles files) are NOT synced via iCloud due to their large size. Download regions individually on each device, or use P2P transfer.
 

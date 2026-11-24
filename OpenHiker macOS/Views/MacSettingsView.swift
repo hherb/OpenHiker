@@ -87,7 +87,12 @@ struct MacSettingsView: View {
                 }
             }
 
-            if syncStatus.errors.isEmpty {
+            if let notice = syncStatus.accountNotice, syncStatus.errors.isEmpty {
+                Label(notice, systemImage: "icloud.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if syncStatus.errors.isEmpty {
                 if let lastSuccess = syncStatus.lastSuccess {
                     Text("Last synced \(lastSuccess.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption)
@@ -103,12 +108,23 @@ struct MacSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button("Sync Now") {
-                Task {
-                    await CloudSyncManager.shared.performSync()
+            HStack {
+                Button("Sync Now") {
+                    Task {
+                        await CloudSyncManager.shared.performSync()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(syncStatus.isSyncing)
+
+                if syncStatus.isSyncing {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Syncing…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding()
     }
