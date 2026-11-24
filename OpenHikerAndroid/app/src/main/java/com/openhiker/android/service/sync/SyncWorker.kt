@@ -25,6 +25,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -32,6 +33,7 @@ import androidx.work.WorkerParameters
 import com.openhiker.android.data.repository.UserPreferencesRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -61,10 +63,9 @@ class SyncWorker @AssistedInject constructor(
      * Performs the background sync operation.
      *
      * Reads the cloud folder URI from the user preferences, then runs a
-     * full sync cycle. Returns [Result.success] on success or
-     * [Result.retry] on transient failures.
+     * full sync cycle. The engine records the errors for the UI's banner.
      *
-     * @return [Result.success] if sync completed, [Result.retry] on failure.
+     * @return The WorkManager result chosen by [workResultFor].
      */
     override suspend fun doWork(): Result {
         val folderUri = getSyncFolderUri() ?: run {
@@ -76,11 +77,12 @@ class SyncWorker @AssistedInject constructor(
             val result = syncEngine.sync(folderUri)
             if (result.isSuccess) {
                 Log.i(TAG, "Sync completed: ${result.uploaded} up, ${result.downloaded} down")
-                Result.success()
             } else {
                 Log.w(TAG, "Sync completed with errors: ${result.errors}")
-                Result.retry()
             }
+            workResultFor(result)
+        } catch (e: CancellationException) {
+            throw e // WorkManager stopped the work (constraint lost, sync turned off)
         } catch (e: Exception) {
             Log.e(TAG, "Sync worker failed", e)
             Result.retry()
@@ -107,6 +109,22 @@ class SyncWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "SyncWorker"
+
+        /**
+         * Chooses the WorkManager result for a finished sync.
+         *
+         * A revoked folder permission is a failure: retrying cannot help until the
+         * user picks the folder again, and the next period still runs. Other errors may clear
+         * by themselves (a provider offline), so they are retried with WorkManager's backoff.
+         *
+         * @param result The sync's result.
+         * @return success, failure or retry.
+         */
+        internal fun workResultFor(result: SyncResult): ListenableWorker.Result = when {
+            result.isSuccess -> Result.success()
+            result.folderUnavailable -> Result.failure()
+            else -> Result.retry()
+        }
 
         /** Sync interval in minutes. */
         private const val SYNC_INTERVAL_MINUTES = 15L

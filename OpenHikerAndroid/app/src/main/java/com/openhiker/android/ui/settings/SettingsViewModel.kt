@@ -27,16 +27,19 @@ import com.openhiker.android.data.repository.GpsAccuracyMode
 import com.openhiker.android.data.repository.UnitSystem
 import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
 import com.openhiker.android.service.sync.SyncWorker
 import com.openhiker.core.model.TileServer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 /**
@@ -47,7 +50,8 @@ import javax.inject.Inject
  * persisted [UserPreferences] while the remaining fields are ephemeral.
  *
  * @property preferences Current user preferences from DataStore.
- * @property isSyncing True while a manual sync operation is running.
+ * @property isSyncing True while a sync runs, manual or in the background.
+ * @property lastSuccessfulSync Epoch milliseconds of this device's last error-free sync, or 0.
  * @property lastSyncResult Human-readable result of the last sync operation.
  * @property elevationCacheSizeBytes Size of cached elevation HGT files.
  * @property osmCacheSizeBytes Size of cached OSM XML data.
@@ -58,6 +62,7 @@ import javax.inject.Inject
 data class SettingsUiState(
     val preferences: UserPreferences = UserPreferences(),
     val isSyncing: Boolean = false,
+    val lastSuccessfulSync: Long = 0L,
     val lastSyncResult: String? = null,
     val elevationCacheSizeBytes: Long = 0L,
     val osmCacheSizeBytes: Long = 0L,
@@ -85,12 +90,14 @@ data class SettingsUiState(
  * @param application Application context for file system access and WorkManager.
  * @param preferencesRepository DataStore-backed preferences persistence.
  * @param syncEngine Cloud drive sync engine for manual sync operations.
+ * @param syncStateStore Source of the last error-free sync time.
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val application: Application,
     private val preferencesRepository: UserPreferencesRepository,
-    private val syncEngine: CloudDriveSyncEngine
+    private val syncEngine: CloudDriveSyncEngine,
+    private val syncStateStore: SyncStateStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -104,6 +111,7 @@ class SettingsViewModel @Inject constructor(
 
     init {
         observePreferences()
+        observeSyncStatus()
         calculateStorageSizes()
     }
 
@@ -225,8 +233,8 @@ class SettingsViewModel @Inject constructor(
     /**
      * Sets the cloud sync folder from a SAF tree URI.
      *
-     * Persists the URI, takes persistable permission, and enables sync
-     * with a scheduled WorkManager job.
+     * Persists the URI, takes persistable permission, enables sync
+     * with a scheduled WorkManager job, and syncs once right away.
      *
      * @param uri The SAF tree URI selected by the user.
      */
@@ -239,7 +247,12 @@ class SettingsViewModel @Inject constructor(
                     android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to take persistable URI permission", e)
+            // Without it every later sync fails, so do not save the folder.
+            Log.e(TAG, "Failed to take persistable URI permission", e)
+            _uiState.value = _uiState.value.copy(
+                error = "Cannot keep access to this folder: ${e.message}. Choose another folder."
+            )
+            return
         }
 
         viewModelScope.launch {
@@ -250,13 +263,17 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 syncFolderDisplayName = uri.lastPathSegment ?: "Cloud folder"
             )
+            // Sync now: schedule() keeps an existing periodic run, so the banner would show
+            // the old "choose the folder again" error until the next period.
+            runSync(uri)
         }
     }
 
     /**
      * Toggles automatic cloud sync on or off.
      *
-     * When disabled, cancels the periodic WorkManager job. When enabled,
+     * When disabled, cancels the periodic WorkManager job and clears the
+     * last sync's errors. When enabled,
      * schedules periodic sync (requires a folder to be configured).
      *
      * @param enabled True to enable, false to disable.
@@ -269,6 +286,15 @@ class SettingsViewModel @Inject constructor(
                 SyncWorker.schedule(application)
             } else {
                 SyncWorker.cancel(application)
+                // No sync will clear them now, so the banner would stay on every tab.
+                try {
+                    syncStateStore.dismissErrors()
+                } catch (e: IOException) {
+                    Log.e(TAG, "Cannot clear the sync errors", e)
+                    _uiState.value = _uiState.value.copy(
+                        error = "Cannot clear the sync errors: ${e.message}"
+                    )
+                }
             }
         }
     }
@@ -285,26 +311,32 @@ class SettingsViewModel @Inject constructor(
             return
         }
 
-        _uiState.value = _uiState.value.copy(isSyncing = true, error = null)
+        _uiState.value = _uiState.value.copy(error = null)
 
-        viewModelScope.launch {
-            try {
-                val result = syncEngine.sync(Uri.parse(folderUri))
-                _uiState.value = _uiState.value.copy(
-                    isSyncing = false,
-                    lastSyncResult = if (result.isSuccess) {
-                        "Synced: ${result.uploaded} up, ${result.downloaded} down"
-                    } else {
-                        "Sync errors: ${result.errors.joinToString("; ")}"
-                    }
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Manual sync failed", e)
-                _uiState.value = _uiState.value.copy(
-                    isSyncing = false,
-                    error = "Sync failed: ${e.message}"
-                )
-            }
+        viewModelScope.launch { runSync(Uri.parse(folderUri)) }
+    }
+
+    /**
+     * Syncs [folderUri] now and reports the result via [SettingsUiState.lastSyncResult], or a
+     * failure via [SettingsUiState.error].
+     *
+     * @param folderUri The SAF tree URI of the sync folder.
+     */
+    private suspend fun runSync(folderUri: Uri) {
+        try {
+            val result = syncEngine.sync(folderUri)
+            _uiState.value = _uiState.value.copy(
+                lastSyncResult = if (result.isSuccess) {
+                    "Synced: ${result.uploaded} up, ${result.downloaded} down"
+                } else {
+                    "Sync errors: ${result.errors.joinToString("; ")}"
+                }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Manual sync failed", e)
+            _uiState.value = _uiState.value.copy(error = "Sync failed: ${e.message}")
         }
     }
 
@@ -373,6 +405,25 @@ class SettingsViewModel @Inject constructor(
                     syncFolderDisplayName = prefs.syncFolderUri?.let { uriString ->
                         Uri.parse(uriString).lastPathSegment ?: "Cloud folder"
                     } ?: "Not configured"
+                )
+            }
+        }
+    }
+
+    /**
+     * Mirrors the engine's running flag and the stored last-sync time into the UI state, so a
+     * background sync shows here too.
+     */
+    private fun observeSyncStatus() {
+        viewModelScope.launch {
+            syncEngine.isSyncing.collect { syncing ->
+                _uiState.value = _uiState.value.copy(isSyncing = syncing)
+            }
+        }
+        viewModelScope.launch {
+            syncStateStore.state.collect { state ->
+                _uiState.value = _uiState.value.copy(
+                    lastSuccessfulSync = state?.lastSyncTimestamp ?: 0L
                 )
             }
         }

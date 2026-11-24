@@ -22,10 +22,15 @@ import com.openhiker.core.formats.SyncManifest
 import com.openhiker.core.formats.Tombstone
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 /** Unit tests for [SyncStateStore]. */
 class SyncStateStoreTest {
@@ -95,9 +100,96 @@ class SyncStateStoreTest {
     fun `corrupt file is moved aside and deleting still works`() = runTest {
         file.writeText("{garbage")
         val store = store()
-        assertEquals(SyncState(), store.load())
+        assertEquals(SyncState(stateWasReset = true), store.load())
+        assertEquals(SyncState(stateWasReset = true), store.state.value)
         assertEquals("{garbage", File(folder.root, "sync_state.json.corrupt").readText())
         store.recordDeletion("a")
         assertEquals(listOf(Tombstone("a", now)), store().load().pendingTombstones)
+    }
+
+    @Test
+    fun `the reset notice persists until dismissed`() = runTest {
+        file.writeText("{garbage")
+        store().load()
+        assertTrue(store().load().stateWasReset)
+        store().dismissErrors()
+        assertFalse(store().load().stateWasReset)
+    }
+
+    @Test
+    fun `recorded errors persist, survive completeSync and clear on dismiss`() = runTest {
+        val store = store()
+        store.recordOutcome(listOf("Waypoints: boom"))
+        store.completeSync(emptySet(), lastSyncTimestamp = null)
+        assertEquals(listOf("Waypoints: boom"), store().load().lastErrors)
+        store.dismissErrors()
+        assertEquals(emptyList<String>(), store().load().lastErrors)
+    }
+
+    @Test
+    fun `a clean outcome replaces the previous errors`() = runTest {
+        val store = store()
+        store.recordOutcome(listOf("boom"))
+        store.recordOutcome(emptyList())
+        assertEquals(emptyList<String>(), store.load().lastErrors)
+    }
+
+    @Test
+    fun `state flow follows reads and writes`() = runTest {
+        val store = store()
+        assertNull(store.state.value)
+        store.load()
+        assertEquals(SyncState(), store.state.value)
+        store.recordOutcome(listOf("boom"))
+        assertEquals(listOf("boom"), store.state.value?.lastErrors)
+    }
+
+    @Test
+    fun `recording an outcome and dismissing keep tombstones and the sync time`() = runTest {
+        val store = store()
+        store.recordDeletion("a")
+        store.completeSync(emptySet(), lastSyncTimestamp = 42L)
+        store.recordOutcome(listOf("boom"))
+        store.dismissErrors()
+        assertEquals(
+            SyncState(lastSyncTimestamp = 42L, pendingTombstones = listOf(Tombstone("a", now))),
+            store().load()
+        )
+    }
+
+    @Test
+    fun `a state file from before the error fields still loads`() = runTest {
+        file.writeText("""{"lastSyncTimestamp":5,"pendingTombstones":[{"uuid":"a","deletedAt":1}]}""")
+        assertEquals(
+            SyncState(lastSyncTimestamp = 5L, pendingTombstones = listOf(Tombstone("a", 1L))),
+            store().load()
+        )
+        assertFalse(File(folder.root, "sync_state.json.corrupt").exists())
+    }
+
+    @Test
+    fun `a clean sync does not clear the reset notice`() = runTest {
+        file.writeText("{garbage")
+        val store = store()
+        store.load()
+        store.recordOutcome(emptyList())
+        store.completeSync(emptySet(), lastSyncTimestamp = 1L)
+        assertTrue(store().load().stateWasReset)
+        store.dismissErrors()
+        assertFalse(store().load().stateWasReset)
+    }
+
+    @Test
+    fun `an outcome that cannot be saved still reaches the state flow`() = runTest {
+        val store = store()
+        store.recordOutcome(listOf("old"))
+        File(folder.root, "sync_state.json.tmp").mkdir() // makes the next write fail
+        assertThrows(IOException::class.java) {
+            kotlinx.coroutines.runBlocking { store.recordOutcome(listOf("new")) }
+        }
+        assertEquals(
+            listOf("new", SyncStateStore.SAVE_FAILED_MESSAGE),
+            store.state.value?.lastErrors?.map { it.substringBefore(":") }
+        )
     }
 }

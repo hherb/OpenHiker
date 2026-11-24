@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-23.
+Last updated: 2026-11-24.
 
 ---
 
@@ -30,6 +30,17 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   serialises "Sync now" and the worker. `SyncWorker` reads the folder URI from
   `UserPreferencesRepository`. Before this fix it read an unused SharedPreferences file, so background
   sync never ran. Only Android reads this folder; Apple platforms sync through iCloud.
+- **Android sync errors reach the user** (#72, Apple counterpart #78/#81/#84). `CloudDriveSyncEngine.sync`
+  records every sync's errors in `SyncStateStore` (`lastErrors`, on disk, so background failures survive
+  until the app opens) and publishes `isSyncing`. `SyncStatusBanner` (`ui/sync/`) shows them above every
+  tab, with Retry (a spinner during any sync) and Dismiss. Settings shows the last clean sync time. A
+  revoked folder permission gives "Sync folder unavailable" (`folderUnavailable`), and `SyncWorker`
+  returns `failure()` for it, `retry()` for other errors, such as a folder it cannot reach. A corrupt
+  `sync_state.json` is copied aside and sets `stateWasReset`, shown until dismissed. Settings no longer
+  saves a folder whose permission it could not keep, syncs right after a folder is chosen (so a stale
+  "choose the folder again" error clears), and clears the errors when sync is turned off. An outcome that
+  cannot be saved still reaches the banner. Deferred: #100 (permanent errors are retried with backoff;
+  per-item errors are not split into transient and permanent ones as Apple's `retryAdvice` does).
 - **Android `PlannedRouteRepository.save` and `delete` throw** on a failed write or delete and then leave the
   in-memory list unchanged, as Apple's `PlannedRouteStore` does. `save` writes a temp file and renames it, so
   a failed write keeps the old copy. Callers show the error; the route detail screen closes only after a
@@ -74,7 +85,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   notifications unavailable (…)". A missing record type (Development before the first push) is logged only.
   Matching it relies on the "Did not find record type" text, which is not checked for subscription saves.
   Deferred: #98 (force-push while subscriptions are not ready).
-  Android counterpart: `docs/TODO/Android/sync-error-reporting.md` (#72).
+  Android counterpart landed (#72, see above).
 - **Apple iCloud pulls read every record** (#85). `CloudKitStore.fetchAll(recordType:decode:)` follows the
   query cursor to the last page (`collectPages`). A record that fails to load or decode is logged and kept as
   a "record: reason" entry in `FetchResult.skipped`; the pull merges the readable records, then throws
@@ -134,10 +145,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple
-  #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync
-  of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid
-  altitudes, #63).
+- **Last PRs:** #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92
+  (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68),
+  #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude,
+  #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -147,7 +158,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **138/138 pass** (2026-11-24) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 178/178 per variant; 2026-11-16) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 193/193 per variant; 2026-11-24) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -196,7 +207,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
-- #72: Android background sync errors are only logged, never shown to the user.
 - #77: Android sync never clears the error for a broken local planned-route file that has a tombstone
   or no cloud copy, and the app cannot delete it.
 - #80: Apple cannot delete a broken planned-route file, and a one-off read failure lets an iCloud pull

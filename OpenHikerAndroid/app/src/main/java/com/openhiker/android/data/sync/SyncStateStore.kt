@@ -24,6 +24,9 @@ import com.openhiker.core.formats.SyncManifest
 import com.openhiker.core.formats.Tombstone
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -32,6 +35,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,11 +44,17 @@ import javax.inject.Singleton
  *
  * @property lastSyncTimestamp Epoch milliseconds of this device's last error-free sync, or 0.
  * @property pendingTombstones Local deletions not yet published to the cloud manifest.
+ * @property lastErrors One "part: reason" entry per failure of the most recent sync, "Sync now"
+ *   or background; empty after a clean sync or when the user dismissed them.
+ * @property stateWasReset True after a corrupt state file was replaced by a fresh one, which may
+ *   have lost pending deletions; stays set until the user dismisses the notice.
  */
 @Serializable
 data class SyncState(
     val lastSyncTimestamp: Long = 0L,
-    val pendingTombstones: List<Tombstone> = emptyList()
+    val pendingTombstones: List<Tombstone> = emptyList(),
+    val lastErrors: List<String> = emptyList(),
+    val stateWasReset: Boolean = false
 )
 
 /**
@@ -77,12 +87,19 @@ class SyncStateStore internal constructor(
 
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
+    private val _state = MutableStateFlow<SyncState?>(null)
+
+    /**
+     * The state as last read or written, for the UI to observe; null until the first [load]
+     * or update. The background worker shares this singleton when it runs in the app process.
+     */
+    val state: StateFlow<SyncState?> = _state.asStateFlow()
 
     /**
      * Reads the current state.
      *
      * @return The stored state, or a fresh [SyncState] if none is stored or the file is corrupt.
-     * @throws java.io.IOException if the file exists but cannot be read.
+     * @throws IOException if the file exists but cannot be read.
      */
     suspend fun load(): SyncState = mutex.withLock { read() }
 
@@ -115,7 +132,7 @@ class SyncStateStore internal constructor(
         mutex.withLock {
             val state = read()
             write(
-                SyncState(
+                state.copy(
                     lastSyncTimestamp = lastSyncTimestamp ?: state.lastSyncTimestamp,
                     pendingTombstones = state.pendingTombstones.filterNot {
                         it.uuid in publishedUuids
@@ -125,21 +142,48 @@ class SyncStateStore internal constructor(
         }
 
     /**
+     * Records the errors of a sync that just finished, so the UI can show them even when the
+     * sync ran in the background.
+     *
+     * @param errors The sync's errors; empty for a clean sync.
+     * @throws IOException if the state cannot be saved; [state] then still shows [errors], plus
+     *   a [SAVE_FAILED_MESSAGE] line.
+     */
+    suspend fun recordOutcome(errors: List<String>) = mutex.withLock {
+        try {
+            write(read().copy(lastErrors = errors))
+        } catch (e: IOException) {
+            // Publish in memory anyway, so the banner shows this outcome, not the last saved one.
+            _state.value = (_state.value ?: SyncState())
+                .copy(lastErrors = errors + "$SAVE_FAILED_MESSAGE: ${e.message}")
+            throw e
+        }
+    }
+
+    /** Hides the last sync's errors and the reset notice until a later sync fails again. */
+    suspend fun dismissErrors() = mutex.withLock {
+        write(read().copy(lastErrors = emptyList(), stateWasReset = false))
+    }
+
+    /**
      * Reads the state file; the caller holds [mutex].
      *
-     * A corrupt file is moved aside to `sync_state.json.corrupt` and a fresh state returned:
-     * that costs a full sync and may let deleted items return, but never blocks deleting.
+     * A corrupt file is copied aside to `sync_state.json.corrupt` and replaced by a fresh state
+     * with [SyncState.stateWasReset] set, so the user learns of it: that costs a full sync and
+     * may let deleted items return, but never blocks deleting.
      * A read error is thrown instead, so a passing I/O fault cannot wipe pending deletions.
      */
     private suspend fun read(): SyncState = withContext(Dispatchers.IO) {
-        if (!file.exists()) return@withContext SyncState()
+        if (!file.exists()) return@withContext SyncState().also { _state.value = it }
         val text = file.readText()
         try {
-            json.decodeFromString<SyncState>(text)
+            json.decodeFromString<SyncState>(text).also { _state.value = it }
         } catch (e: SerializationException) {
-            logError("Corrupt sync state, moved aside; starting fresh", e)
-            file.renameTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"))
-            SyncState()
+            logError("Corrupt sync state, copied aside; starting fresh", e)
+            // Copy, not rename: copyTo throws on failure, and if write then fails the corrupt
+            // file stays, so the next read resets again and the notice is not lost.
+            file.copyTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"), overwrite = true)
+            SyncState(stateWasReset = true).also { write(it) }
         }
     }
 
@@ -148,13 +192,17 @@ class SyncStateStore internal constructor(
         val tmp = File(file.parentFile, "${file.name}.tmp")
         tmp.writeText(json.encodeToString(state))
         if (!tmp.renameTo(file)) {
-            throw java.io.IOException("Cannot replace sync state file ${file.path}")
+            throw IOException("Cannot replace sync state file ${file.path}")
         }
+        _state.value = state
     }
 
-    private companion object {
-        const val TAG = "SyncStateStore"
-        const val FILE_NAME = "sync_state.json"
-        const val CORRUPT_SUFFIX = ".corrupt"
+    companion object {
+        /** Prefix of the error line added when the sync outcome cannot be saved. */
+        internal const val SAVE_FAILED_MESSAGE = "Cannot save the sync status"
+
+        private const val TAG = "SyncStateStore"
+        private const val FILE_NAME = "sync_state.json"
+        private const val CORRUPT_SUFFIX = ".corrupt"
     }
 }
