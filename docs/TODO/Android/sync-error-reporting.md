@@ -40,11 +40,12 @@ Done (#72), except for two rules that do not carry over as they stand:
   background syncs too.
 - A corrupt `sync_state.json` sets `stateWasReset`, which the banner shows until dismissed. It is not a
   sync error, so it does not hold back the last-sync time.
-- A revoked folder permission is reported as "Sync folder unavailable" (`SyncResult.folderUnavailable`),
-  and `SyncWorker` returns `Result.failure()` for it instead of retrying. Other errors still get
-  `Result.retry()`, including a folder that cannot be reached (removed, or its provider offline). The
-  engine does not yet sort per-item errors into transient and permanent ones as Apple's `retryAdvice`
-  does. Deferred: #100.
+- A revoked folder permission is reported as "Sync folder unavailable", a folder that cannot be found as
+  unreachable (the pure `folderErrorResult`). Like Apple's `retryAdvice`, the engine sorts errors into
+  ones that may clear by themselves (`isTransient`: an I/O failure not caused by a parse error) and the
+  rest. `SyncWorker` returns `Result.retry()` only when every error is transient
+  (`SyncResult.retryable`); otherwise, and for both folder errors, it returns `Result.failure()` and waits
+  for the next period, so a broken file does not re-upload everything on each backoff retry (#100).
 - Choosing the sync folder starts a sync at once, so a stale "choose the folder again" error clears.
   Turning sync off clears the errors, and Retry shows only while sync is on.
 - There is no grey "not set up" notice: sync on Android is opt-in, so having no folder is not a problem to

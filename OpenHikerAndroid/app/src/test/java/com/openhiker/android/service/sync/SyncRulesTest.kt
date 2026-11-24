@@ -19,10 +19,12 @@
 package com.openhiker.android.service.sync
 
 import com.openhiker.core.formats.Tombstone
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import java.time.Instant
 
 /** Unit tests for the pure sync decisions in `SyncRules.kt`. */
@@ -108,5 +110,54 @@ class SyncRulesTest {
     @Test
     fun `merge of empty lists is empty`() {
         assertEquals(emptyList<Tombstone>(), mergeTombstones(emptyList(), emptyList()))
+    }
+
+    // ── isTransient ─────────────────────────────────────────────
+
+    /** The exception kotlinx.serialization throws for a file that does not parse. */
+    private fun parseError(): Throwable =
+        runCatching { Json.parseToJsonElement("{ not json") }.exceptionOrNull()!!
+
+    @Test
+    fun `an IO failure is transient`() {
+        assertTrue(isTransient(IOException("provider offline")))
+    }
+
+    @Test
+    fun `a file that does not parse is not transient`() {
+        assertFalse(isTransient(parseError()))
+    }
+
+    @Test
+    fun `an IO failure caused by a parse error is not transient`() {
+        // readManifest wraps the parse error this way.
+        assertFalse(isTransient(IOException("Cannot read manifest.json", parseError())))
+    }
+
+    @Test
+    fun `an IO failure wrapping another IO failure is transient`() {
+        // readManifest also wraps a provider that is offline.
+        assertTrue(isTransient(IOException("Cannot read manifest.json", IOException("offline"))))
+    }
+
+    @Test
+    fun `other exceptions are not transient`() {
+        assertFalse(isTransient(IllegalStateException("database closed")))
+    }
+
+    // ── folderErrorResult ───────────────────────────────────────
+
+    @Test
+    fun `a revoked permission reports the folder unavailable and is not retried`() {
+        val result = folderErrorResult(hasPermission = false)
+        assertEquals(listOf(CloudDriveSyncEngine.FOLDER_UNAVAILABLE), result.errors)
+        assertFalse(result.retryable)
+    }
+
+    @Test
+    fun `a missing folder with the permission held is unreachable and is not retried`() {
+        val result = folderErrorResult(hasPermission = true)
+        assertEquals(listOf(CloudDriveSyncEngine.FOLDER_UNREACHABLE), result.errors)
+        assertFalse(result.retryable)
     }
 }

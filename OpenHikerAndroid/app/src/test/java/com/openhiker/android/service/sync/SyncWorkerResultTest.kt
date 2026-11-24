@@ -31,17 +31,14 @@ class SyncWorkerResultTest {
     }
 
     @Test
-    fun `an unavailable folder fails without retrying`() {
-        val result = SyncResult(
-            errors = listOf(CloudDriveSyncEngine.FOLDER_UNAVAILABLE),
-            folderUnavailable = true
-        )
+    fun `errors that need someone to act fail without retrying`() {
+        val result = SyncResult(errors = listOf("Waypoints: bad file"), retryable = false)
         assertEquals(ListenableWorker.Result.failure(), SyncWorker.workResultFor(result))
     }
 
     @Test
-    fun `other errors are retried`() {
-        val result = SyncResult(errors = listOf("Waypoints: boom"))
+    fun `transient errors are retried`() {
+        val result = SyncResult(errors = listOf("Waypoints: provider offline"))
         assertEquals(ListenableWorker.Result.retry(), SyncWorker.workResultFor(result))
     }
 }

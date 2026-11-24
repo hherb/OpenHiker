@@ -113,17 +113,18 @@ class SyncWorker @AssistedInject constructor(
         /**
          * Chooses the WorkManager result for a finished sync.
          *
-         * A revoked folder permission is a failure: retrying cannot help until the
-         * user picks the folder again, and the next period still runs. Other errors may clear
-         * by themselves (a provider offline), so they are retried with WorkManager's backoff.
+         * Errors that may clear by themselves ([SyncResult.retryable]) are retried with
+         * WorkManager's backoff. Any other error is a failure: retrying cannot help until the
+         * user or another device acts, and each retry would re-upload everything changed since
+         * the last clean sync. The next period still runs after a failure.
          *
          * @param result The sync's result.
-         * @return success, failure or retry.
+         * @return success, retry or failure.
          */
         internal fun workResultFor(result: SyncResult): ListenableWorker.Result = when {
             result.isSuccess -> Result.success()
-            result.folderUnavailable -> Result.failure()
-            else -> Result.retry()
+            result.retryable -> Result.retry()
+            else -> Result.failure()
         }
 
         /** Sync interval in minutes. */
