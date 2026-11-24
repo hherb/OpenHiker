@@ -30,4 +30,19 @@ On Android, `CloudDriveSyncEngine` already syncs each `SyncChannel` on its own a
 
 ## Status
 
-Todo.
+Done (#72), except for two rules that do not carry over as they stand:
+
+- `SyncStateStore` keeps the last sync's errors (`lastErrors`) and the last clean sync time on disk, so a
+  background failure shows the next time the app opens. `CloudDriveSyncEngine.sync` records them and
+  publishes `isSyncing`.
+- `SyncStatusBanner` (`ui/sync/`) shows them above every tab except full-screen pages, with Retry (a
+  spinner while any sync runs) and Dismiss. Settings shows the last clean sync time and the spinner for
+  background syncs too.
+- A corrupt `sync_state.json` sets `stateWasReset`, which the banner shows until dismissed. It is not a
+  sync error, so it does not hold back the last-sync time.
+- A revoked folder permission is reported as "Sync folder unavailable" (`SyncResult.folderUnavailable`),
+  and `SyncWorker` returns `Result.failure()` for it instead of retrying. Other errors still get
+  `Result.retry()`, including a folder that cannot be reached (removed, or its provider offline). The engine does not yet sort per-item errors into transient and
+  permanent ones as Apple's `retryAdvice` does.
+- There is no grey "not set up" notice: sync on Android is opt-in, so having no folder is not a problem to
+  report.

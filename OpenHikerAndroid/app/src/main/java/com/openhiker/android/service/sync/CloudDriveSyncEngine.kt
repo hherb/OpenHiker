@@ -32,6 +32,9 @@ import com.openhiker.core.model.PlannedRoute
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,12 +52,15 @@ import javax.inject.Singleton
  * @property downloaded Number of entities downloaded from the cloud drive.
  * @property deleted Number of local entities deleted because another device deleted them.
  * @property errors List of error descriptions from the sync cycle.
+ * @property folderUnavailable True when the app lost its permission for the sync folder:
+ *   retrying cannot help until the user picks the folder again in Settings.
  */
 data class SyncResult(
     val uploaded: Int = 0,
     val downloaded: Int = 0,
     val deleted: Int = 0,
-    val errors: List<String> = emptyList()
+    val errors: List<String> = emptyList(),
+    val folderUnavailable: Boolean = false
 ) {
     /** True if the sync completed without errors. */
     val isSuccess: Boolean get() = errors.isEmpty()
@@ -106,6 +112,11 @@ class CloudDriveSyncEngine @Inject constructor(
 
     /** Serialises "Sync now" and the background worker, which share this singleton. */
     private val syncMutex = Mutex()
+
+    private val _isSyncing = MutableStateFlow(false)
+
+    /** True while a sync runs, from "Sync now", the banner's Retry or the background worker. */
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     /**
      * How the engine lists, reads, stores and deletes one entity type.
@@ -191,12 +202,36 @@ class CloudDriveSyncEngine @Inject constructor(
      * A manifest that exists but cannot be read stops the sync before anything is written, so
      * other devices' tombstones are never lost.
      *
+     * The errors are recorded in [SyncStateStore] (the UI's banner reads them there), and
+     * [isSyncing] is true while the sync runs.
+     *
      * @param cloudFolderUri The SAF URI of the cloud sync directory.
      * @return A [SyncResult] describing the outcome.
      */
     suspend fun sync(cloudFolderUri: Uri): SyncResult = syncMutex.withLock {
-        withContext(Dispatchers.IO) { syncLocked(cloudFolderUri) }
+        _isSyncing.value = true
+        try {
+            val result = withContext(Dispatchers.IO) { syncLocked(cloudFolderUri) }
+            try {
+                syncStateStore.recordOutcome(result.errors)
+                result
+            } catch (e: IOException) {
+                Log.e(TAG, "Cannot record the sync outcome", e)
+                result.copy(errors = result.errors + "Cannot save the sync status: ${e.message}")
+            }
+        } finally {
+            _isSyncing.value = false
+        }
     }
+
+    /**
+     * True if the app still holds read and write permission for [uri], which it took when the
+     * user picked the folder. Revoked permission, or a cleared app, makes every access fail.
+     */
+    private fun hasFolderPermission(uri: Uri): Boolean =
+        context.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission && it.isWritePermission
+        }
 
     /** Body of [sync]; the caller holds [syncMutex] and runs on [Dispatchers.IO]. */
     private suspend fun syncLocked(cloudFolderUri: Uri): SyncResult {
@@ -205,7 +240,13 @@ class CloudDriveSyncEngine @Inject constructor(
 
         try {
             val cloudFolder = DocumentFile.fromTreeUri(context, cloudFolderUri)
-                ?: return SyncResult(errors = listOf("Cannot access cloud folder"))
+            if (!hasFolderPermission(cloudFolderUri)) {
+                return SyncResult(errors = listOf(FOLDER_UNAVAILABLE), folderUnavailable = true)
+            }
+            // With the permission held this may pass (a provider offline), so it is retried.
+            if (cloudFolder?.isDirectory != true) {
+                return SyncResult(errors = listOf(FOLDER_UNREACHABLE))
+            }
 
             val currentTime = System.currentTimeMillis()
             val manifest = readManifest(cloudFolder) ?: SyncManifest()
@@ -474,5 +515,15 @@ class CloudDriveSyncEngine @Inject constructor(
         private const val SAVED_ROUTES_DIR = "saved_routes"
         private const val WAYPOINTS_DIR = "waypoints"
         private const val JSON_SUFFIX = ".json"
+
+        /** Error shown when the app no longer holds the folder's permission. */
+        const val FOLDER_UNAVAILABLE =
+            "Sync folder unavailable: access to it was revoked. " +
+                "Choose the folder again in Settings."
+
+        /** Error shown when the folder cannot be found, though the permission is held. */
+        const val FOLDER_UNREACHABLE =
+            "Cannot reach the sync folder: it was removed, or its storage provider is offline. " +
+                "If it was removed, choose a folder again in Settings."
     }
 }

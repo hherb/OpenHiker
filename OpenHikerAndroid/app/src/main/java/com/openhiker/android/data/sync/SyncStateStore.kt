@@ -24,6 +24,9 @@ import com.openhiker.core.formats.SyncManifest
 import com.openhiker.core.formats.Tombstone
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -40,11 +43,17 @@ import javax.inject.Singleton
  *
  * @property lastSyncTimestamp Epoch milliseconds of this device's last error-free sync, or 0.
  * @property pendingTombstones Local deletions not yet published to the cloud manifest.
+ * @property lastErrors One "part: reason" entry per failure of the most recent sync, "Sync now"
+ *   or background; empty after a clean sync or when the user dismissed them.
+ * @property stateWasReset True after a corrupt state file was replaced by a fresh one, which may
+ *   have lost pending deletions; stays set until the user dismisses the notice.
  */
 @Serializable
 data class SyncState(
     val lastSyncTimestamp: Long = 0L,
-    val pendingTombstones: List<Tombstone> = emptyList()
+    val pendingTombstones: List<Tombstone> = emptyList(),
+    val lastErrors: List<String> = emptyList(),
+    val stateWasReset: Boolean = false
 )
 
 /**
@@ -77,6 +86,13 @@ class SyncStateStore internal constructor(
 
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
+    private val _state = MutableStateFlow<SyncState?>(null)
+
+    /**
+     * The state as last read or written, for the UI to observe; null until the first [load]
+     * or update. The background worker shares this singleton when it runs in the app process.
+     */
+    val state: StateFlow<SyncState?> = _state.asStateFlow()
 
     /**
      * Reads the current state.
@@ -115,7 +131,7 @@ class SyncStateStore internal constructor(
         mutex.withLock {
             val state = read()
             write(
-                SyncState(
+                state.copy(
                     lastSyncTimestamp = lastSyncTimestamp ?: state.lastSyncTimestamp,
                     pendingTombstones = state.pendingTombstones.filterNot {
                         it.uuid in publishedUuids
@@ -125,21 +141,37 @@ class SyncStateStore internal constructor(
         }
 
     /**
+     * Records the errors of a sync that just finished, so the UI can show them even when the
+     * sync ran in the background.
+     *
+     * @param errors The sync's errors; empty for a clean sync.
+     */
+    suspend fun recordOutcome(errors: List<String>) = mutex.withLock {
+        write(read().copy(lastErrors = errors))
+    }
+
+    /** Hides the last sync's errors and the reset notice until a later sync fails again. */
+    suspend fun dismissErrors() = mutex.withLock {
+        write(read().copy(lastErrors = emptyList(), stateWasReset = false))
+    }
+
+    /**
      * Reads the state file; the caller holds [mutex].
      *
-     * A corrupt file is moved aside to `sync_state.json.corrupt` and a fresh state returned:
-     * that costs a full sync and may let deleted items return, but never blocks deleting.
+     * A corrupt file is moved aside to `sync_state.json.corrupt` and replaced by a fresh state
+     * with [SyncState.stateWasReset] set, so the user learns of it: that costs a full sync and
+     * may let deleted items return, but never blocks deleting.
      * A read error is thrown instead, so a passing I/O fault cannot wipe pending deletions.
      */
     private suspend fun read(): SyncState = withContext(Dispatchers.IO) {
-        if (!file.exists()) return@withContext SyncState()
+        if (!file.exists()) return@withContext SyncState().also { _state.value = it }
         val text = file.readText()
         try {
-            json.decodeFromString<SyncState>(text)
+            json.decodeFromString<SyncState>(text).also { _state.value = it }
         } catch (e: SerializationException) {
             logError("Corrupt sync state, moved aside; starting fresh", e)
             file.renameTo(File(file.parentFile, "${file.name}$CORRUPT_SUFFIX"))
-            SyncState()
+            SyncState(stateWasReset = true).also { write(it) }
         }
     }
 
@@ -150,6 +182,7 @@ class SyncStateStore internal constructor(
         if (!tmp.renameTo(file)) {
             throw java.io.IOException("Cannot replace sync state file ${file.path}")
         }
+        _state.value = state
     }
 
     private companion object {

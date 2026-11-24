@@ -187,6 +187,7 @@ fun SettingsScreen(
             syncEnabled = prefs.syncEnabled,
             syncFolderName = uiState.syncFolderDisplayName,
             isSyncing = uiState.isSyncing,
+            lastSuccessfulSync = uiState.lastSuccessfulSync,
             hasSyncFolder = prefs.syncFolderUri != null,
             onSyncToggled = viewModel::setSyncEnabled,
             onSelectFolder = { folderPicker.launch(null) },
@@ -586,7 +587,8 @@ private fun DownloadSettingsCard(
  *
  * @param syncEnabled Whether automatic sync is enabled.
  * @param syncFolderName Display name of the sync folder.
- * @param isSyncing Whether a manual sync is in progress.
+ * @param isSyncing Whether a sync is in progress, manual or in the background.
+ * @param lastSuccessfulSync Epoch milliseconds of the last error-free sync, or 0 if none.
  * @param hasSyncFolder Whether a sync folder has been configured.
  * @param onSyncToggled Callback for sync enable/disable.
  * @param onSelectFolder Callback to launch folder picker.
@@ -597,6 +599,7 @@ private fun CloudSyncCard(
     syncEnabled: Boolean,
     syncFolderName: String,
     isSyncing: Boolean,
+    lastSuccessfulSync: Long,
     hasSyncFolder: Boolean,
     onSyncToggled: (Boolean) -> Unit,
     onSelectFolder: () -> Unit,
@@ -680,6 +683,19 @@ private fun CloudSyncCard(
                     Text("Sync Now")
                 }
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (lastSuccessfulSync > 0L) {
+                    "Last synced: " + java.text.DateFormat
+                        .getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+                        .format(java.util.Date(lastSuccessfulSync))
+                } else {
+                    "Not synced yet"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("last_sync_time")
+            )
         }
     }
 }

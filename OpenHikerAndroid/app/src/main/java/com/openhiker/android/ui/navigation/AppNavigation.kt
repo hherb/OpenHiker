@@ -18,6 +18,7 @@
 
 package com.openhiker.android.ui.navigation
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -67,6 +68,7 @@ import com.openhiker.android.ui.routing.NavigationScreen
 import com.openhiker.android.ui.routing.RouteDetailScreen
 import com.openhiker.android.ui.routing.RoutePlanningScreen
 import com.openhiker.android.ui.settings.SettingsScreen
+import com.openhiker.android.ui.sync.SyncStatusBanner
 import com.openhiker.android.ui.waypoints.AddWaypointScreen
 import com.openhiker.android.ui.waypoints.WaypointDetailScreen
 import com.openhiker.android.ui.waypoints.WaypointListScreen
@@ -223,8 +225,9 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
                     )
                 }
             ) { innerPadding ->
-                AppNavHost(
+                AppContent(
                     navController = navController,
+                    showSyncBanner = true,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -290,11 +293,31 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
                 }
             }
         ) { innerPadding ->
-            AppNavHost(
+            AppContent(
                 navController = navController,
+                showSyncBanner = !isFullScreen,
                 modifier = Modifier.padding(innerPadding)
             )
         }
+    }
+}
+
+/**
+ * The screen content below the top bar: the cloud sync banner (#72), then the [NavHost].
+ *
+ * @param navController The shared NavHostController.
+ * @param showSyncBanner False on full-screen pages such as turn-by-turn navigation.
+ * @param modifier Modifier applied to the container, usually the Scaffold's inner padding.
+ */
+@Composable
+private fun AppContent(
+    navController: NavHostController,
+    showSyncBanner: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        if (showSyncBanner) SyncStatusBanner()
+        AppNavHost(navController = navController, modifier = Modifier.weight(1f))
     }
 }
 

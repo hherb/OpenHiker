@@ -22,6 +22,9 @@ import com.openhiker.core.formats.SyncManifest
 import com.openhiker.core.formats.Tombstone
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -95,9 +98,46 @@ class SyncStateStoreTest {
     fun `corrupt file is moved aside and deleting still works`() = runTest {
         file.writeText("{garbage")
         val store = store()
-        assertEquals(SyncState(), store.load())
+        assertEquals(SyncState(stateWasReset = true), store.load())
         assertEquals("{garbage", File(folder.root, "sync_state.json.corrupt").readText())
         store.recordDeletion("a")
         assertEquals(listOf(Tombstone("a", now)), store().load().pendingTombstones)
+    }
+
+    @Test
+    fun `the reset notice persists until dismissed`() = runTest {
+        file.writeText("{garbage")
+        store().load()
+        assertTrue(store().load().stateWasReset)
+        store().dismissErrors()
+        assertFalse(store().load().stateWasReset)
+    }
+
+    @Test
+    fun `recorded errors persist, survive completeSync and clear on dismiss`() = runTest {
+        val store = store()
+        store.recordOutcome(listOf("Waypoints: boom"))
+        store.completeSync(emptySet(), lastSyncTimestamp = null)
+        assertEquals(listOf("Waypoints: boom"), store().load().lastErrors)
+        store.dismissErrors()
+        assertEquals(emptyList<String>(), store().load().lastErrors)
+    }
+
+    @Test
+    fun `a clean outcome replaces the previous errors`() = runTest {
+        val store = store()
+        store.recordOutcome(listOf("boom"))
+        store.recordOutcome(emptyList())
+        assertEquals(emptyList<String>(), store.load().lastErrors)
+    }
+
+    @Test
+    fun `state flow follows reads and writes`() = runTest {
+        val store = store()
+        assertNull(store.state.value)
+        store.load()
+        assertEquals(SyncState(), store.state.value)
+        store.recordOutcome(listOf("boom"))
+        assertEquals(listOf("boom"), store.state.value?.lastErrors)
     }
 }
