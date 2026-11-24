@@ -19,6 +19,7 @@
 package com.openhiker.android.service.sync
 
 import com.openhiker.core.formats.Tombstone
+import java.io.IOException
 import java.time.Instant
 import java.time.format.DateTimeParseException
 
@@ -92,6 +93,40 @@ internal fun reconcile(localModifiedAt: String?, cloudModifiedAt: String?): Sync
  */
 internal fun mergeTombstones(manifest: List<Tombstone>, pending: List<Tombstone>): List<Tombstone> =
     (manifest + pending).groupBy { it.uuid }.map { (_, group) -> group.minBy { it.deletedAt } }
+
+/**
+ * Decides whether a sync error may clear by itself, so the worker retries it with backoff.
+ *
+ * @param error The exception a sync step caught.
+ * @return True for an I/O failure (a provider offline or slow), unless content that does not
+ *   parse caused it: a broken file stays broken until a device rewrites it. False for any
+ *   other exception, such as a database error, which the next period retries anyway.
+ */
+internal fun isTransient(error: Throwable): Boolean =
+    error is IOException &&
+        // kotlinx.serialization's SerializationException is an IllegalArgumentException.
+        generateSequence<Throwable>(error) { it.cause }.none { it is IllegalArgumentException }
+
+/**
+ * The result of a sync that stopped because the cloud folder cannot be used.
+ *
+ * Neither case is retried with backoff. A revoked permission needs the user. A folder that
+ * cannot be found was removed or its provider is offline; the next period tries again.
+ *
+ * @param hasPermission True if the app still holds the folder's read and write permission.
+ * @return [CloudDriveSyncEngine.FOLDER_UNAVAILABLE] without the permission, otherwise
+ *   [CloudDriveSyncEngine.FOLDER_UNREACHABLE].
+ */
+internal fun folderErrorResult(hasPermission: Boolean): SyncResult = SyncResult(
+    errors = listOf(
+        if (hasPermission) {
+            CloudDriveSyncEngine.FOLDER_UNREACHABLE
+        } else {
+            CloudDriveSyncEngine.FOLDER_UNAVAILABLE
+        }
+    ),
+    retryable = false
+)
 
 /** Parses an ISO-8601 instant, or returns null if [text] is not one. */
 private fun parseInstant(text: String): Instant? = try {

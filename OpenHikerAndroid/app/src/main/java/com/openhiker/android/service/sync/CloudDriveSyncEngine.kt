@@ -52,15 +52,17 @@ import javax.inject.Singleton
  * @property downloaded Number of entities downloaded from the cloud drive.
  * @property deleted Number of local entities deleted because another device deleted them.
  * @property errors List of error descriptions from the sync cycle.
- * @property folderUnavailable True when the app lost its permission for the sync folder:
- *   retrying cannot help until the user picks the folder again in Settings.
+ * @property retryable True when every error may clear by itself soon (an I/O failure, a
+ *   provider offline), so the worker retries with backoff. False when at least one error
+ *   needs the user or another device to act (a revoked or missing folder, a file that does not
+ *   parse), so the worker waits for the next period instead of re-uploading everything.
  */
 data class SyncResult(
     val uploaded: Int = 0,
     val downloaded: Int = 0,
     val deleted: Int = 0,
     val errors: List<String> = emptyList(),
-    val folderUnavailable: Boolean = false
+    val retryable: Boolean = true
 ) {
     /** True if the sync completed without errors. */
     val isSuccess: Boolean get() = errors.isEmpty()
@@ -239,16 +241,14 @@ class CloudDriveSyncEngine @Inject constructor(
     private suspend fun syncLocked(cloudFolderUri: Uri): SyncResult {
         val errors = mutableListOf<String>()
         var total = SyncResult()
+        var retryable = true
 
         try {
+            val hasPermission = hasFolderPermission(cloudFolderUri)
+            // isDirectory is only asked with the permission held; without it the provider throws.
             val cloudFolder = DocumentFile.fromTreeUri(context, cloudFolderUri)
-            if (!hasFolderPermission(cloudFolderUri)) {
-                return SyncResult(errors = listOf(FOLDER_UNAVAILABLE), folderUnavailable = true)
-            }
-            // With the permission held this may pass (a provider offline), so it is retried.
-            if (cloudFolder?.isDirectory != true) {
-                return SyncResult(errors = listOf(FOLDER_UNREACHABLE))
-            }
+                ?.takeIf { hasPermission && it.isDirectory }
+                ?: return folderErrorResult(hasPermission)
 
             val currentTime = System.currentTimeMillis()
             val manifest = readManifest(cloudFolder) ?: SyncManifest()
@@ -262,7 +262,7 @@ class CloudDriveSyncEngine @Inject constructor(
                 val dir = ensureSubDir(cloudFolder, channel.dirName)
                 if (dir == null) {
                     errors.add("${channel.label}: cannot create folder ${channel.dirName}")
-                    continue
+                    continue // a provider failure, so retryable stays as it is
                 }
                 val result = syncChannel(channel, dir, state.lastSyncTimestamp, deletedIds)
                 total = SyncResult(
@@ -271,6 +271,7 @@ class CloudDriveSyncEngine @Inject constructor(
                     deleted = total.deleted + result.deleted
                 )
                 errors.addAll(result.errors)
+                retryable = retryable && result.retryable
             }
 
             writeManifest(
@@ -292,9 +293,10 @@ class CloudDriveSyncEngine @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed", e)
             errors.add("Sync failed: ${e.message}")
+            retryable = retryable && isTransient(e)
         }
 
-        return total.copy(errors = errors)
+        return total.copy(errors = errors, retryable = retryable)
     }
 
     /**
@@ -318,17 +320,23 @@ class CloudDriveSyncEngine @Inject constructor(
         var uploaded = 0
         var downloaded = 0
         var deleted = 0
+        var retryable = true
 
         val local: Map<String, String?>
         val cloudFiles: List<DocumentFile>
         try {
             local = channel.localStamps(errors).associate { it.id to it.modifiedAt }
+            // Skipped local files stay broken until a cloud copy replaces them (#77).
+            if (errors.isNotEmpty()) retryable = false
             cloudFiles = dir.listFiles().filter { it.name?.endsWith(JSON_SUFFIX) == true }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "${channel.label}: cannot list entities", e)
-            return SyncResult(errors = errors + "${channel.label}: ${e.message}")
+            return SyncResult(
+                errors = errors + "${channel.label}: ${e.message}",
+                retryable = retryable && isTransient(e)
+            )
         }
 
         for (id in local.keys intersect deletedIds) {
@@ -340,6 +348,7 @@ class CloudDriveSyncEngine @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "${channel.label}: cannot apply deletion of $id", e)
                 errors.add("${channel.label} delete $id: ${e.message}")
+                retryable = retryable && isTransient(e)
             }
         }
 
@@ -357,6 +366,7 @@ class CloudDriveSyncEngine @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "${channel.label}: cannot upload $id", e)
                 errors.add("${channel.label} upload $id: ${e.message}")
+                retryable = retryable && isTransient(e)
             }
         }
 
@@ -387,6 +397,7 @@ class CloudDriveSyncEngine @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "${channel.label}: cannot read cloud file ${file.name}", e)
                 errors.add("${channel.label}: cannot read cloud file ${file.name}: ${e.message}")
+                retryable = retryable && isTransient(e)
                 continue
             }
             // A provider may name a duplicate "<uuid> (1).json"; the record's own id decides.
@@ -412,6 +423,7 @@ class CloudDriveSyncEngine @Inject constructor(
                 } catch (e: Exception) {
                     Log.e(TAG, "${channel.label}: cannot store $itemId", e)
                     errors.add("${channel.label} download $itemId: ${e.message}")
+                    retryable = retryable && isTransient(e)
                 }
             }
         }
@@ -421,7 +433,7 @@ class CloudDriveSyncEngine @Inject constructor(
             upload(id, null)
         }
 
-        return SyncResult(uploaded, downloaded, deleted, errors)
+        return SyncResult(uploaded, downloaded, deleted, errors, retryable)
     }
 
     // ── SAF file helpers ────────────────────────────────────────
