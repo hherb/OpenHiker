@@ -19,6 +19,7 @@
 package com.openhiker.android.ui.sync
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SyncProblem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +37,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -48,13 +53,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * reset (#72). Shows nothing otherwise.
  *
  * "Retry" runs the sync again and turns into a spinner while any sync runs; the close button
- * hides the banner until a later sync fails again.
+ * hides the banner until a later sync fails again. When planned-route files cannot be read,
+ * "Delete unreadable route files" deletes them after a confirmation (#77).
  *
- * @param viewModel Supplies the banner content and handles Retry and Dismiss.
+ * @param viewModel Supplies the banner content and handles Retry, Dismiss and the delete.
  */
 @Composable
 fun SyncStatusBanner(viewModel: SyncStatusViewModel = hiltViewModel()) {
     val state by viewModel.bannerState.collectAsState()
+    var confirmDelete by remember { mutableStateOf(false) }
     if (state.messages.isEmpty()) return
 
     Row(
@@ -71,12 +78,18 @@ fun SyncStatusBanner(viewModel: SyncStatusViewModel = hiltViewModel()) {
             tint = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier.padding(top = 2.dp, end = 8.dp)
         )
-        Text(
-            text = state.messages.joinToString("\n"),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = state.messages.joinToString("\n"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            if (state.unreadableRouteFiles.isNotEmpty()) {
+                TextButton(onClick = { confirmDelete = true }) {
+                    Text("Delete unreadable route files")
+                }
+            }
+        }
         if (state.isSyncing) {
             CircularProgressIndicator(
                 modifier = Modifier
@@ -95,5 +108,29 @@ fun SyncStatusBanner(viewModel: SyncStatusViewModel = hiltViewModel()) {
                 tint = MaterialTheme.colorScheme.onErrorContainer
             )
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete unreadable route files?") },
+            text = {
+                Text(
+                    "These planned-route files on this device cannot be read:\n" +
+                        state.unreadableRouteFiles.joinToString("\n") +
+                        "\n\nDeleting them cannot be undone. If the sync folder holds a copy " +
+                        "of a route, the next sync brings it back."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    viewModel.deleteUnreadableRouteFiles()
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
+        )
     }
 }

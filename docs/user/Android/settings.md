@@ -83,6 +83,11 @@ sync tries again later. If the app's own sync records were damaged, the banner s
 shortly before may come back, and you can delete them again. Turning **Auto-Sync** off clears the
 banner.
 
+If a planned-route file on the phone cannot be read, the banner names it and offers **Delete unreadable
+route files**. Sync never overwrites such a file, because it may hold changes the copy in the sync folder
+lacks. After you delete it, the app syncs again and brings back the copy from the sync folder, if there is
+one.
+
 <!-- Screenshot: Settings screen -->
 > **[Screenshot placeholder]** *Android settings screen showing GPS accuracy (Balanced selected), Units (Metric), and Cloud Sync section with Google Drive folder selected*
 

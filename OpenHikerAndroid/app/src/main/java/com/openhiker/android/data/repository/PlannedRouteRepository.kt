@@ -35,6 +35,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * A planned-route file that could not be read or parsed.
+ *
+ * @property fileName The file's name in `planned_routes/`, for example `<uuid>.json`.
+ * @property reason Why it could not be read.
+ */
+data class SkippedRouteFile(val fileName: String, val reason: String) {
+    /** The route id the file would hold: its name without `.json`. */
+    val id: String get() = fileName.removeSuffix(".json")
+
+    /** "file name: reason", for logs and the sync banner. */
+    val message: String get() = "$fileName: $reason"
+}
+
+/**
  * Repository for planned routes (route computations saved for navigation).
  *
  * Planned routes are stored as individual JSON files in the
@@ -68,6 +82,11 @@ class PlannedRouteRepository internal constructor(
     /** Observable list of all planned routes. */
     val routes: StateFlow<List<PlannedRoute>> = _routes.asStateFlow()
 
+    private val _skippedFiles = MutableStateFlow<List<SkippedRouteFile>>(emptyList())
+
+    /** Route files the last [loadAll] could not read; empty until it runs. */
+    val skippedFiles: StateFlow<List<SkippedRouteFile>> = _skippedFiles.asStateFlow()
+
     /**
      * Directory for storing planned route JSON files, created if missing.
      *
@@ -84,29 +103,50 @@ class PlannedRouteRepository internal constructor(
      * Loads all planned routes from disk into [routes].
      *
      * Reads every JSON file in the `planned_routes/` directory. A file that cannot be read or
-     * parsed is skipped and listed in the result, so the caller can log it and tell the user.
+     * parsed is skipped, listed in the result and published in [skippedFiles], so the caller can
+     * log it and the sync banner can offer to delete it.
      *
-     * @return One "file name: reason" entry per skipped file; empty if every file loaded.
-     * @throws IOException If the directory cannot be created or listed. [routes] is then left
-     *   unchanged: an empty list would make cloud sync treat every route as missing locally.
+     * @return The skipped files; empty if every file loaded.
+     * @throws IOException If the directory cannot be created or listed. [routes] and
+     *   [skippedFiles] are then left unchanged: an empty list would make cloud sync treat every
+     *   route as missing locally.
      */
-    suspend fun loadAll(): List<String> = withContext(Dispatchers.IO) {
+    suspend fun loadAll(): List<SkippedRouteFile> = withContext(Dispatchers.IO) {
         val dir = storageDirectory
         val files = dir.listFiles { file -> file.extension == "json" }
             ?: throw IOException("Cannot list planned route directory ${dir.path}")
 
-        val skipped = mutableListOf<String>()
+        val skipped = mutableListOf<SkippedRouteFile>()
         _routes.value = files
             .mapNotNull { file ->
                 try {
                     json.decodeFromString<PlannedRoute>(file.readText())
                 } catch (e: Exception) {
-                    skipped.add("${file.name}: ${e.message}")
+                    skipped.add(SkippedRouteFile(file.name, e.message ?: e.javaClass.simpleName))
                     null
                 }
             }
             .sortedByDescending { it.createdAt }
+        _skippedFiles.value = skipped
         skipped
+    }
+
+    /**
+     * Deletes every route file that [loadAll] cannot read, after the user confirmed it.
+     *
+     * No deletion is recorded for sync: the user discards a broken local copy, not the route.
+     * If the sync folder holds a copy of the route, the next sync brings it back (#77).
+     *
+     * @throws IOException If the directory cannot be listed, or a file cannot be deleted. The
+     *   files left are then still in [skippedFiles].
+     */
+    suspend fun deleteSkippedFiles() = withContext(Dispatchers.IO) {
+        // Read again, so a file that became readable meanwhile is kept.
+        val failed = loadAll().filterNot { File(storageDirectory, it.fileName).delete() }
+        _skippedFiles.value = failed
+        if (failed.isNotEmpty()) {
+            throw IOException("Cannot delete ${failed.joinToString { it.fileName }}")
+        }
     }
 
     /**

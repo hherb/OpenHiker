@@ -129,8 +129,9 @@ class CloudDriveSyncEngine @Inject constructor(
      * @property serializer JSON serializer for [T].
      * @property idOf Returns the entity UUID.
      * @property modifiedAtOf Returns the entity's ISO-8601 change time, or null.
-     * @property localStamps Lists the id and change time of every local entity. Adds a message
-     *   to the given list for each local entity it had to skip because it could not be read.
+     * @property localStamps Lists the id and change time of every local entity. Puts each local
+     *   entity it had to skip because it could not be read into the given map, as id to
+     *   "file: reason".
      * @property loadLocal Loads one local entity as [T], or null if it is gone.
      * @property saveLocal Stores [T] locally, replacing any entity with the same id.
      * @property deleteLocal Deletes the local entity with the given id.
@@ -141,7 +142,7 @@ class CloudDriveSyncEngine @Inject constructor(
         val serializer: KSerializer<T>,
         val idOf: (T) -> String,
         val modifiedAtOf: (T) -> String?,
-        val localStamps: suspend (MutableList<String>) -> List<SyncStamp>,
+        val localStamps: suspend (MutableMap<String, String>) -> List<SyncStamp>,
         val loadLocal: suspend (String) -> T?,
         val saveLocal: suspend (T) -> Unit,
         val deleteLocal: suspend (String) -> Unit
@@ -154,11 +155,9 @@ class CloudDriveSyncEngine @Inject constructor(
             serializer = PlannedRoute.serializer(),
             idOf = { it.id },
             modifiedAtOf = { it.modifiedAt },
-            localStamps = { errors ->
+            localStamps = { unreadable ->
                 // The repository's list is empty until loaded, as in a fresh worker process.
-                // A skipped file is replaced if the cloud holds a copy of the route.
-                plannedRouteRepository.loadAll()
-                    .forEach { errors.add("Planned routes: skipped local file $it") }
+                plannedRouteRepository.loadAll().forEach { unreadable[it.id] = it.message }
                 plannedRouteRepository.routes.value.map { SyncStamp(it.id, it.modifiedAt) }
             },
             loadLocal = { plannedRouteRepository.getById(it) },
@@ -323,25 +322,28 @@ class CloudDriveSyncEngine @Inject constructor(
         var retryable = true
 
         val local: Map<String, String?>
+        // Local files that exist but cannot be read: never overwritten or uploaded (#77).
+        val unreadable = mutableMapOf<String, String>()
         val cloudFiles: List<DocumentFile>
         try {
-            local = channel.localStamps(errors).associate { it.id to it.modifiedAt }
-            // Skipped local files stay broken until a cloud copy replaces them (#77).
-            if (errors.isNotEmpty()) retryable = false
+            local = channel.localStamps(unreadable).associate { it.id to it.modifiedAt }
             cloudFiles = dir.listFiles().filter { it.name?.endsWith(JSON_SUFFIX) == true }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "${channel.label}: cannot list entities", e)
             return SyncResult(
-                errors = errors + "${channel.label}: ${e.message}",
-                retryable = retryable && isTransient(e)
+                errors = unreadableErrors(channel.label, unreadable) +
+                    "${channel.label}: ${e.message}",
+                retryable = unreadable.isEmpty() && isTransient(e)
             )
         }
 
-        for (id in local.keys intersect deletedIds) {
+        // A tombstone deletes an unreadable local file too; nothing else can heal it.
+        for (id in (local.keys + unreadable.keys) intersect deletedIds) {
             try {
                 channel.deleteLocal(id)
+                unreadable.remove(id)
                 deleted++
             } catch (e: CancellationException) {
                 throw e
@@ -407,11 +409,12 @@ class CloudDriveSyncEngine @Inject constructor(
                 deleteCloudFile(file)
                 continue
             }
-            val action = if (itemId in local) {
-                reconcile(local[itemId], channel.modifiedAtOf(item))
-            } else {
-                SyncAction.DOWNLOAD
-            }
+            val action = cloudEntityAction(
+                localModifiedAt = local[itemId],
+                hasLocal = itemId in local,
+                localUnreadable = itemId in unreadable,
+                cloudModifiedAt = channel.modifiedAtOf(item)
+            )
             when (action) {
                 SyncAction.UPLOAD -> upload(itemId, file)
                 SyncAction.NONE -> Unit
@@ -433,8 +436,18 @@ class CloudDriveSyncEngine @Inject constructor(
             upload(id, null)
         }
 
-        return SyncResult(uploaded, downloaded, deleted, errors, retryable)
+        // Unreadable files stay until the user deletes them from the sync banner, so a retry
+        // cannot clear them.
+        if (unreadable.isNotEmpty()) retryable = false
+        return SyncResult(
+            uploaded, downloaded, deleted, unreadableErrors(channel.label, unreadable) + errors,
+            retryable
+        )
     }
+
+    /** One error line per local file of [label]'s type that could not be read. */
+    private fun unreadableErrors(label: String, unreadable: Map<String, String>): List<String> =
+        unreadable.values.map { "$label: cannot read local file $it" }
 
     // ── SAF file helpers ────────────────────────────────────────
 

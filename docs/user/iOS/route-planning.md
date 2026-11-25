@@ -85,3 +85,8 @@ OpenHiker registers as a directions provider with Apple Maps:
 - **Swipe left** on a route to delete it
 - **Context menu** (long-press) → Rename
 - Routes sync across your devices via iCloud
+
+If a route file on the iPhone cannot be read, an orange banner above the list names it. Tap **Delete
+Unreadable Files** to remove such files. If iCloud holds a copy of the route, the sync that follows brings it
+back. Until then, sync does not overwrite the unreadable file, because it may hold changes the iCloud copy
+lacks.

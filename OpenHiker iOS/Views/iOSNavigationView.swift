@@ -432,7 +432,7 @@ struct iOSNavigationView: View {
             }
             // Route files that could not be read (#75); shown even when the list is empty.
             .safeAreaInset(edge: .top) {
-                PlannedRouteLoadErrorsBanner(errors: routeStore.loadErrors)
+                PlannedRouteLoadErrorsBanner()
             }
             .navigationTitle("Select Route")
             .toolbar {

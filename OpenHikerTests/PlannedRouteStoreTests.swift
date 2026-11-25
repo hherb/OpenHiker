@@ -78,8 +78,36 @@ final class PlannedRouteStoreTests: XCTestCase {
         let result = try store.loadAllFromDisk()
 
         XCTAssertEqual(result.routes.map(\.id), [good.id])
-        XCTAssertEqual(result.skippedFiles.count, 1)
-        XCTAssertTrue(try XCTUnwrap(result.skippedFiles.first).hasPrefix("broken.json: "))
+        XCTAssertEqual(result.skippedFiles.map(\.url.lastPathComponent), ["broken.json"])
+        XCTAssertTrue(try XCTUnwrap(result.skippedFiles.first).message.hasPrefix("broken.json: "))
+        XCTAssertNil(result.skippedFiles.first?.routeID, "not named after a route UUID")
+    }
+
+    /// Deleting the unreadable files keeps readable routes and queues no iCloud deletion,
+    /// so the iCloud copy of the route comes back at the next sync (#80).
+    func testDeleteUnreadableFilesKeepsGoodRoutesAndQueuesNothing() throws {
+        let suite = "PlannedRouteStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let queue = CloudDeletionQueue(defaults: defaults)
+        let store = PlannedRouteStore(storageDirectory: routesDir, deletionQueue: queue)
+        let good = route()
+        try store.save(good)
+        let broken = UUID()
+        try Data("not json".utf8).write(to: routesDir.appendingPathComponent("\(broken.uuidString).json"))
+        try Data("{ broken".utf8).write(to: routesDir.appendingPathComponent("broken.json"))
+        XCTAssertEqual(try store.loadAllFromDisk().skippedFiles.compactMap(\.routeID), [broken])
+
+        try store.deleteUnreadableFiles()
+        drainMainQueue()
+
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: routesDir.path),
+            ["\(good.id.uuidString).json"]
+        )
+        XCTAssertTrue(queue.pending(recordType: CloudKitStore.plannedRouteRecordType).isEmpty)
+        XCTAssertTrue(store.loadErrors.isEmpty)
+        XCTAssertTrue(store.unreadableFiles.isEmpty)
     }
 
     func testUnlistableFolderThrows() throws {
@@ -149,6 +177,7 @@ final class PlannedRouteStoreTests: XCTestCase {
 
         XCTAssertEqual(store.routes.count, 1)
         XCTAssertEqual(store.loadErrors.count, 1)
+        XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), ["broken.json"])
 
         // Once the file is gone, the next load clears the banner.
         try FileManager.default.removeItem(at: routesDir.appendingPathComponent("broken.json"))

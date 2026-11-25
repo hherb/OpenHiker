@@ -95,6 +95,11 @@ In the Routes list:
 - **Right-click** → Delete
 - **Swipe left** to delete
 
+If a route file on the Mac cannot be read, an orange banner above the list names it. Click **Delete
+Unreadable Files…** to remove such files. If iCloud holds a copy of the route, the sync that follows brings
+it back. Until then, sync does not overwrite the unreadable file, because it may hold changes the iCloud
+copy lacks.
+
 ## Importing GPX Files
 
 You can import routes from other apps:

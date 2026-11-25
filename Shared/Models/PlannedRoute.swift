@@ -323,12 +323,30 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     /// Empty when everything loaded. Route list views show these to the user.
     @Published var loadErrors: [String] = []
 
+    /// Route files the last ``loadAll()`` could not read. Route lists offer to delete them
+    /// with ``deleteUnreadableFiles()``. Left unchanged if the folder could not be read.
+    @Published var unreadableFiles: [URL] = []
+
+    /// A route file that could not be read or decoded.
+    struct SkippedFile: Equatable {
+        /// The file in the routes folder.
+        let url: URL
+        /// Why it could not be read.
+        let reason: String
+
+        /// "file name: reason", for logs and the route lists.
+        var message: String { "\(url.lastPathComponent): \(reason)" }
+
+        /// The route UUID the file is named after (`<uuid>.json`), or `nil` for another name.
+        var routeID: UUID? { UUID(uuidString: url.deletingPathExtension().lastPathComponent) }
+    }
+
     /// What ``loadAllFromDisk()`` read from disk.
     struct LoadResult {
         /// Every route that loaded, sorted by creation date, newest first.
         let routes: [PlannedRoute]
-        /// One "file name: reason" entry per route file that could not be read or decoded.
-        let skippedFiles: [String]
+        /// Every route file that could not be read or decoded.
+        let skippedFiles: [SkippedFile]
     }
 
     /// Serial queue for thread-safe file I/O.
@@ -402,13 +420,13 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
             ).filter { $0.pathExtension == "json" }
 
             var loaded: [PlannedRoute] = []
-            var skipped: [String] = []
+            var skipped: [SkippedFile] = []
             for file in files {
                 do {
                     let data = try Data(contentsOf: file)
                     loaded.append(try decoder.decode(PlannedRoute.self, from: data))
                 } catch {
-                    skipped.append("\(file.lastPathComponent): \(error.localizedDescription)")
+                    skipped.append(SkippedFile(url: file, reason: error.localizedDescription))
                 }
             }
 
@@ -426,11 +444,12 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
         do {
             let result = try loadAllFromDisk()
             for entry in result.skippedFiles {
-                print("Error loading planned route \(entry)")
+                print("Error loading planned route \(entry.message)")
             }
             DispatchQueue.main.async {
                 self.routes = result.routes
-                self.loadErrors = result.skippedFiles
+                self.loadErrors = result.skippedFiles.map(\.message)
+                self.unreadableFiles = result.skippedFiles.map(\.url)
             }
         } catch {
             print("Error reading planned routes directory: \(error.localizedDescription)")
@@ -439,6 +458,45 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
                 self.loadErrors = [message]
             }
         }
+    }
+
+    /// Errors of ``deleteUnreadableFiles()``.
+    enum DeleteUnreadableError: Error, LocalizedError, Equatable {
+        /// These files could not be deleted; one "file name: reason" entry each.
+        case notDeleted([String])
+
+        var errorDescription: String? {
+            switch self {
+            case .notDeleted(let entries):
+                return "Could not delete: \(entries.joined(separator: "; "))"
+            }
+        }
+    }
+
+    /// Deletes every route file that cannot be read, after the user confirmed it (#80).
+    ///
+    /// The files are read again first, so one that became readable meanwhile is kept. No
+    /// iCloud deletion is queued: the user discards a broken local copy, not the route, so
+    /// the next sync downloads the iCloud copy of the route if there is one. Calls
+    /// ``loadAll()`` afterwards to refresh the route lists.
+    ///
+    /// - Throws: A file system error if the folder cannot be listed, or
+    ///   ``DeleteUnreadableError/notDeleted(_:)`` naming the files that could not be deleted
+    ///   (the others are deleted).
+    func deleteUnreadableFiles() throws {
+        defer { loadAll() }
+        let skipped = try loadAllFromDisk().skippedFiles
+        let failures: [String] = queue.sync {
+            skipped.compactMap { file in
+                do {
+                    try FileManager.default.removeItem(at: file.url)
+                    return nil
+                } catch {
+                    return "\(file.url.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        }
+        if !failures.isEmpty { throw DeleteUnreadableError.notDeleted(failures) }
     }
 
     // MARK: - CRUD

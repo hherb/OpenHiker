@@ -39,6 +39,8 @@ Tap a route to begin turn-by-turn navigation. The app switches to the Map tab (o
 - **Swipe right** on a route to rename it
 - **Swipe left** on a route to delete it
 - **Tap "Stop Navigation"** (red button, shown during active navigation) to end the current route
+- **Tap "Delete Unreadable"** under "Could not read" to remove route files the watch cannot read; send the
+  route from your iPhone again to get it back
 
 ### Getting Routes onto Your Watch
 

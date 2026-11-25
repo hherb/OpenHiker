@@ -178,6 +178,9 @@ actor CloudSyncManager {
         /// Local copies of items deleted on another device could not be deleted; one
         /// "item: reason" entry each.
         case localDeletesFailed([String])
+        /// iCloud copies of these planned routes were not downloaded, because their local
+        /// files exist but cannot be read (#80); one file name each.
+        case unreadableLocalFiles([String])
 
         var errorDescription: String? {
             switch self {
@@ -185,6 +188,10 @@ actor CloudSyncManager {
                 return "Skipped until deletions from other devices can be checked"
             case .localDeletesFailed(let entries):
                 return "\(entries.count) local copies could not be deleted: \(entries.joined(separator: "; "))"
+            case .unreadableLocalFiles(let files):
+                return "\(files.count) iCloud routes not downloaded because the local files cannot be read: "
+                    + files.joined(separator: ", ")
+                    + ". Delete the unreadable files in the route list to get the iCloud copies."
             }
         }
     }
@@ -556,7 +563,7 @@ actor CloudSyncManager {
     /// Same logic as ``pushRoutes(forceAll:)`` but for planned routes. Uses
     /// ``PlannedRouteStore`` (JSON file-based) instead of ``RouteStore`` (SQLite).
     private func pushPlannedRoutes(forceAll: Bool = false) async throws {
-        let localRoutes = try loadLocalPlannedRoutes()
+        let localRoutes = try loadLocalPlannedRoutes().routes
         let tombstoned = try tombstonesForUpload(CloudKitStore.plannedRouteRecordType)
 
         for var route in localRoutes {
@@ -762,9 +769,16 @@ actor CloudSyncManager {
         }
 
         let plannedRoutes = tombstoned[CloudKitStore.plannedRouteRecordType] ?? []
-        for route in try loadLocalPlannedRoutes()
+        let localPlanned = try loadLocalPlannedRoutes()
+        for route in localPlanned.routes
         where Self.isDeletedRemotely(cloudKitRecordID: route.cloudKitRecordID, tombstoned: plannedRoutes) {
             deleteLocal(CloudKitStore.plannedRouteRecordType, route.id, PlannedRouteStore.shared.delete(id:))
+        }
+        // An unreadable file's record name is unknown; one named after a tombstoned UUID
+        // goes too, since nothing else can remove it (#80, as Android #77).
+        for id in localPlanned.skippedFiles.compactMap(\.routeID)
+        where plannedRoutes.contains(id.uuidString) {
+            deleteLocal(CloudKitStore.plannedRouteRecordType, id, PlannedRouteStore.shared.delete(id:))
         }
 
         if !failures.isEmpty { throw SyncError.localDeletesFailed(failures) }
@@ -775,21 +789,36 @@ actor CloudSyncManager {
     ///
     /// Reads from disk rather than the in-memory cache to avoid a race where
     /// syncOnLaunch() runs before loadAll()'s main-queue dispatch has populated
-    /// the routes array. Unreadable route files are logged and left out. Pulling
-    /// then treats them as missing, so if the cloud has a route with the same ID
-    /// (file `<id>.json`), its copy replaces the broken file. Other broken files
-    /// stay, and the route list shows them from its last ``PlannedRouteStore/loadAll()``.
+    /// the routes array. Unreadable route files are logged and returned too. Sync
+    /// never uploads them or writes a cloud copy over them, because the read failure
+    /// may be temporary and the file may hold an unsynced edit (#80). The route list
+    /// shows them and lets the user delete them.
     ///
-    /// - Returns: Every local planned route that could be read.
+    /// - Returns: Every local planned route that could be read, and the files that could not.
     /// - Throws: If the routes folder exists but cannot be listed. The planned-routes
     ///   step of the sync stops (the other parts still run), so cloud copies never
     ///   overwrite local routes that only look missing.
-    private func loadLocalPlannedRoutes() throws -> [PlannedRoute] {
+    private func loadLocalPlannedRoutes() throws -> PlannedRouteStore.LoadResult {
         let result = try PlannedRouteStore.shared.loadAllFromDisk()
         for entry in result.skippedFiles {
-            Self.logger.error("Planned routes: skipped local file \(entry)")
+            Self.logger.error("Planned routes: skipped local file \(entry.message)")
         }
-        return result.routes
+        return result
+    }
+
+    /// Splits the fetched planned routes into those a pull may merge and those it holds back
+    /// because the local file of the same route exists but cannot be read (#80).
+    ///
+    /// - Parameters:
+    ///   - items: The fetched records' names and decoded routes, already without deleted ones.
+    ///   - unreadable: UUIDs of the routes whose local `<uuid>.json` cannot be read.
+    /// - Returns: The routes to merge, in order, and the UUIDs held back.
+    static func plannedRoutesToMerge(
+        _ items: [(recordID: String, item: PlannedRoute)],
+        unreadable: Set<UUID>
+    ) -> (merge: [(recordID: String, item: PlannedRoute)], heldBack: [UUID]) {
+        (items.filter { !unreadable.contains($0.item.id) },
+         items.map(\.item.id).filter(unreadable.contains))
     }
 
     // MARK: - Pull Operations
@@ -890,12 +919,17 @@ actor CloudSyncManager {
             try await self.cloudStore.fetchAllPlannedRoutes()
         }
 
-        let localRoutes = try loadLocalPlannedRoutes()
+        let local = try loadLocalPlannedRoutes()
+        let localRoutes = local.routes
         let localRouteIDs = Set(localRoutes.map { $0.id })
         let deleted = recordNamesToSkip(CloudKitStore.plannedRouteRecordType)
         var didChange = false
+        let (toMerge, heldBack) = Self.plannedRoutesToMerge(
+            Self.itemsToMerge(remotePlannedRoutes.items, skipping: deleted),
+            unreadable: Set(local.skippedFiles.compactMap(\.routeID))
+        )
 
-        for (recordID, remoteRoute) in Self.itemsToMerge(remotePlannedRoutes.items, skipping: deleted) {
+        for (recordID, remoteRoute) in toMerge {
             if localRouteIDs.contains(remoteRoute.id) {
                 // Route exists locally — check if remote is newer
                 if let localRoute = localRoutes.first(where: { $0.id == remoteRoute.id }) {
@@ -930,6 +964,9 @@ actor CloudSyncManager {
         }
         // After the merge, so one unreadable record does not block the readable ones.
         try remotePlannedRoutes.throwIfSkipped()
+        if !heldBack.isEmpty {
+            throw SyncError.unreadableLocalFiles(heldBack.map { "\($0.uuidString).json" })
+        }
     }
 
     // MARK: - Retry Logic
