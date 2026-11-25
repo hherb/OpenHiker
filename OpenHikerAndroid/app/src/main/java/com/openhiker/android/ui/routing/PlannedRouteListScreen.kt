@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openhiker.android.data.repository.SkippedRouteFile
 import com.openhiker.android.ui.sync.DeleteUnreadableRouteFilesDialog
 import com.openhiker.core.model.HikeStatsFormatter
 import com.openhiker.core.model.PlannedRoute
@@ -62,14 +63,15 @@ import com.openhiker.core.model.RoutingMode
  * The Routes tab: the saved planned routes, newest first (#102).
  *
  * Tapping a route opens its detail screen (rename, delete, export, navigate). "Plan route" opens
- * the planner. Route files that cannot be read are listed above the routes with a delete action,
- * and the empty state is hidden while there are any, so a read failure never looks like "no
- * routes", as on Apple.
+ * the planner. Route files that cannot be read, and a folder that cannot be read, show in a card
+ * above the routes, with a delete action for the files. The empty state is hidden while that card
+ * shows, so a read failure never looks like "no routes", as on Apple.
  *
  * @param onOpenRoute Opens the detail screen for the route with this id.
  * @param onPlanRoute Opens the route planner.
- * @param onDeleteUnreadableFiles Deletes the confirmed unreadable files and syncs; its errors
- *   show in the sync banner. Wired to the app-wide `SyncStatusViewModel`.
+ * @param onDeleteUnreadableFiles Deletes the confirmed unreadable files, then syncs if a sync
+ *   folder is set; its errors show in the sync banner. Wired to the app-wide
+ *   `SyncStatusViewModel`.
  * @param viewModel Supplies the routes and the unreadable files.
  */
 @Composable
@@ -96,8 +98,7 @@ fun PlannedRouteListScreen(
             )
         }
     ) { innerPadding ->
-        val showEmptyState = routes.isEmpty() && unreadable.isEmpty() && loadError == null
-        if (showEmptyState) {
+        if (showsEmptyState(routes, unreadable, loadError)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -215,6 +216,20 @@ private fun PlannedRouteRow(route: PlannedRoute, onClick: () -> Unit) {
         }
     )
 }
+
+/**
+ * Whether the list shows "No planned routes": only when nothing was read and nothing failed, so a
+ * read failure never looks like an empty list.
+ *
+ * @param routes The readable routes.
+ * @param unreadable The route files that could not be read.
+ * @param loadError Why the folder could not be read, or null.
+ */
+internal fun showsEmptyState(
+    routes: List<PlannedRoute>,
+    unreadable: List<SkippedRouteFile>,
+    loadError: String?
+): Boolean = routes.isEmpty() && unreadable.isEmpty() && loadError == null
 
 /** Padding around the empty-state text. */
 private const val EMPTY_STATE_PADDING = 16

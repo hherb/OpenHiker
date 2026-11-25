@@ -173,7 +173,6 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
         Routes.SETTINGS -> "Settings"
         Routes.REGION_SELECTOR -> "Download Region"
         Routes.HIKE_DETAIL -> "Hike Detail"
-        Routes.ROUTE_PLANNING -> "Plan Route"
         Routes.ROUTE_DETAIL -> "Route Detail"
         Routes.COMMUNITY_ROUTE_DETAIL -> "Community Route"
         Routes.ROUTE_UPLOAD -> "Share Route"
@@ -188,6 +187,7 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
         Routes.REGION_SELECTOR,
         Routes.TURN_BY_TURN,
         Routes.HIKE_DETAIL,
+        Routes.ROUTE_PLANNING,
         Routes.ROUTE_DETAIL,
         Routes.COMMUNITY_ROUTE_DETAIL,
         Routes.ROUTE_UPLOAD,
@@ -465,6 +465,7 @@ private fun AppNavHost(
 
         composable(Routes.ROUTE_PLANNING) {
             RoutePlanningScreen(
+                onNavigateBack = { navController.popBackStack() },
                 onStartNavigation = { routeId ->
                     navController.navigate(Routes.turnByTurn(routeId)) {
                         launchSingleTop = true

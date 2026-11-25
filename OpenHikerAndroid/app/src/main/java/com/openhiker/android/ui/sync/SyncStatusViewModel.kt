@@ -165,7 +165,8 @@ class SyncStatusViewModel @Inject constructor(
      * Without a sync folder no sync can replace the stored errors, so once every file is
      * deleted all stored errors are cleared instead; the reset notice is kept (#104).
      *
-     * @param fileNames The files the confirmation listed, from [SyncBannerState.unreadableRouteFiles].
+     * @param fileNames The files the confirmation dialog listed, from the sync banner or the
+     *   planned-route list.
      */
     fun deleteUnreadableRouteFiles(fileNames: List<String>) {
         viewModelScope.launch {

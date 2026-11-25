@@ -73,6 +73,34 @@ data class RoutePlanningUiState(
 )
 
 /**
+ * The planner state once a save has finished: the dialog closes and the error, if any, shows.
+ *
+ * [RoutePlanningUiState.savedRouteId] becomes [savedId] only if the save worked and the route on
+ * screen is still the very one saved ([savedFrom], by identity): a route computed while the save
+ * ran is not the one saved, so "Navigate" must not open the saved copy for it.
+ *
+ * @param current The state when the save finished.
+ * @param savedFrom The computed route the save started from.
+ * @param savedId The id the route was saved under.
+ * @param error Why the save failed, or null if it worked.
+ * @return The new state.
+ */
+internal fun stateAfterSave(
+    current: RoutePlanningUiState,
+    savedFrom: ComputedRoute,
+    savedId: String,
+    error: String?
+): RoutePlanningUiState = current.copy(
+    isSaveDialogVisible = false,
+    errorMessage = error,
+    savedRouteId = if (error == null && current.computedRoute === savedFrom) {
+        savedId
+    } else {
+        current.savedRouteId
+    }
+)
+
+/**
  * ViewModel for the route planning screen.
  *
  * Users place sequential waypoints on the map, then choose "Start → End" (one-way)
@@ -336,21 +364,11 @@ class RoutePlanningViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save planned route: ${plannedRoute.id}", e)
-                "Failed to save route: ${e.message}"
+                "Failed to save route: ${e.message ?: e.javaClass.simpleName}"
             }
 
             withContext(Dispatchers.Main) {
-                val current = _uiState.value
-                _uiState.value = current.copy(
-                    isSaveDialogVisible = false,
-                    errorMessage = error,
-                    // A route computed while this one was saving is not the one saved.
-                    savedRouteId = if (error == null && current.computedRoute === route) {
-                        plannedRoute.id
-                    } else {
-                        current.savedRouteId
-                    }
-                )
+                _uiState.value = stateAfterSave(_uiState.value, route, plannedRoute.id, error)
             }
         }
     }

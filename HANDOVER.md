@@ -73,13 +73,16 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
-  `route_planning` destination). A red card lists a folder error and the unreadable files, with "Delete
+  full-screen `route_planning` destination with its own back arrow: inside the tab bar, tapping Routes
+  restored the planner). A red card lists a folder error and the unreadable files, with "Delete
   unreadable route files". The empty state is hidden while that card shows. The delete runs through the
   activity-scoped `SyncStatusViewModel` that `AppContent` hands to the banner and the NavHost, so its
   errors show in the banner. Both use `DeleteUnreadableRouteFilesDialog`. `RouteDetailViewModel.deleteRoute`
-  deletes by the navigation id, so a route that failed to load can be deleted, with a tombstone. Fixed along
-  the way: the planner's "Navigate" passed the region id, so turn-by-turn always reported "Route not
-  found". It now needs the saved route (`savedRouteId`), and "Save" is disabled once saved. `app` unit tests
+  deletes by the navigation id, so a route that failed to load can be deleted. A loaded route gets a
+  tombstone; one that failed to load loses only its local file (`deleteSkippedFiles`, as #77), so a good
+  sync copy comes back. Fixed along the way: the planner's "Navigate" passed the region id, so
+  turn-by-turn always reported "Route not found". It now needs the saved route (`savedRouteId`, set by the
+  pure `stateAfterSave`), and "Save" is disabled once saved. `app` unit tests
   set `unitTests.isReturnDefaultValues`, so ViewModel error paths that call `android.util.Log` can run on
   the JVM (#23). Not ported: Apple's swipe-to-delete and context-menu rename in the list (both are on the
   detail screen).
@@ -189,7 +192,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **145/145 pass** (2026-11-25) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 214/214 per variant; 2026-11-25) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 221/221 per variant; 2026-11-25) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current

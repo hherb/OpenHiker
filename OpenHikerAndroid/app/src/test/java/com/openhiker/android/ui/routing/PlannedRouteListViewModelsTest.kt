@@ -20,6 +20,7 @@ package com.openhiker.android.ui.routing
 
 import androidx.lifecycle.SavedStateHandle
 import com.openhiker.android.data.repository.PlannedRouteRepository
+import com.openhiker.android.data.repository.SkippedRouteFile
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.PlannedRoute
@@ -42,8 +43,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * Tests the planned-route list (#102) and deleting a route that failed to load from its detail
- * screen. A real [PlannedRouteRepository] on a temporary folder does the file work; the tests
+ * Tests the planned-route list (#102) and deleting a route from its detail screen, loaded or
+ * not. A real [PlannedRouteRepository] on a temporary folder does the file work; the tests
  * wait on the published state because the repository reads on the IO dispatcher.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -118,7 +119,48 @@ class PlannedRouteListViewModelsTest {
         viewModel.uiState.first { it.isDeleted || it.actionErrorMessage != null }
         assertTrue(viewModel.uiState.value.isDeleted)
         assertFalse(routeFile("r1").exists())
-        // A delete from the detail screen deletes the route everywhere, so it is recorded for sync.
+        // Only the broken local copy goes (#77): a good copy in the sync folder must come back.
+        assertEquals(emptyList<String>(), store.load().pendingTombstones.map { it.uuid })
+    }
+
+    @Test
+    fun `detail deletes a loaded route everywhere`() = runTest {
+        repo.save(route("r1", "2026-01-01T00:00:00Z"))
+        val viewModel = RouteDetailViewModel(repo, SavedStateHandle(mapOf("routeId" to "r1")))
+        viewModel.uiState.first { !it.isLoading }
+
+        viewModel.deleteRoute()
+
+        viewModel.uiState.first { it.isDeleted || it.actionErrorMessage != null }
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertFalse(routeFile("r1").exists())
+        // Recorded for sync, so the next sync deletes the route from the sync folder too.
         assertEquals(listOf("r1"), store.load().pendingTombstones.map { it.uuid })
+    }
+
+    @Test
+    fun `refresh clears the folder error once the folder can be read again`() = runTest {
+        val dir = File(folder.root, "planned_routes")
+        dir.writeText("")
+        val viewModel = PlannedRouteListViewModel(repo)
+        viewModel.refresh()
+        viewModel.loadError.first { it != null }
+
+        dir.delete()
+        repo.save(route("r1", "2026-01-01T00:00:00Z"))
+        viewModel.refresh()
+
+        viewModel.loadError.first { it == null }
+        assertEquals(listOf("r1"), viewModel.routes.value.map { it.id })
+    }
+
+    @Test
+    fun `empty state shows only when nothing was read and nothing failed`() {
+        val skipped = listOf(SkippedRouteFile("broken.json", "bad JSON"))
+        val routes = listOf(route("r1", "2026-01-01T00:00:00Z"))
+        assertTrue(showsEmptyState(emptyList(), emptyList(), null))
+        assertFalse(showsEmptyState(emptyList(), emptyList(), "Cannot read"))
+        assertFalse(showsEmptyState(emptyList(), skipped, null))
+        assertFalse(showsEmptyState(routes, emptyList(), null))
     }
 }

@@ -49,12 +49,18 @@ class PlannedRouteListViewModel @Inject constructor(
     /** The readable routes, newest first after a [refresh]. */
     val routes: StateFlow<List<PlannedRoute>> = repository.routes
 
-    /** Route files the last [refresh] could not read. */
+    /**
+     * Route files the repository's last folder read could not parse (any `loadAll`, sync's
+     * included), minus those deleted since.
+     */
     val unreadableFiles: StateFlow<List<SkippedRouteFile>> = repository.skippedFiles
 
     private val _loadError = MutableStateFlow<String?>(null)
 
-    /** Why the route folder could not be read, or null. The list is then not complete. */
+    /**
+     * Why the route folder could not be read, or null. The repository then keeps the lists from
+     * its last good read, so the message says they may be out of date.
+     */
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
     /** Reads every route file again; called whenever the list appears. */
@@ -67,7 +73,8 @@ class PlannedRouteListViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Cannot read the planned routes", e)
-                "Cannot read the planned routes: ${e.message}"
+                "Cannot read the planned routes: ${e.message ?: e.javaClass.simpleName}. " +
+                    "The list below may be out of date."
             }
         }
     }
