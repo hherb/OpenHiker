@@ -63,17 +63,17 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   not downloaded because the local files cannot be read" when a cloud copy is held back. Pure rules:
   `cloudEntityAction`, `localIdsToDelete` and `channelResult` (`SyncRules.kt`);
   `CloudSyncManager.plannedRoutesToMerge` and `unreadableRoutesToDelete`. On Android the planned-route
-  list offers the same delete (see below). Follow-ups (#104): the delete takes the
-  file names the confirmation showed, so a file that broke later is kept. A tombstone delete also drops
-  the file from the unreadable list. Apple `performSync()` or a push-notification pull asked for during a
-  sync makes it run once more when it ends (`RunCoalescer`, #107), and a pull reports both unreadable iCloud records and held-back
-  routes (`SyncError.several`, split by `runSteps`). Android without a sync folder clears the stored errors
-  after the delete, since no sync can replace them. The Apple dialogs keep the list they opened with, and
-  both platforms sync after a partial delete failure too, still showing why a file was not deleted.
-  Edge cases (#107): Apple's tombstone delete removes the unreadable file by its URL
+  list offers the same delete (see below). Follow-ups (#104): the delete takes the file names the confirmation
+  showed, so a file that broke later is kept. A tombstone delete also drops the file from the unreadable list.
+  Apple `performSync()` or a push-notification pull (not wired up yet) asked for during a sync makes it run
+  once more when it ends (`RunCoalescer`, #107), and a pull reports both unreadable iCloud records and
+  held-back routes (`SyncError.several`, split by `runSteps`). Android with sync off or no sync folder clears
+  the stored errors after the delete, since no sync can replace them. The Apple dialogs keep the list they
+  opened with, and both platforms sync after a partial delete failure too, still showing why a file was not
+  deleted. Edge cases (#107): Apple's tombstone delete removes the unreadable file by its URL
   (`deleteUnreadableFiles`, which returns what it deleted), so a lowercase `<uuid>.json` is found too.
-  Android's delete flow syncs only with sync on (pure `afterRouteFileDelete`), "Retry" checks it too,
-  and `runReporting` returns its failure, so a concurrent Retry or Dismiss cannot hide a delete error.
+  Android's delete flow syncs only with sync on (pure `afterRouteFileDelete`), "Retry" checks it too, and
+  `runReporting` returns its failure, so a concurrent Retry or Dismiss cannot hide a delete error.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
@@ -183,17 +183,18 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android
-  #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83
-  (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved
-  routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80),
+  #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92
+  (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68),
+  #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65),
+  #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **147/147 pass** (2026-11-26) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **148/148 pass** (2026-11-26) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
 | Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 222/222 per variant; 2026-11-26) |

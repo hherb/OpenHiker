@@ -78,5 +78,7 @@ class SyncBannerMessagesTest {
         assertEquals(AfterRouteFileDelete.CLEAR_ERRORS, afterRouteFileDelete(true, true, null))
         assertEquals(AfterRouteFileDelete.NOTHING, afterRouteFileDelete(false, false, "content://f"))
         assertEquals(AfterRouteFileDelete.NOTHING, afterRouteFileDelete(false, true, null))
+        assertEquals(AfterRouteFileDelete.CLEAR_ERRORS, afterRouteFileDelete(true, false, null))
+        assertEquals(AfterRouteFileDelete.NOTHING, afterRouteFileDelete(false, false, null))
     }
 }

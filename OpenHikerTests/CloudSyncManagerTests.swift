@@ -235,6 +235,32 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(CloudSyncManager.unreadableRoutesToDelete(skipped, tombstoned: []), [])
     }
 
+    /// A tombstoned file that cannot be deleted is reported, and the others, a lowercase
+    /// `<uuid>.json` among them, are still deleted (#107).
+    func testDeleteUnreadableRoutesReportsPartialFailure() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CloudSyncManagerTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = PlannedRouteStore(storageDirectory: dir)
+        let gone = dir.appendingPathComponent("\(UUID().uuidString.lowercased()).json")
+        let locked = dir.appendingPathComponent("\(UUID().uuidString).json")
+        try Data("not json".utf8).write(to: gone)
+        try Data("not json".utf8).write(to: locked)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: locked.path) }
+
+        let failures = CloudSyncManager.deleteUnreadableRoutes(
+            try store.loadAllFromDisk().skippedFiles, in: store
+        )
+
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertTrue(failures[0].contains(locked.lastPathComponent), failures[0])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gone.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: locked.path))
+        XCTAssertEqual(CloudSyncManager.deleteUnreadableRoutes([], in: store), [])
+    }
+
     /// Requests made during a run fold into exactly one more run; none make none (#104, #107).
     func testRunCoalescerRunsOnceMoreAfterRequestsDuringARun() {
         var runs = RunCoalescer()
@@ -244,7 +270,9 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertTrue(runs.isRunning)
 
         XCTAssertTrue(runs.endRun(), "two requests meanwhile: one more run")
-        XCTAssertFalse(runs.endRun(), "nothing asked for during the extra run")
+        XCTAssertFalse(runs.begin(), "a request during the extra run")
+        XCTAssertTrue(runs.endRun(), "so yet another run")
+        XCTAssertFalse(runs.endRun(), "nothing asked for during that run")
         XCTAssertFalse(runs.isRunning)
 
         XCTAssertTrue(runs.begin(), "idle again, so the next request runs at once")

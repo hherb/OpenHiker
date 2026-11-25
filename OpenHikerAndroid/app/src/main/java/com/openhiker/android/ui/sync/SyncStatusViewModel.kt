@@ -192,14 +192,15 @@ class SyncStatusViewModel @Inject constructor(
     }
 
     /**
-     * Deletes the unreadable planned-route files the user confirmed, then syncs again so the
-     * errors clear and any cloud copy of those routes comes back (#77). It syncs after a
-     * partial failure too, as some files may be gone, and still shows why the others were not
-     * deleted (#104).
+     * Deletes the unreadable planned-route files the user confirmed, then, with sync on and a
+     * folder set, syncs again so the errors clear and any cloud copy of those routes comes back
+     * (#77, #107). It syncs after a partial failure too, as some files may be gone, and still
+     * shows why the others were not deleted (#104).
      *
      * With sync off or no sync folder, no sync can replace the stored errors, so once every
      * file is deleted all stored errors are cleared instead; the reset notice is kept (#104,
-     * #107). See [afterRouteFileDelete].
+     * #107). After a partial failure there, the stored errors are left as they are. See
+     * [afterRouteFileDelete].
      *
      * @param fileNames The files the confirmation dialog listed, from the sync banner or the
      *   planned-route list.
@@ -222,7 +223,8 @@ class SyncStatusViewModel @Inject constructor(
                 }
                 AfterRouteFileDelete.NOTHING -> null
             }
-            // The next step cleared the delete failure; the user must still see it.
+            // A next step or a concurrent Retry/Dismiss may have cleared the delete failure; the
+            // user must still see it.
             if (deleteError != null) {
                 actionError.value = listOfNotNull(deleteError, nextError).joinToString("\n")
             }

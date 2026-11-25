@@ -325,7 +325,8 @@ actor CloudSyncManager {
         } while runs.endRun()
     }
 
-    /// One run of ``performSync()``; the caller holds `runs`.
+    /// One full sync run, for ``performSync()`` and the rerun after
+    /// ``handleRemoteNotification()``; the caller holds `runs`.
     private func syncOnce() async {
         await CloudSyncStatus.shared.beginSync()
 
@@ -378,8 +379,8 @@ actor CloudSyncManager {
     /// Called when a CloudKit push notification is received.
     ///
     /// Triggers a pull-only sync to fetch the changed records, with the same independent
-    /// steps and reporting as ``performSync()``. While a sync runs, that sync runs once
-    /// more instead, which pulls the change too (#107).
+    /// steps and reporting as ``performSync()``. While a sync or pull runs, a full sync
+    /// runs once more when it ends instead, which pulls the change too (#107).
     func handleRemoteNotification() async {
         guard isAvailable else { return }
         guard runs.begin() else {
@@ -794,19 +795,10 @@ actor CloudSyncManager {
         where Self.isDeletedRemotely(cloudKitRecordID: route.cloudKitRecordID, tombstoned: plannedRoutes) {
             deleteLocal(CloudKitStore.plannedRouteRecordType, route.id, PlannedRouteStore.shared.delete(id:))
         }
-        // By URL, not `delete(id:)`, which would miss a lowercase `<uuid>.json` (#107). It
-        // calls `loadAll()`, so `unreadableFiles` stops naming the deleted files (#104).
-        let unreadableDeleted = Self.unreadableRoutesToDelete(localPlanned.skippedFiles, tombstoned: plannedRoutes)
-        if !unreadableDeleted.isEmpty {
-            do {
-                for url in try PlannedRouteStore.shared.deleteUnreadableFiles(unreadableDeleted.map(\.url)) {
-                    Self.logger.info("Deleted unreadable local \(CloudKitStore.plannedRouteRecordType) file \(url.lastPathComponent): deleted on another device")
-                }
-            } catch {
-                Self.logger.error("Cannot delete unreadable local \(CloudKitStore.plannedRouteRecordType) files: \(error.localizedDescription)")
-                failures.append("\(CloudKitStore.plannedRouteRecordType) files: \(error.localizedDescription)")
-            }
-        }
+        failures += Self.deleteUnreadableRoutes(
+            Self.unreadableRoutesToDelete(localPlanned.skippedFiles, tombstoned: plannedRoutes),
+            in: PlannedRouteStore.shared
+        )
 
         // Both problems are reported, so neither hides the other.
         var problems: [Error] = []
@@ -829,6 +821,42 @@ actor CloudSyncManager {
         tombstoned: Set<String>
     ) -> [PlannedRouteStore.SkippedFile] {
         skipped.filter { $0.routeID.map { tombstoned.contains($0.uuidString) } ?? false }
+    }
+
+    /// Deletes unreadable planned-route files of routes deleted on another device, and logs
+    /// each file it deleted, after a partial failure too (#80, #107).
+    ///
+    /// Files go by their URL, not ``PlannedRouteStore/delete(id:)``, which would miss a
+    /// lowercase `<uuid>.json` on a case-sensitive volume (#107). The store calls
+    /// `loadAll()`, so `unreadableFiles` stops naming the deleted files (#104).
+    ///
+    /// - Parameters:
+    ///   - files: The files to delete, from ``unreadableRoutesToDelete(_:tombstoned:)``.
+    ///   - store: The store holding them.
+    /// - Returns: One failure line for the sync errors, or none if all were deleted.
+    static func deleteUnreadableRoutes(
+        _ files: [PlannedRouteStore.SkippedFile],
+        in store: PlannedRouteStore
+    ) -> [String] {
+        guard !files.isEmpty else { return [] }
+        let type = CloudKitStore.plannedRouteRecordType
+        let deleted: [URL]
+        var failures: [String] = []
+        do {
+            deleted = try store.deleteUnreadableFiles(files.map(\.url))
+        } catch {
+            if case let .notDeleted(_, partial)? = error as? PlannedRouteStore.DeleteUnreadableError {
+                deleted = partial
+            } else {
+                deleted = []
+            }
+            logger.error("Cannot delete unreadable local \(type) files: \(error.localizedDescription)")
+            failures.append("\(type) files: \(error.localizedDescription)")
+        }
+        for url in deleted {
+            logger.info("Deleted unreadable local \(type) file \(url.lastPathComponent): deleted on another device")
+        }
+        return failures
     }
 
     /// Reads the local planned routes for a push or pull.

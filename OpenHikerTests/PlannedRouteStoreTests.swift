@@ -112,7 +112,8 @@ final class PlannedRouteStoreTests: XCTestCase {
     }
 
     /// A lowercase `<uuid>.json` is deleted by its URL and returned, as iCloud sync does for
-    /// a route deleted on another device; `delete(id:)` looks for the uppercase name (#107).
+    /// a route deleted on another device (#107). This checks the returned list; the host
+    /// volume is case-insensitive, so it cannot tell `delete(id:)` apart.
     func testDeleteUnreadableFilesFindsLowercaseNameAndReturnsDeleted() throws {
         let store = PlannedRouteStore(storageDirectory: routesDir)
         try FileManager.default.createDirectory(at: routesDir, withIntermediateDirectories: true)
@@ -176,11 +177,12 @@ final class PlannedRouteStoreTests: XCTestCase {
         }
 
         XCTAssertThrowsError(try store.deleteUnreadableFiles([routesDir.appendingPathComponent("broken.json")])) { error in
-            guard case .notDeleted(let entries)? = error as? PlannedRouteStore.DeleteUnreadableError else {
+            guard case .notDeleted(let entries, let deleted)? = error as? PlannedRouteStore.DeleteUnreadableError else {
                 return XCTFail("unexpected error \(error)")
             }
             XCTAssertEqual(entries.count, 1)
             XCTAssertTrue(entries[0].hasPrefix("broken.json: "))
+            XCTAssertEqual(deleted, [])
         }
         drainMainQueue()
         XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), ["broken.json"])
