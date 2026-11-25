@@ -111,26 +111,43 @@ fun SyncStatusBanner(viewModel: SyncStatusViewModel = hiltViewModel()) {
     }
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete unreadable route files?") },
-            text = {
-                Text(
-                    "These planned-route files on this device cannot be read:\n" +
-                        state.unreadableRouteFiles.joinToString("\n") +
-                        "\n\nDeleting them cannot be undone. If the sync folder holds a copy " +
-                        "of a route, the next sync brings it back."
-                )
+        DeleteUnreadableRouteFilesDialog(
+            fileNames = state.unreadableRouteFiles,
+            onConfirm = {
+                confirmDelete = false
+                viewModel.deleteUnreadableRouteFiles(state.unreadableRouteFiles)
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    viewModel.deleteUnreadableRouteFiles(state.unreadableRouteFiles)
-                }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
-            }
+            onDismiss = { confirmDelete = false }
         )
     }
+}
+
+/**
+ * Asks before deleting planned-route files that cannot be read (#77). Shared by the sync banner
+ * and the planned-route list (#102).
+ *
+ * @param fileNames The files to name in the dialog; the caller deletes exactly these (#104).
+ * @param onConfirm Called when the user taps "Delete".
+ * @param onDismiss Called when the user cancels or dismisses the dialog.
+ */
+@Composable
+fun DeleteUnreadableRouteFilesDialog(
+    fileNames: List<String>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete unreadable route files?") },
+        text = {
+            Text(
+                "These planned-route files on this device cannot be read:\n" +
+                    fileNames.joinToString("\n") +
+                    "\n\nDeleting them cannot be undone. If the sync folder holds a copy " +
+                    "of a route, the next sync brings it back."
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

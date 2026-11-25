@@ -108,8 +108,10 @@ class RouteDetailViewModel @Inject constructor(
     /** In-memory reference to the full planned route, used for updates. */
     private var currentRoute: PlannedRoute? = null
 
+    /** The "routeId" navigation argument; kept so a route that failed to load can be deleted. */
+    private val routeId: String? = savedStateHandle.get<String>("routeId")
+
     init {
-        val routeId = savedStateHandle.get<String>("routeId")
         if (routeId != null) {
             loadRoute(routeId)
         } else {
@@ -208,19 +210,29 @@ class RouteDetailViewModel @Inject constructor(
     }
 
     /**
-     * Deletes the currently loaded route from the repository.
+     * Deletes the route, by its navigation id, so a route whose file could not be read can be
+     * deleted too (#102).
+     *
+     * A loaded route is deleted everywhere: the deletion is recorded for sync. A route that
+     * failed to load is a broken local copy, so only its file goes, as with the list's "Delete
+     * unreadable route files" (#77): a good copy in the sync folder comes back at the next sync.
      *
      * After successful deletion, the route data is cleared and [RouteDetailUiState.isDeleted] is
      * set so the screen closes. On failure the screen stays open and shows the error.
-     * If the route has not been loaded yet, this operation is a no-op.
+     * Without a route id this operation is a no-op.
      */
     fun deleteRoute() {
-        val route = currentRoute ?: return
+        val id = routeId ?: return
+        val loaded = currentRoute != null
 
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    plannedRouteRepository.delete(route.id)
+                    if (loaded) {
+                        plannedRouteRepository.delete(id)
+                    } else {
+                        plannedRouteRepository.deleteSkippedFiles(listOf(unreadableFileName(id)))
+                    }
                 }
                 currentRoute = null
                 _instructions.value = emptyList()
@@ -229,9 +241,10 @@ class RouteDetailViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to delete route: ${route.id}", e)
+                Log.e(TAG, "Failed to delete route: $id", e)
                 _uiState.value = _uiState.value.copy(
-                    actionErrorMessage = "Failed to delete route: ${e.message}"
+                    actionErrorMessage =
+                        "Failed to delete route: ${e.message ?: e.javaClass.simpleName}"
                 )
             }
         }
@@ -244,5 +257,12 @@ class RouteDetailViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "RouteDetailViewModel"
+
+        /**
+         * The file a route that failed to load is stored in, as the delete dialog names it.
+         *
+         * @param routeId The route's id.
+         */
+        fun unreadableFileName(routeId: String): String = "$routeId.json"
     }
 }

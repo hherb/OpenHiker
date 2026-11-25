@@ -56,6 +56,8 @@ import javax.inject.Inject
  * @property isComputing True while route computation is in progress.
  * @property errorMessage Error message from last failed computation, or null.
  * @property isSaveDialogVisible Whether the save route dialog is shown.
+ * @property savedRouteId Id of the saved copy of [computedRoute], or null until it is saved.
+ *   Navigation needs it: turn-by-turn loads the route by this id.
  */
 data class RoutePlanningUiState(
     val selectedRegionId: String? = null,
@@ -66,7 +68,36 @@ data class RoutePlanningUiState(
     val instructions: List<TurnInstruction> = emptyList(),
     val isComputing: Boolean = false,
     val errorMessage: String? = null,
-    val isSaveDialogVisible: Boolean = false
+    val isSaveDialogVisible: Boolean = false,
+    val savedRouteId: String? = null
+)
+
+/**
+ * The planner state once a save has finished: the dialog closes and the error, if any, shows.
+ *
+ * [RoutePlanningUiState.savedRouteId] becomes [savedId] only if the save worked and the route on
+ * screen is still the very one saved ([savedFrom], by identity): a route computed while the save
+ * ran is not the one saved, so "Navigate" must not open the saved copy for it.
+ *
+ * @param current The state when the save finished.
+ * @param savedFrom The computed route the save started from.
+ * @param savedId The id the route was saved under.
+ * @param error Why the save failed, or null if it worked.
+ * @return The new state.
+ */
+internal fun stateAfterSave(
+    current: RoutePlanningUiState,
+    savedFrom: ComputedRoute,
+    savedId: String,
+    error: String?
+): RoutePlanningUiState = current.copy(
+    isSaveDialogVisible = false,
+    errorMessage = error,
+    savedRouteId = if (error == null && current.computedRoute === savedFrom) {
+        savedId
+    } else {
+        current.savedRouteId
+    }
 )
 
 /**
@@ -241,7 +272,8 @@ class RoutePlanningViewModel @Inject constructor(
             isLoopRoute = loop,
             errorMessage = null,
             computedRoute = null,
-            instructions = emptyList()
+            instructions = emptyList(),
+            savedRouteId = null
         )
 
         computeJob = viewModelScope.launch(Dispatchers.IO) {
@@ -332,14 +364,11 @@ class RoutePlanningViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save planned route: ${plannedRoute.id}", e)
-                "Failed to save route: ${e.message}"
+                "Failed to save route: ${e.message ?: e.javaClass.simpleName}"
             }
 
             withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(
-                    isSaveDialogVisible = false,
-                    errorMessage = error
-                )
+                _uiState.value = stateAfterSave(_uiState.value, route, plannedRoute.id, error)
             }
         }
     }

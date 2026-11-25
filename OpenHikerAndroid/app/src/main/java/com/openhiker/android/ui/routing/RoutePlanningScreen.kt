@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material3.AlertDialog
@@ -52,8 +53,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,163 +81,187 @@ import com.openhiker.core.model.TurnInstruction
  * - "Start → End": routes through waypoints in order (1→2→3→4→5)
  * - "Back to Start": routes through all waypoints and returns to the first (1→2→3→4→5→1)
  *
+ * A full-screen page opened from the Routes tab's list (#102), with its own back arrow: inside
+ * the tab bar, tapping Routes would restore this page instead of returning to the list.
+ *
+ * @param onNavigateBack Returns to the planned-route list.
  * @param onStartNavigation Callback to navigate to the navigation screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoutePlanningScreen(
+    onNavigateBack: () -> Unit,
     onStartNavigation: ((String) -> Unit)? = null,
     viewModel: RoutePlanningViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val regions by viewModel.regions.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // Region selector
-        RegionSelector(
-            regions = regions,
-            selectedRegionId = uiState.selectedRegionId,
-            onSelectRegion = viewModel::selectRegion
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Mode selector (hiking/cycling)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = uiState.routingMode == RoutingMode.HIKING,
-                onClick = { viewModel.setRoutingMode(RoutingMode.HIKING) },
-                label = { Text(stringResource(R.string.route_hiking)) },
-                leadingIcon = {
-                    Icon(Icons.Default.DirectionsWalk, contentDescription = null)
-                }
-            )
-            FilterChip(
-                selected = uiState.routingMode == RoutingMode.CYCLING,
-                onClick = { viewModel.setRoutingMode(RoutingMode.CYCLING) },
-                label = { Text(stringResource(R.string.route_cycling)) },
-                leadingIcon = {
-                    Icon(Icons.Default.DirectionsBike, contentDescription = null)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Plan Route") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Navigate back"
+                        )
+                    }
                 }
             )
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Waypoint info
-        WaypointInfo(uiState = uiState)
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Route computation buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp)
         ) {
-            // Start → End button
-            OutlinedButton(
-                onClick = { viewModel.computeRoute(loop = false) },
-                enabled = uiState.waypoints.size >= 2 &&
-                    !uiState.isComputing &&
-                    uiState.selectedRegionId != null,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    modifier = Modifier.height(18.dp)
+            // Region selector
+            RegionSelector(
+                regions = regions,
+                selectedRegionId = uiState.selectedRegionId,
+                onSelectRegion = viewModel::selectRegion
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Mode selector (hiking/cycling)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = uiState.routingMode == RoutingMode.HIKING,
+                    onClick = { viewModel.setRoutingMode(RoutingMode.HIKING) },
+                    label = { Text(stringResource(R.string.route_hiking)) },
+                    leadingIcon = {
+                        Icon(Icons.Default.DirectionsWalk, contentDescription = null)
+                    }
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.route_start_to_end))
-            }
-
-            // Back to Start button
-            OutlinedButton(
-                onClick = { viewModel.computeRoute(loop = true) },
-                enabled = uiState.waypoints.size >= 2 &&
-                    !uiState.isComputing &&
-                    uiState.selectedRegionId != null,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    Icons.Default.Loop,
-                    contentDescription = null,
-                    modifier = Modifier.height(18.dp)
+                FilterChip(
+                    selected = uiState.routingMode == RoutingMode.CYCLING,
+                    onClick = { viewModel.setRoutingMode(RoutingMode.CYCLING) },
+                    label = { Text(stringResource(R.string.route_cycling)) },
+                    leadingIcon = {
+                        Icon(Icons.Default.DirectionsBike, contentDescription = null)
+                    }
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.route_back_to_start))
             }
 
-            // Clear button
-            IconButton(onClick = viewModel::clearRoute) {
-                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
-            }
-        }
+            Spacer(modifier = Modifier.height(12.dp))
 
-        // Computing indicator
-        if (uiState.isComputing) {
-            Spacer(modifier = Modifier.height(8.dp))
+            // Waypoint info
+            WaypointInfo(uiState = uiState)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Route computation buttons
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.height(20.dp).width(20.dp),
-                    strokeWidth = 2.dp
-                )
-                Text(stringResource(R.string.route_computing), style = MaterialTheme.typography.bodySmall)
+                // Start → End button
+                OutlinedButton(
+                    onClick = { viewModel.computeRoute(loop = false) },
+                    enabled = uiState.waypoints.size >= 2 &&
+                        !uiState.isComputing &&
+                        uiState.selectedRegionId != null,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.height(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.route_start_to_end))
+                }
+
+                // Back to Start button
+                OutlinedButton(
+                    onClick = { viewModel.computeRoute(loop = true) },
+                    enabled = uiState.waypoints.size >= 2 &&
+                        !uiState.isComputing &&
+                        uiState.selectedRegionId != null,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        Icons.Default.Loop,
+                        contentDescription = null,
+                        modifier = Modifier.height(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.route_back_to_start))
+                }
+
+                // Clear button
+                IconButton(onClick = viewModel::clearRoute) {
+                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
+                }
             }
-        }
 
-        // Error message
-        uiState.errorMessage?.let { error ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        // Route result
-        uiState.computedRoute?.let { route ->
-            Spacer(modifier = Modifier.height(16.dp))
-            RouteResultCard(
-                distance = route.totalDistance,
-                elevationGain = route.elevationGain,
-                elevationLoss = route.elevationLoss,
-                estimatedDuration = route.estimatedDuration,
-                instructions = uiState.instructions,
-                onSave = viewModel::showSaveDialog,
-                onStartNavigation = {
-                    onStartNavigation?.invoke(uiState.selectedRegionId ?: "")
+            // Computing indicator
+            if (uiState.isComputing) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.height(20.dp).width(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text(stringResource(R.string.route_computing), style = MaterialTheme.typography.bodySmall)
                 }
-            )
-        }
+            }
 
-        // Instruction text when no route computed
-        if (uiState.selectedRegionId != null && uiState.computedRoute == null && !uiState.isComputing) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                val hint = when {
-                    uiState.waypoints.isEmpty() -> stringResource(R.string.route_hint_tap_map)
-                    uiState.waypoints.size == 1 -> stringResource(R.string.route_hint_add_more)
-                    else -> stringResource(R.string.route_hint_compute)
-                }
+            // Error message
+            uiState.errorMessage?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = hint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
+            }
+
+            // Route result
+            uiState.computedRoute?.let { route ->
+                Spacer(modifier = Modifier.height(16.dp))
+                RouteResultCard(
+                    distance = route.totalDistance,
+                    elevationGain = route.elevationGain,
+                    elevationLoss = route.elevationLoss,
+                    estimatedDuration = route.estimatedDuration,
+                    instructions = uiState.instructions,
+                    isSaved = uiState.savedRouteId != null,
+                    onSave = viewModel::showSaveDialog,
+                    onStartNavigation = {
+                        // Turn-by-turn loads the saved route by id.
+                        uiState.savedRouteId?.let { onStartNavigation?.invoke(it) }
+                    }
+                )
+            }
+
+            // Instruction text when no route computed
+            if (uiState.selectedRegionId != null && uiState.computedRoute == null && !uiState.isComputing) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val hint = when {
+                        uiState.waypoints.isEmpty() -> stringResource(R.string.route_hint_tap_map)
+                        uiState.waypoints.size == 1 -> stringResource(R.string.route_hint_add_more)
+                        else -> stringResource(R.string.route_hint_compute)
+                    }
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -339,6 +366,9 @@ private fun WaypointInfo(uiState: RoutePlanningUiState) {
 
 /**
  * Card displaying computed route statistics and turn-by-turn instructions.
+ *
+ * Navigation needs the saved route, so "Navigate" is enabled only once [isSaved], and "Save"
+ * only before, so one route is not saved twice.
  */
 @Composable
 private fun RouteResultCard(
@@ -347,6 +377,7 @@ private fun RouteResultCard(
     elevationLoss: Double,
     estimatedDuration: Double,
     instructions: List<TurnInstruction>,
+    isSaved: Boolean,
     onSave: () -> Unit,
     onStartNavigation: () -> Unit
 ) {
@@ -376,16 +407,28 @@ private fun RouteResultCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                Button(onClick = onSave, enabled = !isSaved, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.save))
                 }
-                Button(onClick = onStartNavigation, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = onStartNavigation,
+                    enabled = isSaved,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(Icons.Default.Navigation, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.navigate))
                 }
+            }
+
+            if (!isSaved) {
+                Text(
+                    stringResource(R.string.route_save_to_navigate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // Turn instructions

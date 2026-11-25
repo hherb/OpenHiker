@@ -1,6 +1,7 @@
 # Route Planning
 
-The **Routes** tab lets you plan hiking and cycling routes with automatic pathfinding and turn-by-turn directions.
+The **Routes** tab lists your saved routes, newest first, and lets you plan new hiking and cycling routes
+with automatic pathfinding and turn-by-turn directions.
 
 ## Prerequisites
 
@@ -9,7 +10,7 @@ Route planning requires a downloaded region with routing data. When downloading 
 ## Creating a New Route
 
 1. Go to the **Routes** tab
-2. Tap the **+** button or **Plan Route**
+2. Tap **Plan route**
 3. Select a **region** from the dropdown (only regions with routing data appear)
 4. Choose your **routing mode**:
    - **Hiking** — Prefers trails, paths, and footways
@@ -59,7 +60,21 @@ A scrollable list of every turn with:
 
 1. Tap **Save**
 2. Enter a **route name**
-3. The route is stored locally and available for navigation
+3. The route is stored locally and appears in the **Routes** tab
+
+**Navigate** starts turn-by-turn navigation and is available once the route is saved.
+
+## Saved Routes
+
+The **Routes** tab lists every saved route with its distance, estimated time and ascent. Routes downloaded
+from the Community tab or brought in by cloud sync appear here too.
+
+If a route file on this device cannot be read, a red card above the list names it. Tap **Delete unreadable
+route files** to remove it. If your sync folder holds a copy of the route, the next sync brings it back. The
+same card says so if the routes folder itself cannot be read; the list below it may then be out of date.
+
+Deleting a route that cannot be read from its detail screen works the same way: only the file on this device
+goes, and a copy in your sync folder comes back. Deleting a route that loads deletes it everywhere.
 
 ## Route Detail View
 

@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openhiker.android.ui.components.ElevationProfileChart
 import com.openhiker.android.ui.export.ExportSheet
+import com.openhiker.android.ui.sync.DeleteUnreadableRouteFilesDialog
 import com.openhiker.core.model.ElevationPoint
 import com.openhiker.core.model.HikeStatsFormatter
 import com.openhiker.core.model.TurnInstruction
@@ -319,14 +320,24 @@ fun RouteDetailScreen(
 
     // Delete confirmation dialog
     if (showDeleteDialog) {
-        DeleteRouteDialog(
-            routeName = uiState.routeName,
-            onDismiss = { showDeleteDialog = false },
-            onConfirm = {
-                viewModel.deleteRoute()
-                showDeleteDialog = false
-            }
-        )
+        val onConfirm = {
+            viewModel.deleteRoute()
+            showDeleteDialog = false
+        }
+        if (uiState.errorMessage != null) {
+            // Not loaded: only the local file goes, and this dialog says a sync copy comes back.
+            DeleteUnreadableRouteFilesDialog(
+                fileNames = listOf(RouteDetailViewModel.unreadableFileName(uiState.routeId)),
+                onConfirm = onConfirm,
+                onDismiss = { showDeleteDialog = false }
+            )
+        } else {
+            DeleteRouteDialog(
+                routeName = uiState.routeName,
+                onDismiss = { showDeleteDialog = false },
+                onConfirm = onConfirm
+            )
+        }
     }
 
     // Rename or delete failure

@@ -68,6 +68,12 @@ android {
         compose = true
     }
 
+    // JVM unit tests run against stub android.jar; let android.util.Log etc. return defaults
+    // instead of throwing, so ViewModel error paths (which log) can be tested.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     room {
         schemaDirectory("$projectDir/schemas")
     }
