@@ -96,9 +96,10 @@ final class PlannedRouteStoreTests: XCTestCase {
         let broken = UUID()
         try Data("not json".utf8).write(to: routesDir.appendingPathComponent("\(broken.uuidString).json"))
         try Data("{ broken".utf8).write(to: routesDir.appendingPathComponent("broken.json"))
-        XCTAssertEqual(try store.loadAllFromDisk().skippedFiles.compactMap(\.routeID), [broken])
+        let skipped = try store.loadAllFromDisk().skippedFiles
+        XCTAssertEqual(skipped.compactMap(\.routeID), [broken])
 
-        try store.deleteUnreadableFiles()
+        try store.deleteUnreadableFiles(skipped.map(\.url))
         drainMainQueue()
 
         XCTAssertEqual(
@@ -122,12 +123,29 @@ final class PlannedRouteStoreTests: XCTestCase {
         XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), [file.lastPathComponent])
 
         try store.save(healed)
-        try store.deleteUnreadableFiles()
+        try store.deleteUnreadableFiles(store.unreadableFiles)
         drainMainQueue()
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
         XCTAssertEqual(store.routes.map(\.id), [healed.id])
         XCTAssertTrue(store.unreadableFiles.isEmpty)
+    }
+
+    /// A file that became unreadable after the user confirmed the list is not deleted (#104).
+    func testDeleteUnreadableFilesKeepsFileTheUserDidNotConfirm() throws {
+        let store = PlannedRouteStore(storageDirectory: routesDir)
+        try FileManager.default.createDirectory(at: routesDir, withIntermediateDirectories: true)
+        let confirmed = routesDir.appendingPathComponent("broken.json")
+        try Data("{ broken".utf8).write(to: confirmed)
+        let later = routesDir.appendingPathComponent("later.json")
+        try Data("{ broken".utf8).write(to: later)
+
+        try store.deleteUnreadableFiles([confirmed])
+        drainMainQueue()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: confirmed.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: later.path))
+        XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), ["later.json"])
     }
 
     /// A file that cannot be deleted is named in the error and stays listed.
@@ -140,7 +158,7 @@ final class PlannedRouteStoreTests: XCTestCase {
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: routesDir.path)
         }
 
-        XCTAssertThrowsError(try store.deleteUnreadableFiles()) { error in
+        XCTAssertThrowsError(try store.deleteUnreadableFiles([routesDir.appendingPathComponent("broken.json")])) { error in
             guard case .notDeleted(let entries)? = error as? PlannedRouteStore.DeleteUnreadableError else {
                 return XCTFail("unexpected error \(error)")
             }

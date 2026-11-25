@@ -133,18 +133,22 @@ class PlannedRouteRepository internal constructor(
     }
 
     /**
-     * Deletes every route file that [loadAll] cannot read, after the user confirmed it.
+     * Deletes the route files [loadAll] cannot read that the user confirmed.
      *
-     * No deletion is recorded for sync: the user discards a broken local copy, not the route.
-     * If the sync folder holds a copy of the route, the next sync brings it back (#77).
+     * The files are read again first, so one that became readable meanwhile is kept, and only
+     * names in [confirmed] are deleted, so one that became unreadable after the user saw the
+     * list is kept too (#104). No deletion is recorded for sync: the user discards a broken
+     * local copy, not the route. If the sync folder holds a copy of the route, the next sync
+     * brings it back (#77).
      *
+     * @param confirmed The file names the user agreed to delete, as [skippedFiles] showed them.
      * @throws IOException If the directory cannot be listed, or a file cannot be deleted. The
      *   files left are then still in [skippedFiles].
      */
-    suspend fun deleteSkippedFiles() = withContext(Dispatchers.IO) {
-        // Read again, so a file that became readable meanwhile is kept.
+    suspend fun deleteSkippedFiles(confirmed: Collection<String>) = withContext(Dispatchers.IO) {
         val reasons = mutableListOf<String>()
-        val failed = loadAll().filter { skipped ->
+        val left = loadAll().filter { skipped ->
+            if (skipped.fileName !in confirmed) return@filter true
             try {
                 // A file already gone (sync applied a deletion meanwhile) counts as deleted.
                 Files.deleteIfExists(File(storageDirectory, skipped.fileName).toPath())
@@ -154,7 +158,7 @@ class PlannedRouteRepository internal constructor(
                 true
             }
         }
-        _skippedFiles.value = failed
+        _skippedFiles.value = left
         if (reasons.isNotEmpty()) throw IOException("Cannot delete ${reasons.joinToString("; ")}")
     }
 
@@ -228,6 +232,8 @@ class PlannedRouteRepository internal constructor(
             throw IOException("Failed to delete route file for route $id")
         }
         _routes.value = _routes.value.filterNot { it.id == id }
+        // A sync deletes unreadable files of routes deleted elsewhere too (#104).
+        _skippedFiles.value = _skippedFiles.value.filterNot { it.id == id }
     }
 
     companion object {

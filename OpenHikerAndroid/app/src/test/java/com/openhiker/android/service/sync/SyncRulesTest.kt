@@ -176,4 +176,62 @@ class SyncRulesTest {
         assertEquals(listOf(CloudDriveSyncEngine.FOLDER_UNREACHABLE), result.errors)
         assertFalse(result.retryable)
     }
+
+    // ── localIdsToDelete ────────────────────────────────────────
+
+    @Test
+    fun `a tombstone deletes readable and unreadable local files but nothing else`() {
+        val ids = localIdsToDelete(
+            localIds = setOf("r1", "r2"),
+            unreadableIds = setOf("u1", "u2", "broken"),
+            deletedIds = setOf("r1", "u1", "elsewhere")
+        )
+        assertEquals(setOf("r1", "u1"), ids)
+    }
+
+    // ── channelResult ───────────────────────────────────────────
+
+    @Test
+    fun `unreadable files come first and make the result not retryable`() {
+        val result = channelResult(
+            "Planned routes", uploaded = 1,
+            unreadable = mapOf("u1" to "u1.json: bad"),
+            errors = listOf("Planned routes upload r1: offline"),
+            retryable = true
+        )
+        assertEquals(
+            listOf(
+                "Planned routes: cannot read local file u1.json: bad",
+                "Planned routes upload r1: offline"
+            ),
+            result.errors
+        )
+        assertEquals(1, result.uploaded)
+        assertFalse(result.retryable)
+    }
+
+    @Test
+    fun `a file healed by a tombstone leaves the result clean and retryable`() {
+        val unreadable = mutableMapOf("u1" to "u1.json: bad")
+        unreadable.remove("u1") // as the engine does after the tombstone deleted it
+        val result = channelResult(
+            "Planned routes", deleted = 1, unreadable = unreadable, errors = emptyList(),
+            retryable = true
+        )
+        assertTrue(result.isSuccess)
+        assertTrue(result.retryable)
+        assertEquals(1, result.deleted)
+    }
+
+    @Test
+    fun `without unreadable files the other errors decide retryable`() {
+        assertFalse(
+            channelResult("X", unreadable = emptyMap(), errors = listOf("X: e"), retryable = false)
+                .retryable
+        )
+        assertTrue(
+            channelResult("X", unreadable = emptyMap(), errors = listOf("X: e"), retryable = true)
+                .retryable
+        )
+    }
 }

@@ -299,7 +299,7 @@ struct PlannedRouteLoadErrorsBanner: View {
             ) {
                 Button("Delete", role: .destructive) {
                     do {
-                        try routeStore.deleteUnreadableFiles()
+                        try routeStore.deleteUnreadableFiles(routeStore.unreadableFiles)
                         // Brings back the iCloud copies of those routes, if any.
                         Task { await CloudSyncManager.shared.performSync() }
                     } catch {

@@ -47,6 +47,22 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(errors, [])
     }
 
+    /// A step with several problems reports each under its label, so none hides another (#104).
+    func testRunStepsReportsEveryProblemOfAStep() async {
+        let one = StepError(errorDescription: "2 records could not be read")
+        let two = CloudSyncManager.SyncError.unreadableLocalFiles(["x.json"])
+        let errors = await CloudSyncManager.runSteps([
+            ("A", { try CloudSyncManager.throwAll([one, two]) }),
+            ("B", { try CloudSyncManager.throwAll([one]) }),
+            ("C", { try CloudSyncManager.throwAll([]) }),
+        ])
+        XCTAssertEqual(errors, [
+            "A: 2 records could not be read",
+            "A: \(two.localizedDescription)",
+            "B: 2 records could not be read",
+        ])
+    }
+
     /// A clean sync clears earlier errors and sets the success time; a failed one keeps
     /// the previous success time.
     @MainActor
@@ -193,6 +209,23 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(split.merge.map(\.recordID), ["a"])
         XCTAssertEqual(split.heldBack, [broken.id])
         XCTAssertEqual(CloudSyncManager.plannedRoutesToMerge(fetched, unreadable: []).merge.count, 2)
+    }
+
+    /// A tombstone deletes an unreadable `<uuid>.json` of a route deleted elsewhere; other
+    /// unreadable files stay for the user to delete (#80, #105).
+    func testUnreadableRoutesToDeleteMatchesTombstonedUUIDs() {
+        let dir = URL(fileURLWithPath: "/routes")
+        let deleted = UUID()
+        let kept = UUID()
+        let skipped = ["\(deleted.uuidString).json", "\(kept.uuidString).json", "broken.json"].map {
+            PlannedRouteStore.SkippedFile(url: dir.appendingPathComponent($0), reason: "bad")
+        }
+
+        XCTAssertEqual(
+            CloudSyncManager.unreadableRoutesToDelete(skipped, tombstoned: [deleted.uuidString, "broken"]),
+            [deleted]
+        )
+        XCTAssertEqual(CloudSyncManager.unreadableRoutesToDelete(skipped, tombstoned: []), [])
     }
 
     /// Tombstones are grouped by record type, so a waypoint's deletion never deletes a

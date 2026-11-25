@@ -262,7 +262,7 @@ struct WatchPlannedRoutesView: View {
                     // The watch does not sync with iCloud; send the route from the iPhone again.
                     Button("Delete", role: .destructive) {
                         do {
-                            try routeStore.deleteUnreadableFiles()
+                            try routeStore.deleteUnreadableFiles(routeStore.unreadableFiles)
                         } catch {
                             deleteUnreadableError = error.localizedDescription
                         }

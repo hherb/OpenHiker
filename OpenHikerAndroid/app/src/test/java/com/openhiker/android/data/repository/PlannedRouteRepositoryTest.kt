@@ -151,7 +151,7 @@ class PlannedRouteRepositoryTest {
         repo.save(route("r1"))
         routeFile("bad").writeText("{not json")
         repo.loadAll()
-        repo.deleteSkippedFiles()
+        repo.deleteSkippedFiles(listOf("bad.json"))
         assertFalse(routeFile("bad").exists())
         assertTrue(routeFile("r1").isFile)
         assertTrue(repo.skippedFiles.value.isEmpty())
@@ -164,7 +164,7 @@ class PlannedRouteRepositoryTest {
         routeFile("bad").apply { parentFile!!.mkdirs(); writeText("{not json") }
         // A non-empty directory named like a route file cannot be read or deleted.
         File(folder.root, "planned_routes/stuck.json").apply { mkdirs(); File(this, "x").writeText("x") }
-        val error = runCatching { repo.deleteSkippedFiles() }.exceptionOrNull()
+        val error = runCatching { repo.deleteSkippedFiles(listOf("bad.json", "stuck.json")) }.exceptionOrNull()
         assertTrue(error is IOException)
         assertTrue(error!!.message, error.message!!.contains("stuck.json: "))
         assertFalse(routeFile("bad").exists())
@@ -176,9 +176,28 @@ class PlannedRouteRepositoryTest {
         routeFile("r1").apply { parentFile!!.mkdirs(); writeText("{not json") }
         assertEquals(listOf("r1.json"), repo.loadAll().map { it.fileName })
         repo.save(route("r1"))
-        repo.deleteSkippedFiles()
+        repo.deleteSkippedFiles(listOf("r1.json"))
         assertTrue(routeFile("r1").isFile)
         assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+        assertTrue(repo.skippedFiles.value.isEmpty())
+    }
+
+    @Test
+    fun `deleteSkippedFiles keeps an unreadable file the user did not confirm`() = runTest {
+        routeFile("bad").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        routeFile("later").writeText("{not json")
+        repo.deleteSkippedFiles(listOf("bad.json"))
+        assertFalse(routeFile("bad").exists())
+        assertTrue(routeFile("later").isFile)
+        assertEquals(listOf("later.json"), repo.skippedFiles.value.map { it.fileName })
+    }
+
+    @Test
+    fun `delete drops the route from the skipped files`() = runTest {
+        routeFile("bad").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        repo.loadAll()
+        repo.delete("bad")
+        assertFalse(routeFile("bad").exists())
         assertTrue(repo.skippedFiles.value.isEmpty())
     }
 
