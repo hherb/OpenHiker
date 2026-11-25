@@ -408,31 +408,34 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     ///   an empty list instead would make iCloud sync treat every route as missing locally
     ///   and overwrite newer local edits with the cloud copies.
     func loadAllFromDisk() throws -> LoadResult {
-        try queue.sync {
-            let directory = storageDirectory
-            guard FileManager.default.fileExists(atPath: directory.path) else {
-                return LoadResult(routes: [], skippedFiles: [])
-            }
+        try queue.sync { try readDisk() }
+    }
 
-            let files = try FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil
-            ).filter { $0.pathExtension == "json" }
-
-            var loaded: [PlannedRoute] = []
-            var skipped: [SkippedFile] = []
-            for file in files {
-                do {
-                    let data = try Data(contentsOf: file)
-                    loaded.append(try decoder.decode(PlannedRoute.self, from: data))
-                } catch {
-                    skipped.append(SkippedFile(url: file, reason: error.localizedDescription))
-                }
-            }
-
-            loaded.sort { $0.createdAt > $1.createdAt }
-            return LoadResult(routes: loaded, skippedFiles: skipped)
+    /// The body of ``loadAllFromDisk()``; the caller must already be on `queue`.
+    private func readDisk() throws -> LoadResult {
+        let directory = storageDirectory
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return LoadResult(routes: [], skippedFiles: [])
         }
+
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "json" }
+
+        var loaded: [PlannedRoute] = []
+        var skipped: [SkippedFile] = []
+        for file in files {
+            do {
+                let data = try Data(contentsOf: file)
+                loaded.append(try decoder.decode(PlannedRoute.self, from: data))
+            } catch {
+                skipped.append(SkippedFile(url: file, reason: error.localizedDescription))
+            }
+        }
+
+        loaded.sort { $0.createdAt > $1.createdAt }
+        return LoadResult(routes: loaded, skippedFiles: skipped)
     }
 
     /// Loads all planned routes from disk into the in-memory cache.
@@ -485,9 +488,9 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     ///   (the others are deleted).
     func deleteUnreadableFiles() throws {
         defer { loadAll() }
-        let skipped = try loadAllFromDisk().skippedFiles
-        let failures: [String] = queue.sync {
-            skipped.compactMap { file in
+        // Re-read and delete in one queue block, so a save() in between is never deleted.
+        let failures: [String] = try queue.sync {
+            try readDisk().skippedFiles.compactMap { file in
                 do {
                     try FileManager.default.removeItem(at: file.url)
                     return nil

@@ -339,7 +339,7 @@ class CloudDriveSyncEngine @Inject constructor(
             )
         }
 
-        // A tombstone deletes an unreadable local file too; nothing else can heal it.
+        // A tombstone deletes an unreadable local file too: the route was deleted elsewhere.
         for (id in (local.keys + unreadable.keys) intersect deletedIds) {
             try {
                 channel.deleteLocal(id)

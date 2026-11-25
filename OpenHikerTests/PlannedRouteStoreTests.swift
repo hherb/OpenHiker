@@ -110,6 +110,47 @@ final class PlannedRouteStoreTests: XCTestCase {
         XCTAssertTrue(store.unreadableFiles.isEmpty)
     }
 
+    /// A file listed as unreadable that has since been saved again must survive the delete.
+    func testDeleteUnreadableFilesKeepsFileThatBecameReadable() throws {
+        let store = PlannedRouteStore(storageDirectory: routesDir)
+        let healed = route()
+        try store.save(healed)
+        let file = routesDir.appendingPathComponent("\(healed.id.uuidString).json")
+        try Data("not json".utf8).write(to: file)
+        store.loadAll()
+        drainMainQueue()
+        XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), [file.lastPathComponent])
+
+        try store.save(healed)
+        try store.deleteUnreadableFiles()
+        drainMainQueue()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(store.routes.map(\.id), [healed.id])
+        XCTAssertTrue(store.unreadableFiles.isEmpty)
+    }
+
+    /// A file that cannot be deleted is named in the error and stays listed.
+    func testDeleteUnreadableFilesReportsFilesNotDeleted() throws {
+        let store = PlannedRouteStore(storageDirectory: routesDir)
+        try store.save(route())
+        try Data("{ broken".utf8).write(to: routesDir.appendingPathComponent("broken.json"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: routesDir.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: routesDir.path)
+        }
+
+        XCTAssertThrowsError(try store.deleteUnreadableFiles()) { error in
+            guard case .notDeleted(let entries)? = error as? PlannedRouteStore.DeleteUnreadableError else {
+                return XCTFail("unexpected error \(error)")
+            }
+            XCTAssertEqual(entries.count, 1)
+            XCTAssertTrue(entries[0].hasPrefix("broken.json: "))
+        }
+        drainMainQueue()
+        XCTAssertEqual(store.unreadableFiles.map(\.lastPathComponent), ["broken.json"])
+    }
+
     func testUnlistableFolderThrows() throws {
         try makeFolderUnlistable()
         let store = PlannedRouteStore(storageDirectory: routesDir)

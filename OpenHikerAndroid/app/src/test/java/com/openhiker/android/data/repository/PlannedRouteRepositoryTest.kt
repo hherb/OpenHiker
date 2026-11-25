@@ -164,10 +164,22 @@ class PlannedRouteRepositoryTest {
         routeFile("bad").apply { parentFile!!.mkdirs(); writeText("{not json") }
         // A non-empty directory named like a route file cannot be read or deleted.
         File(folder.root, "planned_routes/stuck.json").apply { mkdirs(); File(this, "x").writeText("x") }
-        val result = runCatching { repo.deleteSkippedFiles() }
-        assertTrue(result.exceptionOrNull() is IOException)
+        val error = runCatching { repo.deleteSkippedFiles() }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error!!.message, error.message!!.contains("stuck.json: "))
         assertFalse(routeFile("bad").exists())
         assertEquals(listOf("stuck.json"), repo.skippedFiles.value.map { it.fileName })
+    }
+
+    @Test
+    fun `deleteSkippedFiles keeps a listed file that became readable`() = runTest {
+        routeFile("r1").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        assertEquals(listOf("r1.json"), repo.loadAll().map { it.fileName })
+        repo.save(route("r1"))
+        repo.deleteSkippedFiles()
+        assertTrue(routeFile("r1").isFile)
+        assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+        assertTrue(repo.skippedFiles.value.isEmpty())
     }
 
     @Test

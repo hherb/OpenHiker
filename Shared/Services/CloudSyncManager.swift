@@ -775,7 +775,7 @@ actor CloudSyncManager {
             deleteLocal(CloudKitStore.plannedRouteRecordType, route.id, PlannedRouteStore.shared.delete(id:))
         }
         // An unreadable file's record name is unknown; one named after a tombstoned UUID
-        // goes too, since nothing else can remove it (#80, as Android #77).
+        // goes too, as the route was deleted elsewhere (#80, as Android #77).
         for id in localPlanned.skippedFiles.compactMap(\.routeID)
         where plannedRoutes.contains(id.uuidString) {
             deleteLocal(CloudKitStore.plannedRouteRecordType, id, PlannedRouteStore.shared.delete(id:))

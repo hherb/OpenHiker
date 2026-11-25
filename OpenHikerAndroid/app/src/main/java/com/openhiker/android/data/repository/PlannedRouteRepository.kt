@@ -31,6 +31,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -142,11 +143,19 @@ class PlannedRouteRepository internal constructor(
      */
     suspend fun deleteSkippedFiles() = withContext(Dispatchers.IO) {
         // Read again, so a file that became readable meanwhile is kept.
-        val failed = loadAll().filterNot { File(storageDirectory, it.fileName).delete() }
-        _skippedFiles.value = failed
-        if (failed.isNotEmpty()) {
-            throw IOException("Cannot delete ${failed.joinToString { it.fileName }}")
+        val reasons = mutableListOf<String>()
+        val failed = loadAll().filter { skipped ->
+            try {
+                // A file already gone (sync applied a deletion meanwhile) counts as deleted.
+                Files.deleteIfExists(File(storageDirectory, skipped.fileName).toPath())
+                false
+            } catch (e: IOException) {
+                reasons.add("${skipped.fileName}: ${e.message ?: e.javaClass.simpleName}")
+                true
+            }
         }
+        _skippedFiles.value = failed
+        if (reasons.isNotEmpty()) throw IOException("Cannot delete ${reasons.joinToString("; ")}")
     }
 
     /**

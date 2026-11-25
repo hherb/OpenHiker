@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.IOException
 import javax.inject.Inject
 
 /**
@@ -140,7 +139,9 @@ class SyncStatusViewModel @Inject constructor(
             // runReporting, which would clear a failure above; sync reports a folder error too.
             try {
                 plannedRouteRepository.loadAll()
-            } catch (e: IOException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 Log.e(TAG, "Cannot read the planned routes", e)
             }
         }
