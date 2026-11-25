@@ -125,7 +125,7 @@ fun SyncStatusBanner(viewModel: SyncStatusViewModel = hiltViewModel()) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    viewModel.deleteUnreadableRouteFiles()
+                    viewModel.deleteUnreadableRouteFiles(state.unreadableRouteFiles)
                 }) { Text("Delete") }
             },
             dismissButton = {

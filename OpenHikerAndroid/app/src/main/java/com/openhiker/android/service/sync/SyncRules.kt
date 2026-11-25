@@ -153,6 +153,55 @@ internal fun folderErrorResult(hasPermission: Boolean): SyncResult = SyncResult(
     retryable = false
 )
 
+/**
+ * The local ids a sync deletes because another device deleted them.
+ *
+ * A file that cannot be read goes too when it is named after a tombstoned id: the route was
+ * deleted elsewhere (#77). An unreadable file with another name (`broken.json`) never matches,
+ * since tombstones name route UUIDs.
+ *
+ * @param localIds Ids of the local entities that could be read.
+ * @param unreadableIds Ids (file names without `.json`) of local files that could not be read.
+ * @param deletedIds Ids with a tombstone.
+ * @return The ids to delete locally.
+ */
+internal fun localIdsToDelete(
+    localIds: Set<String>,
+    unreadableIds: Set<String>,
+    deletedIds: Set<String>
+): Set<String> = (localIds + unreadableIds) intersect deletedIds
+
+/**
+ * One entity type's sync result.
+ *
+ * Each local file that could not be read adds a "cannot read local file" line before the
+ * other errors. Such files stay until the user deletes them from the sync banner or a
+ * tombstone does, so a retry cannot clear them, and the result is then never retryable
+ * (#77, #100).
+ *
+ * @param label The entity type's user-facing name, for example "Planned routes".
+ * @param uploaded Entities uploaded.
+ * @param downloaded Entities downloaded.
+ * @param deleted Local entities deleted because another device deleted them.
+ * @param unreadable The local files found unreadable and not deleted, by id, as "file: reason".
+ * @param errors The other errors, in order.
+ * @param retryable Whether every other error may clear by itself.
+ * @return The result.
+ */
+internal fun channelResult(
+    label: String,
+    uploaded: Int = 0,
+    downloaded: Int = 0,
+    deleted: Int = 0,
+    unreadable: Map<String, String>,
+    errors: List<String>,
+    retryable: Boolean
+): SyncResult = SyncResult(
+    uploaded, downloaded, deleted,
+    unreadable.values.map { "$label: cannot read local file $it" } + errors,
+    retryable && unreadable.isEmpty()
+)
+
 /** Parses an ISO-8601 instant, or returns null if [text] is not one. */
 private fun parseInstant(text: String): Instant? = try {
     Instant.parse(text)

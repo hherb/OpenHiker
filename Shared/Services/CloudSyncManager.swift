@@ -181,9 +181,14 @@ actor CloudSyncManager {
         /// iCloud copies of these planned routes were not downloaded, because their local
         /// files exist but cannot be read (#80); one file name each.
         case unreadableLocalFiles([String])
+        /// A step found several problems; ``runSteps(_:)`` reports one entry per reason,
+        /// so none hides another (#104).
+        case several([String])
 
         var errorDescription: String? {
             switch self {
+            case .several(let reasons):
+                return reasons.joined(separator: "; ")
             case .deletionsNotChecked:
                 return "Skipped until deletions from other devices can be checked"
             case .localDeletesFailed(let entries):
@@ -220,6 +225,11 @@ actor CloudSyncManager {
 
     /// Whether a sync is currently in progress (prevents concurrent syncs).
     private var isSyncing = false
+
+    /// Whether ``performSync()`` was called while a sync ran; that sync then runs once
+    /// more, so a request made mid-sync (for example after deleting unreadable route
+    /// files) is never lost (#104).
+    private var syncRequestedWhileRunning = false
 
     /// Whether the last account check found an account that can sync.
     private var isAvailable = false
@@ -298,8 +308,9 @@ actor CloudSyncManager {
     /// app runs is noticed at the next sync (#84); with no usable account it publishes
     /// the notice or error and stops. Each upload and each download is its own step, so
     /// a failure in one (for example an unreadable `planned_routes/` folder) does not
-    /// stop the others (#81). Skips if a sync is already in progress;
-    /// ``CloudSyncStatus/isSyncing`` shows that one to the user. Records the result in
+    /// stop the others (#81). If a sync is already in progress, it runs once more when
+    /// that one ends, however often this was called meanwhile (#104);
+    /// ``CloudSyncStatus/isSyncing`` shows the running sync to the user. Records the result in
     /// ``CloudSyncStatus``.
     ///
     /// While change-notification subscriptions are missing, it tries to create them
@@ -308,12 +319,21 @@ actor CloudSyncManager {
     /// reports what still fails as "iCloud: change notifications unavailable (…)" (#86).
     func performSync() async {
         guard !isSyncing else {
-            Self.logger.debug("Sync already in progress, skipping")
+            Self.logger.debug("Sync already in progress, running again when it ends")
+            syncRequestedWhileRunning = true
             return
         }
 
         isSyncing = true
         defer { isSyncing = false }
+        repeat {
+            syncRequestedWhileRunning = false
+            await syncOnce()
+        } while syncRequestedWhileRunning
+    }
+
+    /// One run of ``performSync()``; the caller has set `isSyncing`.
+    private func syncOnce() async {
         await CloudSyncStatus.shared.beginSync()
 
         guard await checkAccount() else { return }
@@ -371,7 +391,6 @@ actor CloudSyncManager {
         guard !isSyncing else { return }
 
         isSyncing = true
-        defer { isSyncing = false }
         await CloudSyncStatus.shared.beginSync()
 
         let errors = await Self.runSteps([
@@ -384,6 +403,9 @@ actor CloudSyncManager {
         // although nothing was pushed; nothing calls this yet, so merge instead of
         // replace when it gets wired to push notifications.
         await Self.report(errors, to: CloudSyncStatus.shared)
+        isSyncing = false
+        // A full sync asked for meanwhile still runs (#104).
+        if syncRequestedWhileRunning { await performSync() }
     }
 
     // MARK: - Steps and Reporting
@@ -412,7 +434,8 @@ actor CloudSyncManager {
     /// Runs every step in order, even after an earlier one fails.
     ///
     /// - Parameter steps: Pairs of a user-facing label and the work to run.
-    /// - Returns: One "label: reason" entry per step that threw, in step order.
+    /// - Returns: One "label: reason" entry per step that threw, or one per reason for
+    ///   ``SyncError/several(_:)``, in step order.
     static func runSteps(
         _ steps: [(label: String, run: () async throws -> Void)]
     ) async -> [String] {
@@ -420,6 +443,8 @@ actor CloudSyncManager {
         for step in steps {
             do {
                 try await step.run()
+            } catch SyncError.several(let reasons) {
+                errors += reasons.map { "\(step.label): \($0)" }
             } catch {
                 errors.append("\(step.label): \(error.localizedDescription)")
             }
@@ -774,15 +799,34 @@ actor CloudSyncManager {
         where Self.isDeletedRemotely(cloudKitRecordID: route.cloudKitRecordID, tombstoned: plannedRoutes) {
             deleteLocal(CloudKitStore.plannedRouteRecordType, route.id, PlannedRouteStore.shared.delete(id:))
         }
-        // An unreadable file's record name is unknown; one named after a tombstoned UUID
-        // goes too, as the route was deleted elsewhere (#80, as Android #77).
-        for id in localPlanned.skippedFiles.compactMap(\.routeID)
-        where plannedRoutes.contains(id.uuidString) {
+        let unreadableDeleted = Self.unreadableRoutesToDelete(localPlanned.skippedFiles, tombstoned: plannedRoutes)
+        for id in unreadableDeleted {
             deleteLocal(CloudKitStore.plannedRouteRecordType, id, PlannedRouteStore.shared.delete(id:))
         }
+        // `unreadableFiles` and `loadErrors` name the deleted files until `loadAll()` (#104).
+        if !unreadableDeleted.isEmpty { PlannedRouteStore.shared.loadAll() }
 
-        if !failures.isEmpty { throw SyncError.localDeletesFailed(failures) }
-        try fetched.throwIfSkipped()
+        // Both problems are reported, so neither hides the other.
+        var problems: [Error] = []
+        if !failures.isEmpty { problems.append(SyncError.localDeletesFailed(failures)) }
+        do { try fetched.throwIfSkipped() } catch { problems.append(error) }
+        try Self.throwAll(problems)
+    }
+
+    /// The unreadable local planned-route files a tombstone deletes (#80, as Android #77).
+    ///
+    /// An unreadable file's record name is unknown, but one named `<uuid>.json` after a
+    /// tombstoned UUID holds a route deleted on another device. Other names are kept.
+    ///
+    /// - Parameters:
+    ///   - skipped: The local route files that could not be read.
+    ///   - tombstoned: Planned-route record names with a tombstone.
+    /// - Returns: The UUIDs of the routes to delete, in file order.
+    static func unreadableRoutesToDelete(
+        _ skipped: [PlannedRouteStore.SkippedFile],
+        tombstoned: Set<String>
+    ) -> [UUID] {
+        skipped.compactMap(\.routeID).filter { tombstoned.contains($0.uuidString) }
     }
 
     /// Reads the local planned routes for a push or pull.
@@ -963,9 +1007,25 @@ actor CloudSyncManager {
             }
         }
         // After the merge, so one unreadable record does not block the readable ones.
-        try remotePlannedRoutes.throwIfSkipped()
+        // Both problems are reported, so neither hides the other (#104).
+        var problems: [Error] = []
+        do { try remotePlannedRoutes.throwIfSkipped() } catch { problems.append(error) }
         if !heldBack.isEmpty {
-            throw SyncError.unreadableLocalFiles(heldBack.map { "\($0.uuidString).json" })
+            problems.append(SyncError.unreadableLocalFiles(heldBack.map { "\($0.uuidString).json" }))
+        }
+        try Self.throwAll(problems)
+    }
+
+    /// Throws nothing for no problems, the problem itself for one, and
+    /// ``SyncError/several(_:)`` for more, which ``runSteps(_:)`` reports one by one.
+    ///
+    /// - Parameter problems: What a step found, in the order to report it.
+    /// - Throws: As above.
+    static func throwAll(_ problems: [Error]) throws {
+        switch problems.count {
+        case 0: return
+        case 1: throw problems[0]
+        default: throw SyncError.several(problems.map(\.localizedDescription))
         }
     }
 

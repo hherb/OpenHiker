@@ -332,15 +332,15 @@ class CloudDriveSyncEngine @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "${channel.label}: cannot list entities", e)
-            return SyncResult(
-                errors = unreadableErrors(channel.label, unreadable) +
-                    "${channel.label}: ${e.message}",
-                retryable = unreadable.isEmpty() && isTransient(e)
+            return channelResult(
+                channel.label,
+                unreadable = unreadable,
+                errors = listOf("${channel.label}: ${e.message}"),
+                retryable = isTransient(e)
             )
         }
 
-        // A tombstone deletes an unreadable local file too: the route was deleted elsewhere.
-        for (id in (local.keys + unreadable.keys) intersect deletedIds) {
+        for (id in localIdsToDelete(local.keys, unreadable.keys, deletedIds)) {
             try {
                 channel.deleteLocal(id)
                 unreadable.remove(id)
@@ -436,18 +436,8 @@ class CloudDriveSyncEngine @Inject constructor(
             upload(id, null)
         }
 
-        // Unreadable files stay until the user deletes them from the sync banner, so a retry
-        // cannot clear them.
-        if (unreadable.isNotEmpty()) retryable = false
-        return SyncResult(
-            uploaded, downloaded, deleted, unreadableErrors(channel.label, unreadable) + errors,
-            retryable
-        )
+        return channelResult(channel.label, uploaded, downloaded, deleted, unreadable, errors, retryable)
     }
-
-    /** One error line per local file of [label]'s type that could not be read. */
-    private fun unreadableErrors(label: String, unreadable: Map<String, String>): List<String> =
-        unreadable.values.map { "$label: cannot read local file $it" }
 
     // ── SAF file helpers ────────────────────────────────────────
 

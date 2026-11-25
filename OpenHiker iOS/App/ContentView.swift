@@ -275,6 +275,10 @@ struct PlannedRouteLoadErrorsBanner: View {
     /// Why the last delete failed, shown in an alert; `nil` when none failed.
     @State private var deleteError: String?
 
+    /// The unreadable files the open confirmation names, taken when it opened, so a file
+    /// that becomes unreadable meanwhile is never deleted unconfirmed (#104).
+    @State private var filesToDelete: [URL] = []
+
     var body: some View {
         if !routeStore.loadErrors.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -284,6 +288,7 @@ struct PlannedRouteLoadErrorsBanner: View {
                 )
                 if !routeStore.unreadableFiles.isEmpty {
                     Button("Delete Unreadable Files", role: .destructive) {
+                        filesToDelete = routeStore.unreadableFiles
                         confirmingDelete = true
                     }
                 }
@@ -293,18 +298,19 @@ struct PlannedRouteLoadErrorsBanner: View {
             .padding()
             .background(.orange.opacity(0.15))
             .confirmationDialog(
-                "Delete \(routeStore.unreadableFiles.count) unreadable route files?",
+                "Delete \(filesToDelete.count) unreadable route files?",
                 isPresented: $confirmingDelete,
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) {
                     do {
-                        try routeStore.deleteUnreadableFiles()
-                        // Brings back the iCloud copies of those routes, if any.
-                        Task { await CloudSyncManager.shared.performSync() }
+                        try routeStore.deleteUnreadableFiles(filesToDelete)
                     } catch {
                         deleteError = error.localizedDescription
                     }
+                    // Also after a partial failure: brings back the iCloud copies of the deleted
+                    // routes, if any, and replaces the sync messages that name them.
+                    Task { await CloudSyncManager.shared.performSync() }
                 }
             } message: {
                 Text("This cannot be undone. If iCloud holds a copy of a route, the next sync brings it back.")

@@ -178,6 +178,10 @@ struct WatchPlannedRoutesView: View {
     /// Why deleting the unreadable route files failed; `nil` when it did not.
     @State private var deleteUnreadableError: String?
 
+    /// The unreadable files the open confirmation names, taken when it opened, so a file
+    /// that becomes unreadable meanwhile is never deleted unconfirmed (#104).
+    @State private var filesToDelete: [URL] = []
+
     /// Whether to use metric units (km, m) or imperial (mi, ft).
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -250,19 +254,20 @@ struct WatchPlannedRoutesView: View {
                     }
                     if !routeStore.unreadableFiles.isEmpty {
                         Button("Delete Unreadable", role: .destructive) {
+                            filesToDelete = routeStore.unreadableFiles
                             confirmingDeleteUnreadable = true
                         }
                     }
                 }
                 .confirmationDialog(
-                    "Delete \(routeStore.unreadableFiles.count) unreadable route files?",
+                    "Delete \(filesToDelete.count) unreadable route files?",
                     isPresented: $confirmingDeleteUnreadable,
                     titleVisibility: .visible
                 ) {
                     // The watch does not sync with iCloud; send the route from the iPhone again.
                     Button("Delete", role: .destructive) {
                         do {
-                            try routeStore.deleteUnreadableFiles()
+                            try routeStore.deleteUnreadableFiles(filesToDelete)
                         } catch {
                             deleteUnreadableError = error.localizedDescription
                         }

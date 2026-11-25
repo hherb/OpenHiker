@@ -324,7 +324,7 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     @Published var loadErrors: [String] = []
 
     /// Route files the last ``loadAll()`` could not read. Route lists offer to delete them
-    /// with ``deleteUnreadableFiles()``. Left unchanged if the folder could not be read.
+    /// with ``deleteUnreadableFiles(_:)``. Left unchanged if the folder could not be read.
     @Published var unreadableFiles: [URL] = []
 
     /// A route file that could not be read or decoded.
@@ -463,7 +463,7 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
         }
     }
 
-    /// Errors of ``deleteUnreadableFiles()``.
+    /// Errors of ``deleteUnreadableFiles(_:)``.
     enum DeleteUnreadableError: Error, LocalizedError, Equatable {
         /// These files could not be deleted; one "file name: reason" entry each.
         case notDeleted([String])
@@ -476,21 +476,25 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
         }
     }
 
-    /// Deletes every route file that cannot be read, after the user confirmed it (#80).
+    /// Deletes the unreadable route files the user confirmed (#80).
     ///
-    /// The files are read again first, so one that became readable meanwhile is kept. No
-    /// iCloud deletion is queued: the user discards a broken local copy, not the route, so
-    /// the next sync downloads the iCloud copy of the route if there is one. Calls
-    /// ``loadAll()`` afterwards to refresh the route lists.
+    /// The files are read again first, so one that became readable meanwhile is kept, and
+    /// only files in `confirmed` are deleted, so one that became unreadable after the user
+    /// saw the list is kept too (#104). No iCloud deletion is queued: the user discards a
+    /// broken local copy, not the route, so the next sync downloads the iCloud copy of the
+    /// route if there is one. Calls ``loadAll()`` afterwards to refresh the route lists.
     ///
+    /// - Parameter confirmed: The files the user agreed to delete, normally
+    ///   ``unreadableFiles`` as the confirmation showed it. Matched by file name.
     /// - Throws: A file system error if the folder cannot be listed, or
     ///   ``DeleteUnreadableError/notDeleted(_:)`` naming the files that could not be deleted
     ///   (the others are deleted).
-    func deleteUnreadableFiles() throws {
+    func deleteUnreadableFiles(_ confirmed: [URL]) throws {
         defer { loadAll() }
+        let names = Set(confirmed.map(\.lastPathComponent))
         // Re-read and delete in one queue block, so a save() in between is never deleted.
         let failures: [String] = try queue.sync {
-            try readDisk().skippedFiles.compactMap { file in
+            try readDisk().skippedFiles.filter { names.contains($0.url.lastPathComponent) }.compactMap { file in
                 do {
                     try FileManager.default.removeItem(at: file.url)
                     return nil
