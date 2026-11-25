@@ -84,6 +84,31 @@ internal fun reconcile(localModifiedAt: String?, cloudModifiedAt: String?): Sync
 }
 
 /**
+ * Decides what a sync does with one readable cloud entity that has no tombstone.
+ *
+ * A local file that exists but cannot be read is never overwritten: it may hold an edit the
+ * cloud copy lacks, and its read failure may be temporary. The user deletes it from the sync
+ * banner; the next sync then downloads the cloud copy (#77, Apple #80).
+ *
+ * @param localModifiedAt Change time of the readable local copy, or null.
+ * @param hasLocal True if a readable local copy exists.
+ * @param localUnreadable True if the local file for this id exists but cannot be read.
+ * @param cloudModifiedAt Change time of the cloud copy, or null.
+ * @return [reconcile]'s answer for an entity in both places, [SyncAction.NONE] for an
+ *   unreadable local file, otherwise [SyncAction.DOWNLOAD].
+ */
+internal fun cloudEntityAction(
+    localModifiedAt: String?,
+    hasLocal: Boolean,
+    localUnreadable: Boolean,
+    cloudModifiedAt: String?
+): SyncAction = when {
+    localUnreadable -> SyncAction.NONE
+    hasLocal -> reconcile(localModifiedAt, cloudModifiedAt)
+    else -> SyncAction.DOWNLOAD
+}
+
+/**
  * Merges the cloud manifest's tombstones with this device's unpublished ones.
  *
  * @param manifest Tombstones already in the cloud manifest.

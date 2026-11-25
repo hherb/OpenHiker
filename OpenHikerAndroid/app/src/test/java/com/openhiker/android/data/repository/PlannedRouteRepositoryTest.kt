@@ -139,9 +139,47 @@ class PlannedRouteRepositoryTest {
         repo.save(route("r1"))
         routeFile("bad").writeText("{not json")
         val skipped = repo.loadAll()
-        assertEquals(1, skipped.size)
-        assertTrue(skipped[0], skipped[0].startsWith("bad.json: "))
+        assertEquals(listOf("bad.json"), skipped.map { it.fileName })
+        assertEquals("bad", skipped[0].id)
+        assertTrue(skipped[0].message, skipped[0].message.startsWith("bad.json: "))
+        assertEquals(skipped, repo.skippedFiles.value)
         assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+    }
+
+    @Test
+    fun `deleteSkippedFiles deletes only the unreadable files and records no deletion`() = runTest {
+        repo.save(route("r1"))
+        routeFile("bad").writeText("{not json")
+        repo.loadAll()
+        repo.deleteSkippedFiles()
+        assertFalse(routeFile("bad").exists())
+        assertTrue(routeFile("r1").isFile)
+        assertTrue(repo.skippedFiles.value.isEmpty())
+        // No tombstone: a cloud copy of the route must come back at the next sync.
+        assertTrue(pendingIds().isEmpty())
+    }
+
+    @Test
+    fun `deleteSkippedFiles throws and keeps listing a file it cannot delete`() = runTest {
+        routeFile("bad").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        // A non-empty directory named like a route file cannot be read or deleted.
+        File(folder.root, "planned_routes/stuck.json").apply { mkdirs(); File(this, "x").writeText("x") }
+        val error = runCatching { repo.deleteSkippedFiles() }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error!!.message, error.message!!.contains("stuck.json: "))
+        assertFalse(routeFile("bad").exists())
+        assertEquals(listOf("stuck.json"), repo.skippedFiles.value.map { it.fileName })
+    }
+
+    @Test
+    fun `deleteSkippedFiles keeps a listed file that became readable`() = runTest {
+        routeFile("r1").apply { parentFile!!.mkdirs(); writeText("{not json") }
+        assertEquals(listOf("r1.json"), repo.loadAll().map { it.fileName })
+        repo.save(route("r1"))
+        repo.deleteSkippedFiles()
+        assertTrue(routeFile("r1").isFile)
+        assertEquals(listOf("r1"), repo.routes.value.map { it.id })
+        assertTrue(repo.skippedFiles.value.isEmpty())
     }
 
     @Test

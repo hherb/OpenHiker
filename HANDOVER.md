@@ -50,15 +50,24 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Android planned-route reads** tell "missing" from "broken" (#74). `getById` returns null only for a
   missing file and throws `IOException` for an unreadable one. `loadAll` throws if the directory cannot be
   created or listed (the list is then left unchanged, so sync never treats every route as missing). It
-  returns one "file: reason" entry per skipped file, which sync reports as an error; a cloud copy of the
-  route replaces the broken file in the same sync. The navigation screen now shows a load error instead
-  of staying blank.
+  returns the skipped files (`SkippedRouteFile`) and publishes them in `skippedFiles`. The navigation screen
+  shows a load error instead of staying blank.
+- **Unreadable planned-route files** (#77 Android, #80 Apple; same rule on both). Sync never uploads such a
+  file or writes a cloud copy over it: the read failure may be temporary, and the file may hold an unsynced
+  edit. A tombstone for a file named `<uuid>.json` still deletes it. Otherwise the user deletes it: on
+  Android with "Delete unreadable route files" in the sync banner (`deleteSkippedFiles`, then a sync); on
+  Apple with "Delete Unreadable Files" in the route-list banner (iOS, macOS, watchOS;
+  `PlannedRouteStore.deleteUnreadableFiles`, then an iCloud sync on iOS and macOS). The delete records no
+  tombstone, so a cloud copy of the route comes back at the next sync. Until then, Android reports
+  "cannot read local file …" in each sync (`SyncResult.retryable` false). Apple reports "N iCloud routes
+  not downloaded because the local files cannot be read" when a cloud copy is held back. Pure rules:
+  `cloudEntityAction` (`SyncRules.kt`) and `CloudSyncManager.plannedRoutesToMerge`. Android has no
+  planned-route list yet (#102), so the banner is its only way to the delete.
 - **Apple planned-route reads** (#75) match Android. `PlannedRouteStore.loadAllFromDisk()` throws when the
   folder exists but cannot be listed, so the planned-route part of the iCloud sync stops instead of
-  overwriting local edits. It returns the skipped files as "file: reason" entries, which
-  sync logs; a pull replaces a broken `<id>.json` with the cloud copy of route `<id>`, if there is one.
-  Other broken files stay and the app cannot delete them (#80, like Android #77). `loadAll()` leaves
-  `routes` unchanged on a folder error and publishes `loadErrors`. The iOS Routes tab, the iOS Navigate
+  overwriting local edits. It returns the skipped files (`SkippedFile`: URL, reason, `routeID`), which
+  sync logs. `loadAll()` leaves `routes` unchanged on a folder error and publishes `loadErrors` and
+  `unreadableFiles`. The iOS Routes tab, the iOS Navigate
   route picker, macOS and watchOS show them and hide the "No Planned Routes" empty state.
   `fetchForRegion` throws on a folder error and calls `loadAll()` when it skipped files, so transfers
   report them too. Unused `fetch(id:)` is gone. The store takes its folder in `init(storageDirectory:)`
@@ -147,7 +156,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94
+- **Last PRs:** #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94
   (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
   #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67
   (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
@@ -157,10 +166,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **138/138 pass** (2026-11-24) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **142/142 pass** (2026-11-25) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 200/200 per variant; 2026-11-25) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 205/205 per variant; 2026-11-25) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -209,10 +218,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 - #23: Android service and ViewModel test coverage.
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
-- #77: Android sync never clears the error for a broken local planned-route file that has a tombstone
-  or no cloud copy, and the app cannot delete it.
-- #80: Apple cannot delete a broken planned-route file, and a one-off read failure lets an iCloud pull
-  overwrite an unsynced edit with the older cloud copy.
+- #102: Android has no list of saved planned routes, so route detail (rename, delete, export) is
+  unreachable.
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
   them.

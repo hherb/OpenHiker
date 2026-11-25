@@ -53,6 +53,22 @@ class SyncRulesTest {
         assertTrue(shouldUpload("yesterday", t0Millis))
     }
 
+    // ── cloudEntityAction ────────────────────────────────────────
+
+    @Test
+    fun `an unreadable local file is never overwritten by the cloud copy`() {
+        assertEquals(SyncAction.NONE, cloudEntityAction(null, false, true, "2026-11-25T00:00:00Z"))
+    }
+
+    @Test
+    fun `a cloud-only entity is downloaded and one in both places is reconciled`() {
+        val t0 = "2026-11-25T00:00:00Z"
+        val later = "2026-11-25T01:00:00Z"
+        assertEquals(SyncAction.DOWNLOAD, cloudEntityAction(null, false, false, t0))
+        assertEquals(SyncAction.UPLOAD, cloudEntityAction(later, true, false, t0))
+        assertEquals(SyncAction.DOWNLOAD, cloudEntityAction(t0, true, false, later))
+    }
+
     // ── reconcile ────────────────────────────────────────────────
 
     private val later = "2026-11-15T10:00:01Z"

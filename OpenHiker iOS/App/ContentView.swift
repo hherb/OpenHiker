@@ -263,22 +263,60 @@ struct CloudAccountNoticeBanner: View {
 
 /// Orange banner listing planned-route files that could not be read (#75).
 ///
-/// Shows nothing when `errors` is empty. Used above the iOS route lists so a read
-/// failure is never mistaken for "no routes".
+/// Shows ``PlannedRouteStore/loadErrors``, and nothing when there are none. Used above the
+/// iOS route lists so a read failure is never mistaken for "no routes". "Delete Unreadable
+/// Files" deletes them after a confirmation, then syncs to bring back iCloud copies (#80).
 struct PlannedRouteLoadErrorsBanner: View {
-    /// Entries from ``PlannedRouteStore/loadErrors``.
-    let errors: [String]
+    @ObservedObject private var routeStore = PlannedRouteStore.shared
+
+    /// Whether the delete confirmation is showing.
+    @State private var confirmingDelete = false
+
+    /// Why the last delete failed, shown in an alert; `nil` when none failed.
+    @State private var deleteError: String?
 
     var body: some View {
-        if !errors.isEmpty {
-            Label(
-                "Some planned routes could not be read:\n" + errors.joined(separator: "\n"),
-                systemImage: "exclamationmark.triangle.fill"
-            )
+        if !routeStore.loadErrors.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    "Some planned routes could not be read:\n" + routeStore.loadErrors.joined(separator: "\n"),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                if !routeStore.unreadableFiles.isEmpty {
+                    Button("Delete Unreadable Files", role: .destructive) {
+                        confirmingDelete = true
+                    }
+                }
+            }
             .font(.footnote)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(.orange.opacity(0.15))
+            .confirmationDialog(
+                "Delete \(routeStore.unreadableFiles.count) unreadable route files?",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    do {
+                        try routeStore.deleteUnreadableFiles()
+                        // Brings back the iCloud copies of those routes, if any.
+                        Task { await CloudSyncManager.shared.performSync() }
+                    } catch {
+                        deleteError = error.localizedDescription
+                    }
+                }
+            } message: {
+                Text("This cannot be undone. If iCloud holds a copy of a route, the next sync brings it back.")
+            }
+            .alert(
+                "Could Not Delete Files",
+                isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteError ?? "")
+            }
         }
     }
 }
@@ -350,7 +388,7 @@ struct PlannedRoutesListView: View {
             }
             // Route files that could not be read (#75); shown even when the list is empty.
             .safeAreaInset(edge: .top) {
-                PlannedRouteLoadErrorsBanner(errors: routeStore.loadErrors)
+                PlannedRouteLoadErrorsBanner()
             }
             .navigationTitle("Planned Routes")
             .navigationDestination(for: PlannedRoute.ID.self) { routeId in

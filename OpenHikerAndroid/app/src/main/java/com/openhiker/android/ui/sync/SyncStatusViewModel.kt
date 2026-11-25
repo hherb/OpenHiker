@@ -22,6 +22,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.openhiker.android.data.repository.PlannedRouteRepository
 import com.openhiker.android.data.repository.UserPreferencesRepository
 import com.openhiker.android.data.sync.SyncState
 import com.openhiker.android.data.sync.SyncStateStore
@@ -43,11 +44,14 @@ import javax.inject.Inject
  * @property messages Lines to show; the banner is hidden when this is empty.
  * @property isSyncing True while a sync runs: the banner shows a spinner instead of "Retry".
  * @property canRetry True when "Retry" can run; see [canRetry].
+ * @property unreadableRouteFiles Names of planned-route files that cannot be read; the banner
+ *   offers to delete them when this is not empty.
  */
 data class SyncBannerState(
     val messages: List<String> = emptyList(),
     val isSyncing: Boolean = false,
-    val canRetry: Boolean = false
+    val canRetry: Boolean = false,
+    val unreadableRouteFiles: List<String> = emptyList()
 )
 
 /**
@@ -104,7 +108,8 @@ internal const val STATE_RESET_NOTICE =
 class SyncStatusViewModel @Inject constructor(
     private val syncEngine: CloudDriveSyncEngine,
     private val syncStateStore: SyncStateStore,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
 
     private val actionError = MutableStateFlow<String?>(null)
@@ -114,12 +119,14 @@ class SyncStatusViewModel @Inject constructor(
         syncStateStore.state,
         syncEngine.isSyncing,
         preferencesRepository.preferencesFlow,
-        actionError
-    ) { state, syncing, prefs, error ->
+        actionError,
+        plannedRouteRepository.skippedFiles
+    ) { state, syncing, prefs, error, skipped ->
         SyncBannerState(
             messages = syncBannerMessages(state, error),
             isSyncing = syncing,
-            canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri)
+            canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri),
+            unreadableRouteFiles = skipped.map { it.fileName }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SyncBannerState())
 
@@ -128,6 +135,15 @@ class SyncStatusViewModel @Inject constructor(
         // while the app was closed.
         viewModelScope.launch {
             runReporting("Cannot read the sync status") { syncStateStore.load() }
+            // Finds unreadable route files, so the banner can offer to delete them. Not via
+            // runReporting, which would clear a failure above; sync reports a folder error too.
+            try {
+                plannedRouteRepository.loadAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Cannot read the planned routes", e)
+            }
         }
     }
 
@@ -137,6 +153,19 @@ class SyncStatusViewModel @Inject constructor(
             val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
                 ?: return@launch
             runReporting("Sync failed") { syncEngine.sync(Uri.parse(folderUri)) }
+        }
+    }
+
+    /**
+     * Deletes the planned-route files that cannot be read, after the user confirmed it, then
+     * syncs again so the errors clear and any cloud copy of those routes comes back (#77).
+     */
+    fun deleteUnreadableRouteFiles() {
+        viewModelScope.launch {
+            runReporting("Cannot delete the unreadable route files") {
+                plannedRouteRepository.deleteSkippedFiles()
+            }
+            if (actionError.value == null) retry()
         }
     }
 

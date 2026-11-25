@@ -18,6 +18,7 @@ it has landed. The original phased plan (phases 1–6, all done on Apple platfor
 |---|---|---|---|---|---|
 | Trail overlay rendering from the routing DB (`routing_edges`) | todo | **done** | todo | todo | `docs/TODO/<platform>/trail-overlay-rendering.md` |
 | GPS fix plausibility check during guidance | done | done | n/a (no guidance) | todo | `docs/TODO/Android/gps-fix-plausibility.md` |
+| List of saved planned routes (open detail, delete unreadable files) | done | done | done | todo | #102 |
 
 ## Release blockers
 

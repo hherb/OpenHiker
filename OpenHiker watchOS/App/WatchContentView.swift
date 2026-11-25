@@ -172,6 +172,12 @@ struct WatchPlannedRoutesView: View {
     /// Whether the rename error alert is displayed.
     @State private var showRenameError = false
 
+    /// Whether the confirmation to delete unreadable route files is showing (#80).
+    @State private var confirmingDeleteUnreadable = false
+
+    /// Why deleting the unreadable route files failed; `nil` when it did not.
+    @State private var deleteUnreadableError: String?
+
     /// Whether to use metric units (km, m) or imperial (mi, ft).
     @AppStorage("useMetricUnits") private var useMetricUnits = true
 
@@ -242,6 +248,38 @@ struct WatchPlannedRoutesView: View {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption2)
                     }
+                    if !routeStore.unreadableFiles.isEmpty {
+                        Button("Delete Unreadable", role: .destructive) {
+                            confirmingDeleteUnreadable = true
+                        }
+                    }
+                }
+                .confirmationDialog(
+                    "Delete \(routeStore.unreadableFiles.count) unreadable route files?",
+                    isPresented: $confirmingDeleteUnreadable,
+                    titleVisibility: .visible
+                ) {
+                    // The watch does not sync with iCloud; send the route from the iPhone again.
+                    Button("Delete", role: .destructive) {
+                        do {
+                            try routeStore.deleteUnreadableFiles()
+                        } catch {
+                            deleteUnreadableError = error.localizedDescription
+                        }
+                    }
+                } message: {
+                    Text("This cannot be undone. Send the route from your iPhone again to get it back.")
+                }
+                .alert(
+                    "Could Not Delete",
+                    isPresented: Binding(
+                        get: { deleteUnreadableError != nil },
+                        set: { if !$0 { deleteUnreadableError = nil } }
+                    )
+                ) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(deleteUnreadableError ?? "")
                 }
             }
 

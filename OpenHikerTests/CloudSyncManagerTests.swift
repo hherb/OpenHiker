@@ -17,6 +17,7 @@
 
 import XCTest
 import CloudKit
+import CoreLocation
 @testable import OpenHiker
 
 /// Tests for the iCloud sync step runner (#81), the published sync result (#78), and
@@ -170,6 +171,28 @@ final class CloudSyncManagerTests: XCTestCase {
         XCTAssertEqual(merged.map(\.recordID), ["a", "c"])
         XCTAssertEqual(merged.map(\.item), [1, 3])
         XCTAssertEqual(CloudSyncManager.itemsToMerge(fetched, skipping: []).count, 3)
+    }
+
+    /// A pull never writes an iCloud copy over a local route file that cannot be read: the
+    /// failure may be temporary and the file may hold an unsynced edit (#80).
+    func testPlannedRoutesToMergeHoldsBackUnreadableLocalFiles() {
+        func route() -> PlannedRoute {
+            let point = CLLocationCoordinate2D(latitude: 47, longitude: 11)
+            return PlannedRoute(
+                name: "R", mode: .hiking, startCoordinate: point, endCoordinate: point,
+                coordinates: [point], turnInstructions: [], totalDistance: 0,
+                estimatedDuration: 0, elevationGain: 0, elevationLoss: 0
+            )
+        }
+        let readable = route()
+        let broken = route()
+        let fetched: [(recordID: String, item: PlannedRoute)] = [("a", readable), ("b", broken)]
+
+        let split = CloudSyncManager.plannedRoutesToMerge(fetched, unreadable: [broken.id, UUID()])
+
+        XCTAssertEqual(split.merge.map(\.recordID), ["a"])
+        XCTAssertEqual(split.heldBack, [broken.id])
+        XCTAssertEqual(CloudSyncManager.plannedRoutesToMerge(fetched, unreadable: []).merge.count, 2)
     }
 
     /// Tombstones are grouped by record type, so a waypoint's deletion never deletes a
