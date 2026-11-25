@@ -68,7 +68,8 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   the file from the unreadable list. Apple `performSync()` called during a sync runs once more when that
   sync ends instead of being skipped, and a pull reports both unreadable iCloud records and held-back
   routes (`SyncError.several`, split by `runSteps`). Android without a sync folder clears the stored errors
-  after the delete, since no sync can replace them.
+  after the delete, since no sync can replace them. The Apple dialogs keep the list they opened with, and
+  both platforms sync after a partial delete failure too, still showing why a file was not deleted.
 - **Apple planned-route reads** (#75) match Android. `PlannedRouteStore.loadAllFromDisk()` throws when the
   folder exists but cannot be listed, so the planned-route part of the iCloud sync stops instead of
   overwriting local edits. It returns the skipped files (`SkippedFile`: URL, reason, `routeID`), which
@@ -225,6 +226,8 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #23: Android service and ViewModel test coverage.
 - #105 (part 3 left): Android `SyncStatusViewModel` delete-flow test. It needs ViewModel fakes
   (`CloudDriveSyncEngine` is a final class that needs a Context), so it belongs with #23.
+- #107: pre-existing unreadable-route edge cases from the #106 review (Apple case-sensitive tombstone
+  match, Android shared `actionError`, sync-off ignored, `handleRemoteNotification` drop, rerun-loop test).
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
 - #102: Android has no list of saved planned routes, so route detail (rename, delete, export) is
   unreachable.

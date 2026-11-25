@@ -157,7 +157,8 @@ internal fun folderErrorResult(hasPermission: Boolean): SyncResult = SyncResult(
  * The local ids a sync deletes because another device deleted them.
  *
  * A file that cannot be read goes too when it is named after a tombstoned id: the route was
- * deleted elsewhere (#77). An unreadable file with another name (`broken.json`) never matches.
+ * deleted elsewhere (#77). An unreadable file with another name (`broken.json`) never matches,
+ * since tombstones name route UUIDs.
  *
  * @param localIds Ids of the local entities that could be read.
  * @param unreadableIds Ids (file names without `.json`) of local files that could not be read.
@@ -174,14 +175,15 @@ internal fun localIdsToDelete(
  * One entity type's sync result.
  *
  * Each local file that could not be read adds a "cannot read local file" line before the
- * other errors. Such files stay until the user deletes them from the sync banner, so a retry
- * cannot clear them, and the result is then never retryable (#77, #100).
+ * other errors. Such files stay until the user deletes them from the sync banner or a
+ * tombstone does, so a retry cannot clear them, and the result is then never retryable
+ * (#77, #100).
  *
  * @param label The entity type's user-facing name, for example "Planned routes".
  * @param uploaded Entities uploaded.
  * @param downloaded Entities downloaded.
  * @param deleted Local entities deleted because another device deleted them.
- * @param unreadable The local files still unreadable at the end, by id, as "file: reason".
+ * @param unreadable The local files found unreadable and not deleted, by id, as "file: reason".
  * @param errors The other errors, in order.
  * @param retryable Whether every other error may clear by itself.
  * @return The result.

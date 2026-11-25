@@ -211,11 +211,10 @@ class SyncRulesTest {
     }
 
     @Test
-    fun `a file healed by a tombstone leaves the result clean and retryable`() {
-        val unreadable = mutableMapOf("u1" to "u1.json: bad")
-        unreadable.remove("u1") // as the engine does after the tombstone deleted it
+    fun `a result with only tombstone deletes is clean and retryable`() {
+        // The engine drops an unreadable file from the map once a tombstone deleted it.
         val result = channelResult(
-            "Planned routes", deleted = 1, unreadable = unreadable, errors = emptyList(),
+            "Planned routes", deleted = 1, unreadable = emptyMap(), errors = emptyList(),
             retryable = true
         )
         assertTrue(result.isSuccess)

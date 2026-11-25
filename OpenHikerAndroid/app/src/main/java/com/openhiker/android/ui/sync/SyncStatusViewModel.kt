@@ -158,10 +158,12 @@ class SyncStatusViewModel @Inject constructor(
 
     /**
      * Deletes the unreadable planned-route files the user confirmed, then syncs again so the
-     * errors clear and any cloud copy of those routes comes back (#77).
+     * errors clear and any cloud copy of those routes comes back (#77). It syncs after a
+     * partial failure too, as some files may be gone, and still shows why the others were not
+     * deleted (#104).
      *
-     * Without a sync folder no sync can replace the stored errors, which name the deleted
-     * files, so they are cleared instead (#104).
+     * Without a sync folder no sync can replace the stored errors, so once every file is
+     * deleted all stored errors are cleared instead; the reset notice is kept (#104).
      *
      * @param fileNames The files the confirmation listed, from [SyncBannerState.unreadableRouteFiles].
      */
@@ -170,13 +172,16 @@ class SyncStatusViewModel @Inject constructor(
             runReporting("Cannot delete the unreadable route files") {
                 plannedRouteRepository.deleteSkippedFiles(fileNames)
             }
-            if (actionError.value != null) return@launch
+            val deleteError = actionError.value
             val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
             if (folderUri != null) {
                 runReporting("Sync failed") { syncEngine.sync(Uri.parse(folderUri)) }
-            } else {
-                // Keeps the reset notice, which is not about these files.
+            } else if (deleteError == null) {
                 runReporting("Cannot clear the sync errors") { syncStateStore.recordOutcome(emptyList()) }
+            }
+            // runReporting cleared the delete failure; the user must still see it.
+            if (deleteError != null) {
+                actionError.value = listOfNotNull(deleteError, actionError.value).joinToString("\n")
             }
         }
     }

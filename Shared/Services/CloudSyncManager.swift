@@ -310,7 +310,7 @@ actor CloudSyncManager {
     /// a failure in one (for example an unreadable `planned_routes/` folder) does not
     /// stop the others (#81). If a sync is already in progress, it runs once more when
     /// that one ends, however often this was called meanwhile (#104);
-    /// ``CloudSyncStatus/isSyncing`` shows it to the user. Records the result in
+    /// ``CloudSyncStatus/isSyncing`` shows the running sync to the user. Records the result in
     /// ``CloudSyncStatus``.
     ///
     /// While change-notification subscriptions are missing, it tries to create them
@@ -434,7 +434,8 @@ actor CloudSyncManager {
     /// Runs every step in order, even after an earlier one fails.
     ///
     /// - Parameter steps: Pairs of a user-facing label and the work to run.
-    /// - Returns: One "label: reason" entry per step that threw, in step order.
+    /// - Returns: One "label: reason" entry per step that threw, or one per reason for
+    ///   ``SyncError/several(_:)``, in step order.
     static func runSteps(
         _ steps: [(label: String, run: () async throws -> Void)]
     ) async -> [String] {
@@ -802,11 +803,14 @@ actor CloudSyncManager {
         for id in unreadableDeleted {
             deleteLocal(CloudKitStore.plannedRouteRecordType, id, PlannedRouteStore.shared.delete(id:))
         }
-        // The route lists still name the deleted files until they are read again (#104).
+        // `unreadableFiles` and `loadErrors` name the deleted files until `loadAll()` (#104).
         if !unreadableDeleted.isEmpty { PlannedRouteStore.shared.loadAll() }
 
-        if !failures.isEmpty { throw SyncError.localDeletesFailed(failures) }
-        try fetched.throwIfSkipped()
+        // Both problems are reported, so neither hides the other.
+        var problems: [Error] = []
+        if !failures.isEmpty { problems.append(SyncError.localDeletesFailed(failures)) }
+        do { try fetched.throwIfSkipped() } catch { problems.append(error) }
+        try Self.throwAll(problems)
     }
 
     /// The unreadable local planned-route files a tombstone deletes (#80, as Android #77).

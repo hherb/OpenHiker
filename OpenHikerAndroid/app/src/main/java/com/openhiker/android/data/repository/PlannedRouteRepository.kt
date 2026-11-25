@@ -216,8 +216,8 @@ class PlannedRouteRepository internal constructor(
         _routes.value.filter { it.regionId == regionId }
 
     /**
-     * Deletes a planned route from disk and the in-memory list, and records the deletion for
-     * cloud sync.
+     * Deletes a planned route from disk, the in-memory list and [skippedFiles], and records the
+     * deletion for cloud sync.
      *
      * @param id The route UUID to delete.
      * @throws IOException If the route file exists but cannot be deleted. The route then stays in
@@ -232,7 +232,7 @@ class PlannedRouteRepository internal constructor(
             throw IOException("Failed to delete route file for route $id")
         }
         _routes.value = _routes.value.filterNot { it.id == id }
-        // A sync deletes unreadable files of routes deleted elsewhere too (#104).
+        // Sync calls this for unreadable files of routes deleted elsewhere too (#104).
         _skippedFiles.value = _skippedFiles.value.filterNot { it.id == id }
     }
 
