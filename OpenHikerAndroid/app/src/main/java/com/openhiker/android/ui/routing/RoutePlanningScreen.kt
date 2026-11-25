@@ -209,9 +209,11 @@ fun RoutePlanningScreen(
                 elevationLoss = route.elevationLoss,
                 estimatedDuration = route.estimatedDuration,
                 instructions = uiState.instructions,
+                isSaved = uiState.savedRouteId != null,
                 onSave = viewModel::showSaveDialog,
                 onStartNavigation = {
-                    onStartNavigation?.invoke(uiState.selectedRegionId ?: "")
+                    // Turn-by-turn loads the saved route by id; it used to get the region id.
+                    uiState.savedRouteId?.let { onStartNavigation?.invoke(it) }
                 }
             )
         }
@@ -339,6 +341,9 @@ private fun WaypointInfo(uiState: RoutePlanningUiState) {
 
 /**
  * Card displaying computed route statistics and turn-by-turn instructions.
+ *
+ * Navigation needs the saved route, so "Navigate" is enabled only once [isSaved], and "Save"
+ * only before, so one route is not saved twice.
  */
 @Composable
 private fun RouteResultCard(
@@ -347,6 +352,7 @@ private fun RouteResultCard(
     elevationLoss: Double,
     estimatedDuration: Double,
     instructions: List<TurnInstruction>,
+    isSaved: Boolean,
     onSave: () -> Unit,
     onStartNavigation: () -> Unit
 ) {
@@ -376,16 +382,28 @@ private fun RouteResultCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                Button(onClick = onSave, enabled = !isSaved, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.save))
                 }
-                Button(onClick = onStartNavigation, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = onStartNavigation,
+                    enabled = isSaved,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(Icons.Default.Navigation, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.navigate))
                 }
+            }
+
+            if (!isSaved) {
+                Text(
+                    stringResource(R.string.route_save_to_navigate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // Turn instructions

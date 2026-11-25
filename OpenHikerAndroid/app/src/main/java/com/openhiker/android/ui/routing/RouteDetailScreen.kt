@@ -320,7 +320,8 @@ fun RouteDetailScreen(
     // Delete confirmation dialog
     if (showDeleteDialog) {
         DeleteRouteDialog(
-            routeName = uiState.routeName,
+            // A route that failed to load has no name; its id still says which file goes.
+            routeName = uiState.routeName.ifEmpty { uiState.routeId },
             onDismiss = { showDeleteDialog = false },
             onConfirm = {
                 viewModel.deleteRoute()

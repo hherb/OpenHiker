@@ -56,6 +56,8 @@ import javax.inject.Inject
  * @property isComputing True while route computation is in progress.
  * @property errorMessage Error message from last failed computation, or null.
  * @property isSaveDialogVisible Whether the save route dialog is shown.
+ * @property savedRouteId Id of the saved copy of [computedRoute], or null until it is saved.
+ *   Navigation needs it: turn-by-turn loads the route by this id.
  */
 data class RoutePlanningUiState(
     val selectedRegionId: String? = null,
@@ -66,7 +68,8 @@ data class RoutePlanningUiState(
     val instructions: List<TurnInstruction> = emptyList(),
     val isComputing: Boolean = false,
     val errorMessage: String? = null,
-    val isSaveDialogVisible: Boolean = false
+    val isSaveDialogVisible: Boolean = false,
+    val savedRouteId: String? = null
 )
 
 /**
@@ -241,7 +244,8 @@ class RoutePlanningViewModel @Inject constructor(
             isLoopRoute = loop,
             errorMessage = null,
             computedRoute = null,
-            instructions = emptyList()
+            instructions = emptyList(),
+            savedRouteId = null
         )
 
         computeJob = viewModelScope.launch(Dispatchers.IO) {
@@ -336,9 +340,16 @@ class RoutePlanningViewModel @Inject constructor(
             }
 
             withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(
+                val current = _uiState.value
+                _uiState.value = current.copy(
                     isSaveDialogVisible = false,
-                    errorMessage = error
+                    errorMessage = error,
+                    // A route computed while this one was saving is not the one saved.
+                    savedRouteId = if (error == null && current.computedRoute === route) {
+                        plannedRoute.id
+                    } else {
+                        current.savedRouteId
+                    }
                 )
             }
         }

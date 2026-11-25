@@ -108,8 +108,10 @@ class RouteDetailViewModel @Inject constructor(
     /** In-memory reference to the full planned route, used for updates. */
     private var currentRoute: PlannedRoute? = null
 
+    /** The "routeId" navigation argument; kept so a route that failed to load can be deleted. */
+    private val routeId: String? = savedStateHandle.get<String>("routeId")
+
     init {
-        val routeId = savedStateHandle.get<String>("routeId")
         if (routeId != null) {
             loadRoute(routeId)
         } else {
@@ -208,19 +210,20 @@ class RouteDetailViewModel @Inject constructor(
     }
 
     /**
-     * Deletes the currently loaded route from the repository.
+     * Deletes the route from the repository, by its navigation id, so a route whose file could
+     * not be read can be deleted too (#102).
      *
      * After successful deletion, the route data is cleared and [RouteDetailUiState.isDeleted] is
      * set so the screen closes. On failure the screen stays open and shows the error.
-     * If the route has not been loaded yet, this operation is a no-op.
+     * Without a route id this operation is a no-op.
      */
     fun deleteRoute() {
-        val route = currentRoute ?: return
+        val id = routeId ?: return
 
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    plannedRouteRepository.delete(route.id)
+                    plannedRouteRepository.delete(id)
                 }
                 currentRoute = null
                 _instructions.value = emptyList()
@@ -229,7 +232,7 @@ class RouteDetailViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to delete route: ${route.id}", e)
+                Log.e(TAG, "Failed to delete route: $id", e)
                 _uiState.value = _uiState.value.copy(
                     actionErrorMessage = "Failed to delete route: ${e.message}"
                 )

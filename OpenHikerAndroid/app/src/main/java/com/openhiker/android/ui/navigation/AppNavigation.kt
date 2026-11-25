@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -65,10 +66,12 @@ import com.openhiker.android.ui.map.MapScreen
 import com.openhiker.android.ui.regions.RegionListScreen
 import com.openhiker.android.ui.regions.RegionSelectorScreen
 import com.openhiker.android.ui.routing.NavigationScreen
+import com.openhiker.android.ui.routing.PlannedRouteListScreen
 import com.openhiker.android.ui.routing.RouteDetailScreen
 import com.openhiker.android.ui.routing.RoutePlanningScreen
 import com.openhiker.android.ui.settings.SettingsScreen
 import com.openhiker.android.ui.sync.SyncStatusBanner
+import com.openhiker.android.ui.sync.SyncStatusViewModel
 import com.openhiker.android.ui.waypoints.AddWaypointScreen
 import com.openhiker.android.ui.waypoints.WaypointDetailScreen
 import com.openhiker.android.ui.waypoints.WaypointListScreen
@@ -87,6 +90,7 @@ object Routes {
     const val HIKES = "hikes"
     const val HIKE_DETAIL = "hike_detail/{hikeId}"
     const val ROUTES = "routes"
+    const val ROUTE_PLANNING = "route_planning"
     const val ROUTE_DETAIL = "route_detail/{routeId}"
     const val COMMUNITY = "community"
     const val COMMUNITY_ROUTE_DETAIL = "community_route_detail/{routePath}"
@@ -169,6 +173,7 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
         Routes.SETTINGS -> "Settings"
         Routes.REGION_SELECTOR -> "Download Region"
         Routes.HIKE_DETAIL -> "Hike Detail"
+        Routes.ROUTE_PLANNING -> "Plan Route"
         Routes.ROUTE_DETAIL -> "Route Detail"
         Routes.COMMUNITY_ROUTE_DETAIL -> "Community Route"
         Routes.ROUTE_UPLOAD -> "Share Route"
@@ -305,6 +310,10 @@ fun AppNavigation(windowSizeClass: WindowSizeClass) {
 /**
  * The screen content below the top bar: the cloud sync banner (#72), then the [NavHost].
  *
+ * The banner's [SyncStatusViewModel] belongs to the activity, outside the NavHost, and the
+ * planned-route list deletes unreadable files through it, so the delete's errors show in the
+ * banner, as for the banner's own delete.
+ *
  * @param navController The shared NavHostController.
  * @param showSyncBanner False on full-screen pages such as turn-by-turn navigation.
  * @param modifier Modifier applied to the container, usually the Scaffold's inner padding.
@@ -315,9 +324,14 @@ private fun AppContent(
     showSyncBanner: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val syncStatus: SyncStatusViewModel = hiltViewModel()
     Column(modifier = modifier) {
-        if (showSyncBanner) SyncStatusBanner()
-        AppNavHost(navController = navController, modifier = Modifier.weight(1f))
+        if (showSyncBanner) SyncStatusBanner(viewModel = syncStatus)
+        AppNavHost(
+            navController = navController,
+            onDeleteUnreadableRouteFiles = syncStatus::deleteUnreadableRouteFiles,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -392,11 +406,13 @@ private fun AdaptiveNavigationRail(
  * and tablet (Row + NavigationRail + Scaffold) layouts.
  *
  * @param navController The shared NavHostController.
+ * @param onDeleteUnreadableRouteFiles Deletes the confirmed unreadable planned-route files.
  * @param modifier Modifier applied to the NavHost container.
  */
 @Composable
 private fun AppNavHost(
     navController: NavHostController,
+    onDeleteUnreadableRouteFiles: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     NavHost(
@@ -440,6 +456,14 @@ private fun AppNavHost(
         }
 
         composable(Routes.ROUTES) {
+            PlannedRouteListScreen(
+                onOpenRoute = { routeId -> navController.navigate(Routes.routeDetail(routeId)) },
+                onPlanRoute = { navController.navigate(Routes.ROUTE_PLANNING) },
+                onDeleteUnreadableFiles = onDeleteUnreadableRouteFiles
+            )
+        }
+
+        composable(Routes.ROUTE_PLANNING) {
             RoutePlanningScreen(
                 onStartNavigation = { routeId ->
                     navController.navigate(Routes.turnByTurn(routeId)) {

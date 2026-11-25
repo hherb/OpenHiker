@@ -62,14 +62,27 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   "cannot read local file …" in each sync (`SyncResult.retryable` false). Apple reports "N iCloud routes
   not downloaded because the local files cannot be read" when a cloud copy is held back. Pure rules:
   `cloudEntityAction`, `localIdsToDelete` and `channelResult` (`SyncRules.kt`);
-  `CloudSyncManager.plannedRoutesToMerge` and `unreadableRoutesToDelete`. Android has no planned-route
-  list yet (#102), so the banner is its only way to the delete. Follow-ups (#104): the delete takes the
+  `CloudSyncManager.plannedRoutesToMerge` and `unreadableRoutesToDelete`. On Android the planned-route
+  list offers the same delete (see below). Follow-ups (#104): the delete takes the
   file names the confirmation showed, so a file that broke later is kept. A tombstone delete also drops
   the file from the unreadable list. Apple `performSync()` called during a sync runs once more when that
   sync ends instead of being skipped, and a pull reports both unreadable iCloud records and held-back
   routes (`SyncError.several`, split by `runSteps`). Android without a sync folder clears the stored errors
   after the delete, since no sync can replace them. The Apple dialogs keep the list they opened with, and
   both platforms sync after a partial delete failure too, still showing why a file was not deleted.
+- **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
+  (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
+  newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
+  `route_planning` destination). A red card lists a folder error and the unreadable files, with "Delete
+  unreadable route files". The empty state is hidden while that card shows. The delete runs through the
+  activity-scoped `SyncStatusViewModel` that `AppContent` hands to the banner and the NavHost, so its
+  errors show in the banner. Both use `DeleteUnreadableRouteFilesDialog`. `RouteDetailViewModel.deleteRoute`
+  deletes by the navigation id, so a route that failed to load can be deleted, with a tombstone. Fixed along
+  the way: the planner's "Navigate" passed the region id, so turn-by-turn always reported "Route not
+  found". It now needs the saved route (`savedRouteId`), and "Save" is disabled once saved. `app` unit tests
+  set `unitTests.isReturnDefaultValues`, so ViewModel error paths that call `android.util.Log` can run on
+  the JVM (#23). Not ported: Apple's swipe-to-delete and context-menu rename in the list (both are on the
+  detail screen).
 - **Apple planned-route reads** (#75) match Android. `PlannedRouteStore.loadAllFromDisk()` throws when the
   folder exists but cannot be listed, so the planned-route part of the iCloud sync stops instead of
   overwriting local edits. It returns the skipped files (`SkippedFile`: URL, reason, `routeID`), which
@@ -163,7 +176,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android
+- **Last PRs:** #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android
   #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83
   (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved
   routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
@@ -176,7 +189,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **145/145 pass** (2026-11-25) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 211/211 per variant; 2026-11-25) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 214/214 per variant; 2026-11-25) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -229,8 +242,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #107: pre-existing unreadable-route edge cases from the #106 review (Apple case-sensitive tombstone
   match, Android shared `actionError`, sync-off ignored, `handleRemoteNotification` drop, rerun-loop test).
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
-- #102: Android has no list of saved planned routes, so route detail (rename, delete, export) is
-  unreachable.
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides
   them.
