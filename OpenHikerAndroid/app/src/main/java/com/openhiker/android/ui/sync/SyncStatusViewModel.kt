@@ -85,6 +85,37 @@ internal fun syncBannerMessages(state: SyncState?, actionError: String?): List<S
 internal fun canRetry(state: SyncState?, syncEnabled: Boolean, folderUri: String?): Boolean =
     state?.lastErrors?.isNotEmpty() == true && syncEnabled && folderUri != null
 
+/** What the banner does after deleting unreadable planned-route files. */
+internal enum class AfterRouteFileDelete {
+    /** Sync, so the errors clear and any cloud copy of the routes comes back. */
+    SYNC,
+
+    /** Clear the stored errors: no sync can replace them, and the files are gone. */
+    CLEAR_ERRORS,
+
+    /** Leave the stored errors: some files are still there. */
+    NOTHING
+}
+
+/**
+ * Chooses what follows a delete of unreadable route files (#77, #104). It syncs only with sync
+ * on and a folder set (#107), and after a partial failure too, as some files may be gone.
+ *
+ * @param allDeleted Whether every confirmed file was deleted.
+ * @param syncEnabled Whether the user has sync turned on.
+ * @param folderUri The sync folder URI, or null if none is set.
+ * @return The step to run next.
+ */
+internal fun afterRouteFileDelete(
+    allDeleted: Boolean,
+    syncEnabled: Boolean,
+    folderUri: String?
+): AfterRouteFileDelete = when {
+    syncEnabled && folderUri != null -> AfterRouteFileDelete.SYNC
+    allDeleted -> AfterRouteFileDelete.CLEAR_ERRORS
+    else -> AfterRouteFileDelete.NOTHING
+}
+
 /** Heading above the last sync's errors. */
 internal const val SYNC_FAILED_HEADING = "Cloud sync failed:"
 
@@ -147,11 +178,15 @@ class SyncStatusViewModel @Inject constructor(
         }
     }
 
-    /** Runs a sync of the configured folder again; the result reaches the banner via the store. */
+    /**
+     * Runs a sync of the configured folder again, if sync is on (#107); the result reaches the
+     * banner via the store.
+     */
     fun retry() {
         viewModelScope.launch {
-            val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
-                ?: return@launch
+            val prefs = preferencesRepository.preferencesFlow.first()
+            val folderUri = prefs.syncFolderUri ?: return@launch
+            if (!prefs.syncEnabled) return@launch
             runReporting("Sync failed") { syncEngine.sync(Uri.parse(folderUri)) }
         }
     }
@@ -162,27 +197,34 @@ class SyncStatusViewModel @Inject constructor(
      * partial failure too, as some files may be gone, and still shows why the others were not
      * deleted (#104).
      *
-     * Without a sync folder no sync can replace the stored errors, so once every file is
-     * deleted all stored errors are cleared instead; the reset notice is kept (#104).
+     * With sync off or no sync folder, no sync can replace the stored errors, so once every
+     * file is deleted all stored errors are cleared instead; the reset notice is kept (#104,
+     * #107). See [afterRouteFileDelete].
      *
      * @param fileNames The files the confirmation dialog listed, from the sync banner or the
      *   planned-route list.
      */
     fun deleteUnreadableRouteFiles(fileNames: List<String>) {
         viewModelScope.launch {
-            runReporting("Cannot delete the unreadable route files") {
+            val deleteError = runReporting("Cannot delete the unreadable route files") {
                 plannedRouteRepository.deleteSkippedFiles(fileNames)
             }
-            val deleteError = actionError.value
-            val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
-            if (folderUri != null) {
-                runReporting("Sync failed") { syncEngine.sync(Uri.parse(folderUri)) }
-            } else if (deleteError == null) {
-                runReporting("Cannot clear the sync errors") { syncStateStore.recordOutcome(emptyList()) }
+            val prefs = preferencesRepository.preferencesFlow.first()
+            val folderUri = prefs.syncFolderUri
+            val next = afterRouteFileDelete(deleteError == null, prefs.syncEnabled, folderUri)
+            val nextError = when (next) {
+                // SYNC implies a folder is set.
+                AfterRouteFileDelete.SYNC -> runReporting("Sync failed") {
+                    syncEngine.sync(Uri.parse(checkNotNull(folderUri)))
+                }
+                AfterRouteFileDelete.CLEAR_ERRORS -> runReporting("Cannot clear the sync errors") {
+                    syncStateStore.recordOutcome(emptyList())
+                }
+                AfterRouteFileDelete.NOTHING -> null
             }
-            // runReporting cleared the delete failure; the user must still see it.
+            // The next step cleared the delete failure; the user must still see it.
             if (deleteError != null) {
-                actionError.value = listOfNotNull(deleteError, actionError.value).joinToString("\n")
+                actionError.value = listOfNotNull(deleteError, nextError).joinToString("\n")
             }
         }
     }
@@ -199,16 +241,19 @@ class SyncStatusViewModel @Inject constructor(
      *
      * @param what Prefix for the banner line, saying what failed.
      * @param action The work to run.
+     * @return The banner line of the failure, or null on success. Callers use this, not
+     *   [actionError], which a concurrent Retry or Dismiss may change meanwhile (#107).
      */
-    private suspend fun runReporting(what: String, action: suspend () -> Unit) {
+    private suspend fun runReporting(what: String, action: suspend () -> Unit): String? {
         actionError.value = null
-        try {
+        return try {
             action()
+            null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, what, e)
-            actionError.value = "$what: ${e.message}"
+            "$what: ${e.message}".also { actionError.value = it }
         }
     }
 

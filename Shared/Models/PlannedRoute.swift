@@ -482,28 +482,36 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
     /// only files in `confirmed` are deleted, so one that became unreadable after the user
     /// saw the list is kept too (#104). No iCloud deletion is queued: the user discards a
     /// broken local copy, not the route, so the next sync downloads the iCloud copy of the
-    /// route if there is one. Calls ``loadAll()`` afterwards to refresh the route lists.
+    /// route if there is one. iCloud sync also calls this for unreadable files of routes
+    /// deleted on another device, which already have a tombstone. Files are deleted by
+    /// their URL, so a lowercase `<uuid>.json` is found too (#107). Calls ``loadAll()``
+    /// afterwards to refresh the route lists.
     ///
     /// - Parameter confirmed: The files the user agreed to delete, normally
     ///   ``unreadableFiles`` as the confirmation showed it. Matched by file name.
+    /// - Returns: The files that were deleted.
     /// - Throws: A file system error if the folder cannot be listed, or
     ///   ``DeleteUnreadableError/notDeleted(_:)`` naming the files that could not be deleted
     ///   (the others are deleted).
-    func deleteUnreadableFiles(_ confirmed: [URL]) throws {
+    @discardableResult
+    func deleteUnreadableFiles(_ confirmed: [URL]) throws -> [URL] {
         defer { loadAll() }
         let names = Set(confirmed.map(\.lastPathComponent))
+        var deleted: [URL] = []
+        var failures: [String] = []
         // Re-read and delete in one queue block, so a save() in between is never deleted.
-        let failures: [String] = try queue.sync {
-            try readDisk().skippedFiles.filter { names.contains($0.url.lastPathComponent) }.compactMap { file in
+        try queue.sync {
+            for file in try readDisk().skippedFiles where names.contains(file.url.lastPathComponent) {
                 do {
                     try FileManager.default.removeItem(at: file.url)
-                    return nil
+                    deleted.append(file.url)
                 } catch {
-                    return "\(file.url.lastPathComponent): \(error.localizedDescription)"
+                    failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
         }
         if !failures.isEmpty { throw DeleteUnreadableError.notDeleted(failures) }
+        return deleted
     }
 
     // MARK: - CRUD

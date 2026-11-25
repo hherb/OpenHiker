@@ -4,7 +4,7 @@ Working notes for picking up in-flight work. Each section is one self-contained 
 start, and how to verify. Remove a section once its slice has landed. Add a new section when handing off new
 work. Planned work that has not started lives in `ROADMAP.md`.
 
-Last updated: 2026-11-25.
+Last updated: 2026-11-26.
 
 ---
 
@@ -65,11 +65,15 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   `CloudSyncManager.plannedRoutesToMerge` and `unreadableRoutesToDelete`. On Android the planned-route
   list offers the same delete (see below). Follow-ups (#104): the delete takes the
   file names the confirmation showed, so a file that broke later is kept. A tombstone delete also drops
-  the file from the unreadable list. Apple `performSync()` called during a sync runs once more when that
-  sync ends instead of being skipped, and a pull reports both unreadable iCloud records and held-back
+  the file from the unreadable list. Apple `performSync()` or a push-notification pull asked for during a
+  sync makes it run once more when it ends (`RunCoalescer`, #107), and a pull reports both unreadable iCloud records and held-back
   routes (`SyncError.several`, split by `runSteps`). Android without a sync folder clears the stored errors
   after the delete, since no sync can replace them. The Apple dialogs keep the list they opened with, and
   both platforms sync after a partial delete failure too, still showing why a file was not deleted.
+  Edge cases (#107): Apple's tombstone delete removes the unreadable file by its URL
+  (`deleteUnreadableFiles`, which returns what it deleted), so a lowercase `<uuid>.json` is found too.
+  Android's delete flow syncs only with sync on (pure `afterRouteFileDelete`), "Retry" checks it too,
+  and `runReporting` returns its failure, so a concurrent Retry or Dismiss cannot hide a delete error.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
@@ -179,7 +183,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android
+- **Last PRs:** #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80), #101 (Android #100), #99 (Android
   #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83
   (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68), #70 (#61 plus Android sync of saved
   routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
@@ -189,10 +193,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 
 | Gate | Command (see `.claude/skills/nextsession/SKILL.md`) | Result |
 |---|---|---|
-| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **145/145 pass** (2026-11-25) |
+| iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **147/147 pass** (2026-11-26) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 221/221 per variant; 2026-11-25) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 222/222 per variant; 2026-11-26) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -242,8 +246,6 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 - #23: Android service and ViewModel test coverage.
 - #105 (part 3 left): Android `SyncStatusViewModel` delete-flow test. It needs ViewModel fakes
   (`CloudDriveSyncEngine` is a final class that needs a Context), so it belongs with #23.
-- #107: pre-existing unreadable-route edge cases from the #106 review (Apple case-sensitive tombstone
-  match, Android shared `actionError`, sync-off ignored, `handleRemoteNotification` drop, rerun-loop test).
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides

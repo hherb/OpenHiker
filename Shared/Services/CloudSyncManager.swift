@@ -223,13 +223,11 @@ actor CloudSyncManager {
     /// tombstone fetch succeeds, so uploads never run on an old or missing set.
     private var remoteDeletions: [String: Set<String>]?
 
-    /// Whether a sync is currently in progress (prevents concurrent syncs).
-    private var isSyncing = false
-
-    /// Whether ``performSync()`` was called while a sync ran; that sync then runs once
-    /// more, so a request made mid-sync (for example after deleting unreadable route
-    /// files) is never lost (#104).
-    private var syncRequestedWhileRunning = false
+    /// Lets one sync or pull run at a time. A ``performSync()`` or push-notification pull
+    /// asked for while one runs makes a full sync run once more when it ends, so a request
+    /// made mid-sync (for example after deleting unreadable route files) is never lost
+    /// (#104, #107).
+    private var runs = RunCoalescer()
 
     /// Whether the last account check found an account that can sync.
     private var isAvailable = false
@@ -318,21 +316,16 @@ actor CloudSyncManager {
     /// and again after them (a first push may just have created the record types), and
     /// reports what still fails as "iCloud: change notifications unavailable (…)" (#86).
     func performSync() async {
-        guard !isSyncing else {
+        guard runs.begin() else {
             Self.logger.debug("Sync already in progress, running again when it ends")
-            syncRequestedWhileRunning = true
             return
         }
-
-        isSyncing = true
-        defer { isSyncing = false }
         repeat {
-            syncRequestedWhileRunning = false
             await syncOnce()
-        } while syncRequestedWhileRunning
+        } while runs.endRun()
     }
 
-    /// One run of ``performSync()``; the caller has set `isSyncing`.
+    /// One run of ``performSync()``; the caller holds `runs`.
     private func syncOnce() async {
         await CloudSyncStatus.shared.beginSync()
 
@@ -385,12 +378,15 @@ actor CloudSyncManager {
     /// Called when a CloudKit push notification is received.
     ///
     /// Triggers a pull-only sync to fetch the changed records, with the same independent
-    /// steps and reporting as ``performSync()``.
+    /// steps and reporting as ``performSync()``. While a sync runs, that sync runs once
+    /// more instead, which pulls the change too (#107).
     func handleRemoteNotification() async {
         guard isAvailable else { return }
-        guard !isSyncing else { return }
+        guard runs.begin() else {
+            Self.logger.debug("Sync in progress, pulling the notified change when it runs again")
+            return
+        }
 
-        isSyncing = true
         await CloudSyncStatus.shared.beginSync()
 
         let errors = await Self.runSteps([
@@ -403,9 +399,8 @@ actor CloudSyncManager {
         // although nothing was pushed; nothing calls this yet, so merge instead of
         // replace when it gets wired to push notifications.
         await Self.report(errors, to: CloudSyncStatus.shared)
-        isSyncing = false
-        // A full sync asked for meanwhile still runs (#104).
-        if syncRequestedWhileRunning { await performSync() }
+        // A sync asked for meanwhile still runs (#104).
+        while runs.endRun() { await syncOnce() }
     }
 
     // MARK: - Steps and Reporting
@@ -799,12 +794,19 @@ actor CloudSyncManager {
         where Self.isDeletedRemotely(cloudKitRecordID: route.cloudKitRecordID, tombstoned: plannedRoutes) {
             deleteLocal(CloudKitStore.plannedRouteRecordType, route.id, PlannedRouteStore.shared.delete(id:))
         }
+        // By URL, not `delete(id:)`, which would miss a lowercase `<uuid>.json` (#107). It
+        // calls `loadAll()`, so `unreadableFiles` stops naming the deleted files (#104).
         let unreadableDeleted = Self.unreadableRoutesToDelete(localPlanned.skippedFiles, tombstoned: plannedRoutes)
-        for id in unreadableDeleted {
-            deleteLocal(CloudKitStore.plannedRouteRecordType, id, PlannedRouteStore.shared.delete(id:))
+        if !unreadableDeleted.isEmpty {
+            do {
+                for url in try PlannedRouteStore.shared.deleteUnreadableFiles(unreadableDeleted.map(\.url)) {
+                    Self.logger.info("Deleted unreadable local \(CloudKitStore.plannedRouteRecordType) file \(url.lastPathComponent): deleted on another device")
+                }
+            } catch {
+                Self.logger.error("Cannot delete unreadable local \(CloudKitStore.plannedRouteRecordType) files: \(error.localizedDescription)")
+                failures.append("\(CloudKitStore.plannedRouteRecordType) files: \(error.localizedDescription)")
+            }
         }
-        // `unreadableFiles` and `loadErrors` name the deleted files until `loadAll()` (#104).
-        if !unreadableDeleted.isEmpty { PlannedRouteStore.shared.loadAll() }
 
         // Both problems are reported, so neither hides the other.
         var problems: [Error] = []
@@ -821,12 +823,12 @@ actor CloudSyncManager {
     /// - Parameters:
     ///   - skipped: The local route files that could not be read.
     ///   - tombstoned: Planned-route record names with a tombstone.
-    /// - Returns: The UUIDs of the routes to delete, in file order.
+    /// - Returns: The files to delete, in file order.
     static func unreadableRoutesToDelete(
         _ skipped: [PlannedRouteStore.SkippedFile],
         tombstoned: Set<String>
-    ) -> [UUID] {
-        skipped.compactMap(\.routeID).filter { tombstoned.contains($0.uuidString) }
+    ) -> [PlannedRouteStore.SkippedFile] {
+        skipped.filter { $0.routeID.map { tombstoned.contains($0.uuidString) } ?? false }
     }
 
     /// Reads the local planned routes for a push or pull.
@@ -1074,5 +1076,48 @@ actor CloudSyncManager {
                 try await sleep(delay)
             }
         }
+    }
+}
+
+// MARK: - Run Coalescing
+
+/// Lets one run of some work go at a time, and folds every request made during a run into
+/// exactly one more run (#104, #107).
+///
+/// Usage: call ``begin()``; if it returns `true`, do the work, then call ``endRun()`` and do
+/// the work again for as long as it returns `true`. If ``begin()`` returns `false`, a run is
+/// already going and will run once more, so the caller just returns.
+struct RunCoalescer {
+    /// Whether a run is going.
+    private(set) var isRunning = false
+
+    /// Whether ``begin()`` was called during the current run.
+    private var requestedWhileRunning = false
+
+    /// Asks for a run.
+    ///
+    /// - Returns: `true` if the caller should run now; `false` if a run is already going,
+    ///   which then runs once more.
+    mutating func begin() -> Bool {
+        if isRunning {
+            requestedWhileRunning = true
+            return false
+        }
+        isRunning = true
+        return true
+    }
+
+    /// Ends a run.
+    ///
+    /// - Returns: `true` if a run was asked for meanwhile, so the caller should run again
+    ///   (and call this again afterwards); `false` once nothing was asked for, which ends
+    ///   the run.
+    mutating func endRun() -> Bool {
+        if requestedWhileRunning {
+            requestedWhileRunning = false
+            return true
+        }
+        isRunning = false
+        return false
     }
 }

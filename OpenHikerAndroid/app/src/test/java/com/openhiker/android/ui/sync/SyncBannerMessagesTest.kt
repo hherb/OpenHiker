@@ -61,4 +61,22 @@ class SyncBannerMessagesTest {
             canRetry(SyncState(stateWasReset = true), syncEnabled = true, folderUri = "content://f")
         )
     }
+
+    @Test
+    fun `after a route file delete it syncs only with sync on and a folder set`() {
+        assertEquals(AfterRouteFileDelete.SYNC, afterRouteFileDelete(true, true, "content://f"))
+        assertEquals(
+            "a partial failure still syncs: some files may be gone",
+            AfterRouteFileDelete.SYNC,
+            afterRouteFileDelete(false, true, "content://f")
+        )
+        assertEquals(
+            "sync off: no sync, so the errors are cleared (#107)",
+            AfterRouteFileDelete.CLEAR_ERRORS,
+            afterRouteFileDelete(true, false, "content://f")
+        )
+        assertEquals(AfterRouteFileDelete.CLEAR_ERRORS, afterRouteFileDelete(true, true, null))
+        assertEquals(AfterRouteFileDelete.NOTHING, afterRouteFileDelete(false, false, "content://f"))
+        assertEquals(AfterRouteFileDelete.NOTHING, afterRouteFileDelete(false, true, null))
+    }
 }

@@ -217,15 +217,38 @@ final class CloudSyncManagerTests: XCTestCase {
         let dir = URL(fileURLWithPath: "/routes")
         let deleted = UUID()
         let kept = UUID()
-        let skipped = ["\(deleted.uuidString).json", "\(kept.uuidString).json", "broken.json"].map {
+        let lowercase = UUID()
+        let skipped = [
+            "\(deleted.uuidString).json", "\(kept.uuidString).json", "broken.json",
+            "\(lowercase.uuidString.lowercased()).json",
+        ].map {
             PlannedRouteStore.SkippedFile(url: dir.appendingPathComponent($0), reason: "bad")
         }
 
         XCTAssertEqual(
-            CloudSyncManager.unreadableRoutesToDelete(skipped, tombstoned: [deleted.uuidString, "broken"]),
-            [deleted]
+            CloudSyncManager.unreadableRoutesToDelete(
+                skipped, tombstoned: [deleted.uuidString, lowercase.uuidString, "broken"]
+            ),
+            [skipped[0], skipped[3]],
+            "a lowercase file name matches its tombstone too (#107)"
         )
         XCTAssertEqual(CloudSyncManager.unreadableRoutesToDelete(skipped, tombstoned: []), [])
+    }
+
+    /// Requests made during a run fold into exactly one more run; none make none (#104, #107).
+    func testRunCoalescerRunsOnceMoreAfterRequestsDuringARun() {
+        var runs = RunCoalescer()
+        XCTAssertTrue(runs.begin())
+        XCTAssertFalse(runs.begin())
+        XCTAssertFalse(runs.begin())
+        XCTAssertTrue(runs.isRunning)
+
+        XCTAssertTrue(runs.endRun(), "two requests meanwhile: one more run")
+        XCTAssertFalse(runs.endRun(), "nothing asked for during the extra run")
+        XCTAssertFalse(runs.isRunning)
+
+        XCTAssertTrue(runs.begin(), "idle again, so the next request runs at once")
+        XCTAssertFalse(runs.endRun())
     }
 
     /// Tombstones are grouped by record type, so a waypoint's deletion never deletes a

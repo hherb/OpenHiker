@@ -111,6 +111,23 @@ final class PlannedRouteStoreTests: XCTestCase {
         XCTAssertTrue(store.unreadableFiles.isEmpty)
     }
 
+    /// A lowercase `<uuid>.json` is deleted by its URL and returned, as iCloud sync does for
+    /// a route deleted on another device; `delete(id:)` looks for the uppercase name (#107).
+    func testDeleteUnreadableFilesFindsLowercaseNameAndReturnsDeleted() throws {
+        let store = PlannedRouteStore(storageDirectory: routesDir)
+        try FileManager.default.createDirectory(at: routesDir, withIntermediateDirectories: true)
+        let lowercase = UUID()
+        try Data("not json".utf8).write(to: routesDir.appendingPathComponent("\(lowercase.uuidString.lowercased()).json"))
+        let skipped = try store.loadAllFromDisk().skippedFiles
+        XCTAssertEqual(skipped.compactMap(\.routeID), [lowercase])
+
+        let deleted = try store.deleteUnreadableFiles(skipped.map(\.url))
+        drainMainQueue()
+
+        XCTAssertEqual(deleted.map(\.lastPathComponent), ["\(lowercase.uuidString.lowercased()).json"])
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: routesDir.path).isEmpty)
+    }
+
     /// A file listed as unreadable that has since been saved again must survive the delete.
     func testDeleteUnreadableFilesKeepsFileThatBecameReadable() throws {
         let store = PlannedRouteStore(storageDirectory: routesDir)
