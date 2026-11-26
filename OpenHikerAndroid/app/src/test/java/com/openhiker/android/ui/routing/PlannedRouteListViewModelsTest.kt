@@ -22,6 +22,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.openhiker.android.data.repository.PlannedRouteRepository
 import com.openhiker.android.data.repository.SkippedRouteFile
 import com.openhiker.android.data.sync.SyncStateStore
+import com.openhiker.android.testutil.ViewModelScopes
 import com.openhiker.core.model.Coordinate
 import com.openhiker.core.model.PlannedRoute
 import com.openhiker.core.model.RoutingMode
@@ -53,6 +54,8 @@ class PlannedRouteListViewModelsTest {
     @get:Rule
     val folder = TemporaryFolder()
 
+    private val scopes = ViewModelScopes()
+
     private val store by lazy { SyncStateStore(File(folder.root, "sync_state.json"), { 42L }) }
 
     private val repo by lazy { PlannedRouteRepository(folder.root, store) }
@@ -75,6 +78,7 @@ class PlannedRouteListViewModelsTest {
 
     @After
     fun tearDown() {
+        scopes.cancelAndJoinAll()
         Dispatchers.resetMain()
     }
 
@@ -84,7 +88,9 @@ class PlannedRouteListViewModelsTest {
         repo.save(route("new", "2026-06-01T00:00:00Z"))
         routeFile("broken").writeText("{ not json")
         // A fresh repository, as after an app start, knows nothing until refresh reads the disk.
-        val viewModel = PlannedRouteListViewModel(PlannedRouteRepository(folder.root, store))
+        val viewModel = scopes.track(
+            PlannedRouteListViewModel(PlannedRouteRepository(folder.root, store))
+        )
 
         viewModel.refresh()
 
@@ -98,7 +104,7 @@ class PlannedRouteListViewModelsTest {
     fun `refresh reports a folder that cannot be read`() = runTest {
         // A file where the directory should be makes the folder unreadable.
         File(folder.root, "planned_routes").writeText("")
-        val viewModel = PlannedRouteListViewModel(repo)
+        val viewModel = scopes.track(PlannedRouteListViewModel(repo))
 
         viewModel.refresh()
 
@@ -110,7 +116,9 @@ class PlannedRouteListViewModelsTest {
     fun `detail deletes a route whose file cannot be read`() = runTest {
         routeFile("r1").parentFile!!.mkdirs()
         routeFile("r1").writeText("{ not json")
-        val viewModel = RouteDetailViewModel(repo, SavedStateHandle(mapOf("routeId" to "r1")))
+        val viewModel = scopes.track(
+            RouteDetailViewModel(repo, SavedStateHandle(mapOf("routeId" to "r1")))
+        )
         viewModel.uiState.first { !it.isLoading }
         assertTrue(viewModel.uiState.value.errorMessage != null)
 
@@ -126,7 +134,9 @@ class PlannedRouteListViewModelsTest {
     @Test
     fun `detail deletes a loaded route everywhere`() = runTest {
         repo.save(route("r1", "2026-01-01T00:00:00Z"))
-        val viewModel = RouteDetailViewModel(repo, SavedStateHandle(mapOf("routeId" to "r1")))
+        val viewModel = scopes.track(
+            RouteDetailViewModel(repo, SavedStateHandle(mapOf("routeId" to "r1")))
+        )
         viewModel.uiState.first { !it.isLoading }
 
         viewModel.deleteRoute()
@@ -142,7 +152,7 @@ class PlannedRouteListViewModelsTest {
     fun `refresh clears the folder error once the folder can be read again`() = runTest {
         val dir = File(folder.root, "planned_routes")
         dir.writeText("")
-        val viewModel = PlannedRouteListViewModel(repo)
+        val viewModel = scopes.track(PlannedRouteListViewModel(repo))
         viewModel.refresh()
         viewModel.loadError.first { it != null }
 

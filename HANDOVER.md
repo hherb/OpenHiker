@@ -73,7 +73,11 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   deleted. Edge cases (#107): Apple's tombstone delete removes the unreadable file by its URL
   (`deleteUnreadableFiles`, which returns what it deleted), so a lowercase `<uuid>.json` is found too.
   Android's delete flow syncs only with sync on (pure `afterRouteFileDelete`), "Retry" checks it too, and
-  `runReporting` returns its failure, so a concurrent Retry or Dismiss cannot hide a delete error.
+  `runReporting` returns its failure. The banner keeps one failure line per kind of failure (`actionErrors`,
+  keyed by what failed; Retry and the follow-up sync share one), so neither the follow-up sync nor a
+  concurrent Retry hides a delete error, and the delete flow does not hide a Retry error (#110). Dismiss
+  hides the lines shown when tapped. The startup scan of planned routes reports an unreadable folder in the
+  banner too, since with sync off nothing else does.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
@@ -183,11 +187,11 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103 (Android #77, Apple #80),
-  #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95), #94 (Apple #91, #93), #92
-  (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android #74), #73 (Android #68),
-  #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android waypoint altitude, #65),
-  #64 (Apple invalid altitudes, #63).
+- **Last PRs:** #111 (#110, #105 part 3), #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103
+  (Android #77, Apple #80), #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95),
+  #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
+  #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android
+  waypoint altitude, #65), #64 (Apple invalid altitudes, #63).
 - **User manuals** for all four platforms are in `docs/user/` (commit `0913fe4`).
 
 ## Baseline (checked 2026-11-15; Xcode 27.2)
@@ -197,7 +201,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **148/148 pass** (2026-11-26) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 222/222 per variant; 2026-11-26) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 230/230 per variant; 2026-11-26) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
@@ -244,9 +248,11 @@ and WeatherKit framework build files kept Xcode-generated IDs (`6F81…`), not t
 
 ## Open GitHub issues
 
-- #23: Android service and ViewModel test coverage.
-- #105 (part 3 left): Android `SyncStatusViewModel` delete-flow test. It needs ViewModel fakes
-  (`CloudDriveSyncEngine` is a final class that needs a Context), so it belongs with #23.
+- #23: Android service and ViewModel test coverage. Pattern for a ViewModel whose collaborators need a
+  Context: an `internal` constructor that takes their flows and functions, and an `@Inject` constructor
+  that passes them in (`SyncStatusViewModel`, tested in `SyncStatusViewModelTest`). Register test
+  ViewModels with `testutil/ViewModelScopes` and call `cancelAndJoinAll()` before `Dispatchers.resetMain()`,
+  or IO work that resumes on Main fails a later test.
 - #71: Android `WaypointDatabase.MIGRATION_1_2` has no `MigrationTestHelper` test (needs `room-testing`).
 - #82: Apple planned-route `try?` save/delete, and watch-requested transfers that skip routes silently.
 - #90: Apple iCloud records that cannot be read never heal, and a failed local write during a pull hides

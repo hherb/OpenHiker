@@ -29,16 +29,19 @@ class SyncBannerMessagesTest {
 
     @Test
     fun `nothing to show before the state is read or after a clean sync`() {
-        assertEquals(emptyList<String>(), syncBannerMessages(null, null))
-        assertEquals(emptyList<String>(), syncBannerMessages(SyncState(), null))
+        assertEquals(emptyList<String>(), syncBannerMessages(null, emptyList()))
+        assertEquals(emptyList<String>(), syncBannerMessages(SyncState(), emptyList()))
     }
 
     @Test
-    fun `errors come under a heading, then the reset notice, then an action error`() {
+    fun `errors come under a heading, then the reset notice, then the action errors`() {
         val state = SyncState(lastErrors = listOf("Waypoints: boom"), stateWasReset = true)
         assertEquals(
-            listOf(SYNC_FAILED_HEADING, "Waypoints: boom", STATE_RESET_NOTICE, "Sync failed: x"),
-            syncBannerMessages(state, "Sync failed: x")
+            listOf(
+                SYNC_FAILED_HEADING, "Waypoints: boom", STATE_RESET_NOTICE, "Sync failed: x",
+                "Cannot delete: y"
+            ),
+            syncBannerMessages(state, listOf("Sync failed: x", "Cannot delete: y"))
         )
     }
 
@@ -46,7 +49,7 @@ class SyncBannerMessagesTest {
     fun `the reset notice shows without a heading when the last sync was clean`() {
         assertEquals(
             listOf(STATE_RESET_NOTICE),
-            syncBannerMessages(SyncState(stateWasReset = true), null)
+            syncBannerMessages(SyncState(stateWasReset = true), emptyList())
         )
     }
 
