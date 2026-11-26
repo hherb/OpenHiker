@@ -25,6 +25,7 @@ import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.PlannedRouteRepository
 import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.data.repository.orDefaultsOnReadError
 import com.openhiker.android.data.sync.SyncState
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -63,7 +65,7 @@ data class SyncBannerState(
  * The last sync's errors come first, under a heading. The reset notice follows: it is not a
  * sync error, so it does not hold back the last-sync time, but it stays until dismissed.
  * [actionErrors] are failures of the banner's own actions (Retry, Dismiss, deleting unreadable
- * route files).
+ * route files) and of reading the settings (#112).
  *
  * @param state The stored sync state, or null before it was first read.
  * @param actionErrors The banner actions' failure lines, one per kind of failure (see
@@ -122,6 +124,9 @@ internal fun afterRouteFileDelete(
     else -> AfterRouteFileDelete.NOTHING
 }
 
+/** Prefix of the banner line for settings that cannot be read. */
+internal const val PREFERENCES_READ_FAILED = "Cannot read your settings"
+
 /** Heading above the last sync's errors. */
 internal const val SYNC_FAILED_HEADING = "Cloud sync failed:"
 
@@ -139,9 +144,11 @@ internal const val STATE_RESET_NOTICE =
  *
  * @param isSyncing True while a sync runs, from any caller.
  * @param runSync Syncs the folder with the given URI. The errors it records reach the banner via
- *   the store; an exception it throws shows as a "Sync failed" line.
+ *   the store, even when they cannot be saved; an exception it throws shows as a "Sync failed"
+ *   line.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
- * @param preferences The user's preferences: sync on or off, and the sync folder URI.
+ * @param preferences The user's preferences: sync on or off, and the sync folder URI. A read
+ *   failure shows as a banner line and leaves sync looking turned off (#112).
  * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
  */
 @HiltViewModel
@@ -149,7 +156,7 @@ class SyncStatusViewModel internal constructor(
     isSyncing: StateFlow<Boolean>,
     private val runSync: suspend (folderUri: String) -> Unit,
     private val syncStateStore: SyncStateStore,
-    private val preferences: Flow<UserPreferences>,
+    preferences: Flow<UserPreferences>,
     private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
 
@@ -185,11 +192,19 @@ class SyncStatusViewModel internal constructor(
      */
     private val actionErrors = MutableStateFlow<Map<String, String>>(emptyMap())
 
+    /** [preferences], with a read failure as the defaults plus a line Dismiss can hide. */
+    private val readPreferences: Flow<UserPreferences> = preferences.orDefaultsOnReadError()
+        .onEach { prefs ->
+            val error = prefs.readError ?: return@onEach
+            val line = "$PREFERENCES_READ_FAILED: $error"
+            actionErrors.update { it + (PREFERENCES_READ_FAILED to line) }
+        }
+
     /** The banner's content; empty messages hide it. */
     val bannerState: StateFlow<SyncBannerState> = combine(
         syncStateStore.state,
         isSyncing,
-        preferences,
+        readPreferences,
         actionErrors,
         plannedRouteRepository.skippedFiles
     ) { state, syncing, prefs, errors, skipped ->
@@ -218,7 +233,7 @@ class SyncStatusViewModel internal constructor(
      */
     fun retry() {
         viewModelScope.launch {
-            val prefs = preferences.first()
+            val prefs = readPreferences.first()
             val folderUri = prefs.syncFolderUri ?: return@launch
             if (!prefs.syncEnabled) return@launch
             runReporting(SYNC_FAILED) { runSync(folderUri) }
@@ -234,7 +249,8 @@ class SyncStatusViewModel internal constructor(
      * With sync off or no sync folder, no sync can replace the stored errors, so once every
      * file is deleted all stored errors are cleared instead; the reset notice is kept (#104,
      * #107). After a partial failure there, the stored errors are left as they are. See
-     * [afterRouteFileDelete].
+     * [afterRouteFileDelete]. With unreadable settings it does neither, as whether sync is on
+     * is unknown (#112).
      *
      * @param fileNames The files the confirmation dialog listed, from the sync banner or the
      *   planned-route list.
@@ -244,7 +260,8 @@ class SyncStatusViewModel internal constructor(
             val deleteError = runReporting("Cannot delete the unreadable route files") {
                 plannedRouteRepository.deleteSkippedFiles(fileNames)
             }
-            val prefs = preferences.first()
+            val prefs = readPreferences.first()
+            if (prefs.readError != null) return@launch
             val folderUri = prefs.syncFolderUri
             when (afterRouteFileDelete(deleteError == null, prefs.syncEnabled, folderUri)) {
                 // SYNC implies a folder is set.
@@ -272,7 +289,10 @@ class SyncStatusViewModel internal constructor(
 
     /**
      * Runs [action], clearing an earlier failure line of the same kind first, and shows a
-     * failure in the banner. Lines of other actions are left alone (#110).
+     * failure in the banner. Lines of other actions are left alone (#110). A success clears the
+     * line again: a run of the same kind that overlapped this one (Retry waiting on the
+     * engine's lock behind the follow-up sync) may have failed meanwhile, and this later
+     * success makes its line stale (#113).
      *
      * @param what Prefix for the banner line, saying what failed; also its key in [actionErrors].
      * @param action The work to run.
@@ -282,6 +302,7 @@ class SyncStatusViewModel internal constructor(
         actionErrors.update { it - what }
         return try {
             action()
+            actionErrors.update { it - what }
             null
         } catch (e: CancellationException) {
             throw e

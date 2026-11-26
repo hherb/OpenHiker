@@ -25,8 +25,12 @@ import com.openhiker.android.testutil.ViewModelScopes
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -62,6 +66,12 @@ class SyncStatusViewModelTest {
     private val prefs =
         MutableStateFlow(UserPreferences(syncEnabled = true, syncFolderUri = FOLDER))
 
+    /** The preferences the ViewModel reads; [prefs] unless a test replaces it. */
+    private var preferences: Flow<UserPreferences> = prefs
+
+    /** Serialises the fake syncs, as `CloudDriveSyncEngine`'s mutex does. */
+    private val syncLock = Mutex()
+
     /** Folder URIs the fake sync was asked to sync, in call order; written from IO threads too. */
     private val syncedFolders: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
@@ -74,11 +84,13 @@ class SyncStatusViewModelTest {
     private fun viewModel() = scopes.track(SyncStatusViewModel(
         isSyncing = MutableStateFlow(false),
         runSync = { folderUri ->
-            syncedFolders.add(folderUri)
-            syncAction()
+            syncLock.withLock {
+                syncedFolders.add(folderUri)
+                syncAction()
+            }
         },
         syncStateStore = store,
-        preferences = prefs,
+        preferences = preferences,
         plannedRouteRepository = repo
     ))
 
@@ -193,6 +205,60 @@ class SyncStatusViewModelTest {
         assertEquals(2, syncedFolders.size)
         assertTrue(deleteLine(messages) != null)
         assertTrue(messages.contains("Sync failed: offline"))
+    }
+
+    @Test
+    fun `a Retry that succeeds after a failed follow-up sync clears the sync failure line`() =
+        runTest {
+            stuckFile("stuck.json")
+            val syncStarted = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            // The delete's follow-up sync waits, then fails; the Retry's sync succeeds.
+            syncAction = {
+                if (syncedFolders.size == 1) {
+                    syncStarted.complete(Unit)
+                    release.await()
+                    throw IOException("offline")
+                }
+            }
+            val viewModel = viewModel()
+            awaitStartupScan(viewModel)
+            viewModel.deleteUnreadableRouteFiles(listOf("stuck.json"))
+            syncStarted.await()
+
+            // The Retry waits on the lock behind the follow-up sync, which fails meanwhile.
+            viewModel.retry()
+            release.complete(Unit)
+
+            // Before #113 the follow-up's "Sync failed" line stayed after the Retry succeeded.
+            val messages = viewModel.bannerState
+                .first { syncedFolders.size == 2 && it.messages.size == 1 }.messages
+            assertTrue(deleteLine(messages) != null)
+        }
+
+    @Test
+    fun `preferences that cannot be read show in the banner and turn sync off`() = runTest {
+        brokenFile("bad.json")
+        store.recordOutcome(listOf("Upload failed"))
+        preferences = flow { throw IOException("disk error") }
+        val viewModel = viewModel()
+        awaitStartupScan(viewModel)
+
+        // Before #112 these read the preferences outside any error handling and crashed.
+        viewModel.retry()
+        viewModel.deleteUnreadableRouteFiles(listOf("bad.json"))
+
+        // Whether sync is on is unknown, so the delete neither syncs nor clears the errors.
+        val banner = viewModel.bannerState.first { it.unreadableRouteFiles.isEmpty() }
+        assertEquals(
+            listOf(SYNC_FAILED_HEADING, "Upload failed", "$PREFERENCES_READ_FAILED: disk error"),
+            banner.messages
+        )
+        assertFalse(banner.canRetry)
+        assertEquals(emptyList<String>(), syncedFolders)
+
+        viewModel.dismiss()
+        viewModel.bannerState.first { it.messages.isEmpty() }
     }
 
     @Test
