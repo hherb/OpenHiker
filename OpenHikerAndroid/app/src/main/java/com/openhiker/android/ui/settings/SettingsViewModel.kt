@@ -179,9 +179,11 @@ class SettingsViewModel @Inject constructor(
      * @param zoom Minimum zoom level (valid range: 1-18).
      */
     fun setDefaultMinZoom(zoom: Int) {
-        val currentMax = _uiState.value.preferences.defaultMaxZoom
-        val clamped = zoom.coerceIn(1, currentMax)
-        saveSetting { preferencesRepository.setDefaultMinZoom(clamped) }
+        saveSetting {
+            // The stored maximum, not the shown one, which may be a default (#115).
+            val currentMax = preferencesRepository.preferencesFlow.first().defaultMaxZoom
+            preferencesRepository.setDefaultMinZoom(zoom.coerceIn(1, currentMax))
+        }
     }
 
     /**
@@ -192,9 +194,11 @@ class SettingsViewModel @Inject constructor(
      * @param zoom Maximum zoom level (valid range: 1-18).
      */
     fun setDefaultMaxZoom(zoom: Int) {
-        val currentMin = _uiState.value.preferences.defaultMinZoom
-        val clamped = zoom.coerceIn(currentMin, 18)
-        saveSetting { preferencesRepository.setDefaultMaxZoom(clamped) }
+        saveSetting {
+            // The stored minimum, not the shown one, which may be a default (#115).
+            val currentMin = preferencesRepository.preferencesFlow.first().defaultMinZoom
+            preferencesRepository.setDefaultMaxZoom(zoom.coerceIn(currentMin, 18))
+        }
     }
 
     /**
