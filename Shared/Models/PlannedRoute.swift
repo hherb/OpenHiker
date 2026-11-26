@@ -465,45 +465,54 @@ final class PlannedRouteStore: @unchecked Sendable, ObservableObject {
 
     /// Errors of ``deleteUnreadableFiles(_:)``.
     enum DeleteUnreadableError: Error, LocalizedError, Equatable {
-        /// These files could not be deleted; one "file name: reason" entry each.
-        case notDeleted([String])
+        /// These files could not be deleted; one "file name: reason" entry each. `deleted`
+        /// names the files that were deleted, so a caller can still report them (#107).
+        case notDeleted([String], deleted: [URL])
 
         var errorDescription: String? {
             switch self {
-            case .notDeleted(let entries):
+            case .notDeleted(let entries, _):
                 return "Could not delete: \(entries.joined(separator: "; "))"
             }
         }
     }
 
-    /// Deletes the unreadable route files the user confirmed (#80).
+    /// Deletes the confirmed unreadable route files (#80).
     ///
     /// The files are read again first, so one that became readable meanwhile is kept, and
     /// only files in `confirmed` are deleted, so one that became unreadable after the user
     /// saw the list is kept too (#104). No iCloud deletion is queued: the user discards a
     /// broken local copy, not the route, so the next sync downloads the iCloud copy of the
-    /// route if there is one. Calls ``loadAll()`` afterwards to refresh the route lists.
+    /// route if there is one. iCloud sync also calls this for unreadable files of routes
+    /// deleted on another device, which already have a tombstone. Files are deleted by
+    /// their URL, so a lowercase `<uuid>.json` is found too (#107). Calls ``loadAll()``
+    /// afterwards to refresh the route lists.
     ///
-    /// - Parameter confirmed: The files the user agreed to delete, normally
-    ///   ``unreadableFiles`` as the confirmation showed it. Matched by file name.
+    /// - Parameter confirmed: The files to delete: normally ``unreadableFiles`` as the
+    ///   confirmation showed it, or tombstoned files from iCloud sync. Matched by file name.
+    /// - Returns: The files that were deleted.
     /// - Throws: A file system error if the folder cannot be listed, or
-    ///   ``DeleteUnreadableError/notDeleted(_:)`` naming the files that could not be deleted
-    ///   (the others are deleted).
-    func deleteUnreadableFiles(_ confirmed: [URL]) throws {
+    ///   ``DeleteUnreadableError/notDeleted(_:deleted:)`` naming the files that could not be
+    ///   deleted and those that were (the others are deleted).
+    @discardableResult
+    func deleteUnreadableFiles(_ confirmed: [URL]) throws -> [URL] {
         defer { loadAll() }
         let names = Set(confirmed.map(\.lastPathComponent))
+        var deleted: [URL] = []
+        var failures: [String] = []
         // Re-read and delete in one queue block, so a save() in between is never deleted.
-        let failures: [String] = try queue.sync {
-            try readDisk().skippedFiles.filter { names.contains($0.url.lastPathComponent) }.compactMap { file in
+        try queue.sync {
+            for file in try readDisk().skippedFiles where names.contains(file.url.lastPathComponent) {
                 do {
                     try FileManager.default.removeItem(at: file.url)
-                    return nil
+                    deleted.append(file.url)
                 } catch {
-                    return "\(file.url.lastPathComponent): \(error.localizedDescription)"
+                    failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
         }
-        if !failures.isEmpty { throw DeleteUnreadableError.notDeleted(failures) }
+        if !failures.isEmpty { throw DeleteUnreadableError.notDeleted(failures, deleted: deleted) }
+        return deleted
     }
 
     // MARK: - CRUD
