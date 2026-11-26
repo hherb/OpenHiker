@@ -23,18 +23,21 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.PlannedRouteRepository
+import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
 import com.openhiker.android.data.sync.SyncState
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -59,19 +62,21 @@ data class SyncBannerState(
  *
  * The last sync's errors come first, under a heading. The reset notice follows: it is not a
  * sync error, so it does not hold back the last-sync time, but it stays until dismissed.
- * [actionError] is a failure of the banner's own Retry or Dismiss.
+ * [actionErrors] are failures of the banner's own actions (Retry, Dismiss, deleting unreadable
+ * route files).
  *
  * @param state The stored sync state, or null before it was first read.
- * @param actionError The last Retry or Dismiss failure, or null.
+ * @param actionErrors The banner actions' failure lines, one per action, in the order they failed.
  * @return The lines to show, empty when there is nothing to report.
  */
-internal fun syncBannerMessages(state: SyncState?, actionError: String?): List<String> = buildList {
-    val errors = state?.lastErrors.orEmpty()
-    if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
-    addAll(errors)
-    if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
-    actionError?.let { add(it) }
-}
+internal fun syncBannerMessages(state: SyncState?, actionErrors: Collection<String>): List<String> =
+    buildList {
+        val errors = state?.lastErrors.orEmpty()
+        if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
+        addAll(errors)
+        if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
+        addAll(actionErrors)
+    }
 
 /**
  * Whether the banner offers "Retry": only after a failed sync, while sync is on and a folder is
@@ -131,30 +136,60 @@ internal const val STATE_RESET_NOTICE =
  * The errors come from [SyncStateStore], where every sync, background or "Sync now", records
  * them, so a background failure shows the next time the app is open.
  *
- * @param syncEngine Runs the sync for "Retry" and reports whether a sync is running.
+ * @param isSyncing True while a sync runs, from any caller.
+ * @param runSync Syncs the folder with the given URI; the result reaches the banner via the store.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
- * @param preferencesRepository Source of the sync folder URI.
+ * @param preferences The user's preferences: sync on or off, and the sync folder URI.
+ * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
  */
 @HiltViewModel
-class SyncStatusViewModel @Inject constructor(
-    private val syncEngine: CloudDriveSyncEngine,
+class SyncStatusViewModel internal constructor(
+    isSyncing: StateFlow<Boolean>,
+    private val runSync: suspend (folderUri: String) -> Unit,
     private val syncStateStore: SyncStateStore,
-    private val preferencesRepository: UserPreferencesRepository,
+    private val preferences: Flow<UserPreferences>,
     private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
 
-    private val actionError = MutableStateFlow<String?>(null)
+    /**
+     * Creates the ViewModel on the app's sync engine and preferences.
+     *
+     * @param syncEngine Runs the sync for "Retry" and reports whether a sync is running.
+     * @param syncStateStore Holds the last sync's errors and the reset notice.
+     * @param preferencesRepository Source of the sync setting and folder URI.
+     * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
+     */
+    @Inject
+    constructor(
+        syncEngine: CloudDriveSyncEngine,
+        syncStateStore: SyncStateStore,
+        preferencesRepository: UserPreferencesRepository,
+        plannedRouteRepository: PlannedRouteRepository
+    ) : this(
+        syncEngine.isSyncing,
+        { syncEngine.sync(Uri.parse(it)) },
+        syncStateStore,
+        preferencesRepository.preferencesFlow,
+        plannedRouteRepository
+    )
+
+    /**
+     * The banner actions' failure lines, keyed by what failed (the `what` of [runReporting]).
+     * Each action replaces only its own line, so a delete failure is not hidden by the sync that
+     * follows it, nor by a concurrent Retry or Dismiss, and theirs are not hidden by it (#110).
+     */
+    private val actionErrors = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** The banner's content; empty messages hide it. */
     val bannerState: StateFlow<SyncBannerState> = combine(
         syncStateStore.state,
-        syncEngine.isSyncing,
-        preferencesRepository.preferencesFlow,
-        actionError,
+        isSyncing,
+        preferences,
+        actionErrors,
         plannedRouteRepository.skippedFiles
-    ) { state, syncing, prefs, error, skipped ->
+    ) { state, syncing, prefs, errors, skipped ->
         SyncBannerState(
-            messages = syncBannerMessages(state, error),
+            messages = syncBannerMessages(state, errors.values),
             isSyncing = syncing,
             canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri),
             unreadableRouteFiles = skipped.map { it.fileName }
@@ -166,8 +201,8 @@ class SyncStatusViewModel @Inject constructor(
         // while the app was closed.
         viewModelScope.launch {
             runReporting("Cannot read the sync status") { syncStateStore.load() }
-            // Finds unreadable route files, so the banner can offer to delete them. Not via
-            // runReporting, which would clear a failure above; sync reports a folder error too.
+            // Finds unreadable route files, so the banner can offer to delete them. Sync reports
+            // a folder error too, so this one is only logged.
             try {
                 plannedRouteRepository.loadAll()
             } catch (e: CancellationException) {
@@ -184,10 +219,10 @@ class SyncStatusViewModel @Inject constructor(
      */
     fun retry() {
         viewModelScope.launch {
-            val prefs = preferencesRepository.preferencesFlow.first()
+            val prefs = preferences.first()
             val folderUri = prefs.syncFolderUri ?: return@launch
             if (!prefs.syncEnabled) return@launch
-            runReporting("Sync failed") { syncEngine.sync(Uri.parse(folderUri)) }
+            runReporting(SYNC_FAILED) { runSync(folderUri) }
         }
     }
 
@@ -210,44 +245,42 @@ class SyncStatusViewModel @Inject constructor(
             val deleteError = runReporting("Cannot delete the unreadable route files") {
                 plannedRouteRepository.deleteSkippedFiles(fileNames)
             }
-            val prefs = preferencesRepository.preferencesFlow.first()
+            val prefs = preferences.first()
             val folderUri = prefs.syncFolderUri
-            val next = afterRouteFileDelete(deleteError == null, prefs.syncEnabled, folderUri)
-            val nextError = when (next) {
+            when (afterRouteFileDelete(deleteError == null, prefs.syncEnabled, folderUri)) {
                 // SYNC implies a folder is set.
-                AfterRouteFileDelete.SYNC -> runReporting("Sync failed") {
-                    syncEngine.sync(Uri.parse(checkNotNull(folderUri)))
+                AfterRouteFileDelete.SYNC -> runReporting(SYNC_FAILED) {
+                    runSync(checkNotNull(folderUri))
                 }
                 AfterRouteFileDelete.CLEAR_ERRORS -> runReporting("Cannot clear the sync errors") {
                     syncStateStore.recordOutcome(emptyList())
                 }
-                AfterRouteFileDelete.NOTHING -> null
-            }
-            // A next step or a concurrent Retry/Dismiss may have cleared the delete failure; the
-            // user must still see it.
-            if (deleteError != null) {
-                actionError.value = listOfNotNull(deleteError, nextError).joinToString("\n")
+                AfterRouteFileDelete.NOTHING -> Unit
             }
         }
     }
 
-    /** Hides the errors and the reset notice until a later sync fails again. */
+    /**
+     * Hides the errors, the reset notice and the banner actions' failure lines shown now, until
+     * a later sync or action fails again. A failure that arrives after the tap still shows.
+     */
     fun dismiss() {
+        actionErrors.value = emptyMap()
         viewModelScope.launch {
             runReporting("Cannot dismiss the sync errors") { syncStateStore.dismissErrors() }
         }
     }
 
     /**
-     * Runs [action], clearing any earlier [actionError] first, and shows a failure in the banner.
+     * Runs [action], clearing an earlier failure line of the same kind first, and shows a
+     * failure in the banner. Lines of other actions are left alone (#110).
      *
-     * @param what Prefix for the banner line, saying what failed.
+     * @param what Prefix for the banner line, saying what failed; also its key in [actionErrors].
      * @param action The work to run.
-     * @return The banner line of the failure, or null on success. Callers use this, not
-     *   [actionError], which a concurrent Retry or Dismiss may change meanwhile (#107).
+     * @return The banner line of the failure, or null on success.
      */
     private suspend fun runReporting(what: String, action: suspend () -> Unit): String? {
-        actionError.value = null
+        actionErrors.update { it - what }
         return try {
             action()
             null
@@ -255,12 +288,15 @@ class SyncStatusViewModel @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, what, e)
-            "$what: ${e.message}".also { actionError.value = it }
+            "$what: ${e.message}".also { line -> actionErrors.update { it + (what to line) } }
         }
     }
 
     private companion object {
         const val TAG = "SyncStatusVM"
+
+        /** Banner prefix for a failed Retry or follow-up sync; one line for both. */
+        const val SYNC_FAILED = "Sync failed"
 
         /** Keeps the banner flow alive briefly across configuration changes. */
         const val STOP_TIMEOUT_MS = 5_000L
