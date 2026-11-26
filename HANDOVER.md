@@ -79,9 +79,10 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   hides the lines shown when tapped. The startup scan of planned routes reports an unreadable folder in the
   banner too, since with sync off nothing else does. A successful action clears its own line again, so a
   Retry that succeeds after the follow-up sync failed leaves no stale "Sync failed" line (#113). A
-  preferences read failure no longer crashes: `preferencesFlow` emits the defaults with
-  `UserPreferences.readError` set (`orDefaultsOnReadError`), and the banner shows "Cannot read your
-  settings" (#112).
+  preferences read failure no longer crashes the banner: `SyncStatusViewModel` applies
+  `orDefaultsOnReadError` (the defaults with `UserPreferences.readError` set), shows a "Cannot read your
+  settings" line that Dismiss hides, and a delete then neither syncs nor clears the stored errors (#112).
+  The other collectors of `preferencesFlow` still throw on a read failure (Deferred: #115).
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the

@@ -95,9 +95,10 @@ enum class UnitSystem(val id: String, val displayName: String) {
 
 /**
  * Turns a failed preferences read into the default preferences with
- * [UserPreferences.readError] set, the standard DataStore pattern, so collectors show the error
- * instead of crashing (#112). The flow then ends; a later collection reads the file again.
- * Other exceptions are programming errors and still propagate.
+ * [UserPreferences.readError] set, the standard DataStore pattern, so a collector shows the
+ * error instead of crashing (#112). The flow then ends; a later collection reads the file again.
+ * Other exceptions are programming errors and still propagate. Only the sync banner applies it:
+ * a collector that acts on the settings must not act on these defaults.
  *
  * @return This flow, with an [IOException] from upstream replaced by one defaults snapshot.
  */
@@ -179,8 +180,7 @@ class UserPreferencesRepository @Inject constructor(
      *
      * Emits a new [UserPreferences] snapshot whenever any preference changes.
      * Services and ViewModels should collect this flow to react to settings changes.
-     * A read failure emits the defaults with [UserPreferences.readError] set instead of throwing
-     * (#112).
+     * A read failure throws; [orDefaultsOnReadError] turns it into defaults for one collector.
      */
     val preferencesFlow: Flow<UserPreferences> = dataStore.data.map { prefs ->
         UserPreferences(
@@ -204,7 +204,7 @@ class UserPreferencesRepository @Inject constructor(
             syncFolderUri = prefs[KEY_SYNC_FOLDER_URI],
             keepScreenOnDuringNavigation = prefs[KEY_KEEP_SCREEN_ON] ?: true
         )
-    }.orDefaultsOnReadError()
+    }
 
     /**
      * Updates the default tile server.

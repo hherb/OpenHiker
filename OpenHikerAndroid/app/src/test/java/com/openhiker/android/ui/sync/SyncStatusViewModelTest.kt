@@ -20,7 +20,6 @@ package com.openhiker.android.ui.sync
 
 import com.openhiker.android.data.repository.PlannedRouteRepository
 import com.openhiker.android.data.repository.UserPreferences
-import com.openhiker.android.data.repository.orDefaultsOnReadError
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.testutil.ViewModelScopes
 import kotlinx.coroutines.CompletableDeferred
@@ -240,8 +239,8 @@ class SyncStatusViewModelTest {
     @Test
     fun `preferences that cannot be read show in the banner and turn sync off`() = runTest {
         brokenFile("bad.json")
-        preferences = flow<UserPreferences> { throw IOException("disk error") }
-            .orDefaultsOnReadError()
+        store.recordOutcome(listOf("Upload failed"))
+        preferences = flow { throw IOException("disk error") }
         val viewModel = viewModel()
         awaitStartupScan(viewModel)
 
@@ -249,10 +248,17 @@ class SyncStatusViewModelTest {
         viewModel.retry()
         viewModel.deleteUnreadableRouteFiles(listOf("bad.json"))
 
+        // Whether sync is on is unknown, so the delete neither syncs nor clears the errors.
         val banner = viewModel.bannerState.first { it.unreadableRouteFiles.isEmpty() }
-        assertEquals(listOf("$PREFERENCES_READ_FAILED: disk error"), banner.messages)
+        assertEquals(
+            listOf(SYNC_FAILED_HEADING, "Upload failed", "$PREFERENCES_READ_FAILED: disk error"),
+            banner.messages
+        )
         assertFalse(banner.canRetry)
         assertEquals(emptyList<String>(), syncedFolders)
+
+        viewModel.dismiss()
+        viewModel.bannerState.first { it.messages.isEmpty() }
     }
 
     @Test

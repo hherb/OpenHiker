@@ -25,6 +25,7 @@ import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.PlannedRouteRepository
 import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.data.repository.orDefaultsOnReadError
 import com.openhiker.android.data.sync.SyncState
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -63,26 +65,20 @@ data class SyncBannerState(
  * The last sync's errors come first, under a heading. The reset notice follows: it is not a
  * sync error, so it does not hold back the last-sync time, but it stays until dismissed.
  * [actionErrors] are failures of the banner's own actions (Retry, Dismiss, deleting unreadable
- * route files). A preferences read error comes last (#112): with it, sync looks turned off.
+ * route files) and of reading the settings (#112).
  *
  * @param state The stored sync state, or null before it was first read.
  * @param actionErrors The banner actions' failure lines, one per kind of failure (see
  *   `SyncStatusViewModel.actionErrors`), shown in the order given.
- * @param preferencesReadError [UserPreferences.readError], or null.
  * @return The lines to show, empty when there is nothing to report.
  */
-internal fun syncBannerMessages(
-    state: SyncState?,
-    actionErrors: Collection<String>,
-    preferencesReadError: String? = null
-): List<String> =
+internal fun syncBannerMessages(state: SyncState?, actionErrors: Collection<String>): List<String> =
     buildList {
         val errors = state?.lastErrors.orEmpty()
         if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
         addAll(errors)
         if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
         addAll(actionErrors)
-        if (preferencesReadError != null) add("$PREFERENCES_READ_FAILED: $preferencesReadError")
     }
 
 /**
@@ -151,7 +147,8 @@ internal const val STATE_RESET_NOTICE =
  *   the store, even when they cannot be saved; an exception it throws shows as a "Sync failed"
  *   line.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
- * @param preferences The user's preferences: sync on or off, and the sync folder URI.
+ * @param preferences The user's preferences: sync on or off, and the sync folder URI. A read
+ *   failure shows as a banner line and leaves sync looking turned off (#112).
  * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
  */
 @HiltViewModel
@@ -159,7 +156,7 @@ class SyncStatusViewModel internal constructor(
     isSyncing: StateFlow<Boolean>,
     private val runSync: suspend (folderUri: String) -> Unit,
     private val syncStateStore: SyncStateStore,
-    private val preferences: Flow<UserPreferences>,
+    preferences: Flow<UserPreferences>,
     private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
 
@@ -195,16 +192,24 @@ class SyncStatusViewModel internal constructor(
      */
     private val actionErrors = MutableStateFlow<Map<String, String>>(emptyMap())
 
+    /** [preferences], with a read failure as the defaults plus a line Dismiss can hide. */
+    private val readPreferences: Flow<UserPreferences> = preferences.orDefaultsOnReadError()
+        .onEach { prefs ->
+            val error = prefs.readError ?: return@onEach
+            val line = "$PREFERENCES_READ_FAILED: $error"
+            actionErrors.update { it + (PREFERENCES_READ_FAILED to line) }
+        }
+
     /** The banner's content; empty messages hide it. */
     val bannerState: StateFlow<SyncBannerState> = combine(
         syncStateStore.state,
         isSyncing,
-        preferences,
+        readPreferences,
         actionErrors,
         plannedRouteRepository.skippedFiles
     ) { state, syncing, prefs, errors, skipped ->
         SyncBannerState(
-            messages = syncBannerMessages(state, errors.values, prefs.readError),
+            messages = syncBannerMessages(state, errors.values),
             isSyncing = syncing,
             canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri),
             unreadableRouteFiles = skipped.map { it.fileName }
@@ -228,7 +233,7 @@ class SyncStatusViewModel internal constructor(
      */
     fun retry() {
         viewModelScope.launch {
-            val prefs = preferences.first()
+            val prefs = readPreferences.first()
             val folderUri = prefs.syncFolderUri ?: return@launch
             if (!prefs.syncEnabled) return@launch
             runReporting(SYNC_FAILED) { runSync(folderUri) }
@@ -244,7 +249,8 @@ class SyncStatusViewModel internal constructor(
      * With sync off or no sync folder, no sync can replace the stored errors, so once every
      * file is deleted all stored errors are cleared instead; the reset notice is kept (#104,
      * #107). After a partial failure there, the stored errors are left as they are. See
-     * [afterRouteFileDelete].
+     * [afterRouteFileDelete]. With unreadable settings it does neither, as whether sync is on
+     * is unknown (#112).
      *
      * @param fileNames The files the confirmation dialog listed, from the sync banner or the
      *   planned-route list.
@@ -254,7 +260,8 @@ class SyncStatusViewModel internal constructor(
             val deleteError = runReporting("Cannot delete the unreadable route files") {
                 plannedRouteRepository.deleteSkippedFiles(fileNames)
             }
-            val prefs = preferences.first()
+            val prefs = readPreferences.first()
+            if (prefs.readError != null) return@launch
             val folderUri = prefs.syncFolderUri
             when (afterRouteFileDelete(deleteError == null, prefs.syncEnabled, folderUri)) {
                 // SYNC implies a folder is set.
