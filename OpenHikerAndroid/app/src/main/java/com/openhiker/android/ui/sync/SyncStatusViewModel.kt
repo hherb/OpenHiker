@@ -63,20 +63,26 @@ data class SyncBannerState(
  * The last sync's errors come first, under a heading. The reset notice follows: it is not a
  * sync error, so it does not hold back the last-sync time, but it stays until dismissed.
  * [actionErrors] are failures of the banner's own actions (Retry, Dismiss, deleting unreadable
- * route files).
+ * route files). A preferences read error comes last (#112): with it, sync looks turned off.
  *
  * @param state The stored sync state, or null before it was first read.
  * @param actionErrors The banner actions' failure lines, one per kind of failure (see
  *   `SyncStatusViewModel.actionErrors`), shown in the order given.
+ * @param preferencesReadError [UserPreferences.readError], or null.
  * @return The lines to show, empty when there is nothing to report.
  */
-internal fun syncBannerMessages(state: SyncState?, actionErrors: Collection<String>): List<String> =
+internal fun syncBannerMessages(
+    state: SyncState?,
+    actionErrors: Collection<String>,
+    preferencesReadError: String? = null
+): List<String> =
     buildList {
         val errors = state?.lastErrors.orEmpty()
         if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
         addAll(errors)
         if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
         addAll(actionErrors)
+        if (preferencesReadError != null) add("$PREFERENCES_READ_FAILED: $preferencesReadError")
     }
 
 /**
@@ -122,6 +128,9 @@ internal fun afterRouteFileDelete(
     else -> AfterRouteFileDelete.NOTHING
 }
 
+/** Prefix of the banner line for settings that cannot be read. */
+internal const val PREFERENCES_READ_FAILED = "Cannot read your settings"
+
 /** Heading above the last sync's errors. */
 internal const val SYNC_FAILED_HEADING = "Cloud sync failed:"
 
@@ -139,7 +148,8 @@ internal const val STATE_RESET_NOTICE =
  *
  * @param isSyncing True while a sync runs, from any caller.
  * @param runSync Syncs the folder with the given URI. The errors it records reach the banner via
- *   the store; an exception it throws shows as a "Sync failed" line.
+ *   the store, even when they cannot be saved; an exception it throws shows as a "Sync failed"
+ *   line.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
  * @param preferences The user's preferences: sync on or off, and the sync folder URI.
  * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
@@ -194,7 +204,7 @@ class SyncStatusViewModel internal constructor(
         plannedRouteRepository.skippedFiles
     ) { state, syncing, prefs, errors, skipped ->
         SyncBannerState(
-            messages = syncBannerMessages(state, errors.values),
+            messages = syncBannerMessages(state, errors.values, prefs.readError),
             isSyncing = syncing,
             canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri),
             unreadableRouteFiles = skipped.map { it.fileName }
@@ -272,7 +282,10 @@ class SyncStatusViewModel internal constructor(
 
     /**
      * Runs [action], clearing an earlier failure line of the same kind first, and shows a
-     * failure in the banner. Lines of other actions are left alone (#110).
+     * failure in the banner. Lines of other actions are left alone (#110). A success clears the
+     * line again: a run of the same kind that overlapped this one (Retry waiting on the
+     * engine's lock behind the follow-up sync) may have failed meanwhile, and this later
+     * success makes its line stale (#113).
      *
      * @param what Prefix for the banner line, saying what failed; also its key in [actionErrors].
      * @param action The work to run.
@@ -282,6 +295,7 @@ class SyncStatusViewModel internal constructor(
         actionErrors.update { it - what }
         return try {
             action()
+            actionErrors.update { it - what }
             null
         } catch (e: CancellationException) {
             throw e

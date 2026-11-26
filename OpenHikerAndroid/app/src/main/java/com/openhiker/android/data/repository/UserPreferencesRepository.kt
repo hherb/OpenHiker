@@ -19,6 +19,7 @@
 package com.openhiker.android.data.repository
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -28,7 +29,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -91,6 +94,20 @@ enum class UnitSystem(val id: String, val displayName: String) {
 }
 
 /**
+ * Turns a failed preferences read into the default preferences with
+ * [UserPreferences.readError] set, the standard DataStore pattern, so collectors show the error
+ * instead of crashing (#112). The flow then ends; a later collection reads the file again.
+ * Other exceptions are programming errors and still propagate.
+ *
+ * @return This flow, with an [IOException] from upstream replaced by one defaults snapshot.
+ */
+internal fun Flow<UserPreferences>.orDefaultsOnReadError(): Flow<UserPreferences> = catch { e ->
+    if (e !is IOException) throw e
+    Log.e("UserPreferences", "Cannot read the preferences", e)
+    emit(UserPreferences(readError = e.message ?: e.javaClass.simpleName))
+}
+
+/**
  * Immutable snapshot of all user preferences.
  *
  * Collected from the DataStore [Flow] and consumed by ViewModels
@@ -108,6 +125,8 @@ enum class UnitSystem(val id: String, val displayName: String) {
  * @property syncEnabled Whether automatic cloud sync is enabled.
  * @property syncFolderUri SAF tree URI for the cloud sync folder, or null.
  * @property keepScreenOnDuringNavigation Whether to prevent screen sleep during active navigation.
+ * @property readError Why the stored preferences could not be read, or null. When set, every
+ *   other property holds its default (see [orDefaultsOnReadError]).
  */
 data class UserPreferences(
     val defaultTileServerId: String = DEFAULT_TILE_SERVER_ID,
@@ -120,7 +139,8 @@ data class UserPreferences(
     val concurrentDownloadLimit: Int = DEFAULT_CONCURRENT_DOWNLOADS,
     val syncEnabled: Boolean = false,
     val syncFolderUri: String? = null,
-    val keepScreenOnDuringNavigation: Boolean = true
+    val keepScreenOnDuringNavigation: Boolean = true,
+    val readError: String? = null
 ) {
     companion object {
         /** Default tile server: OpenTopoMap. */
@@ -159,6 +179,8 @@ class UserPreferencesRepository @Inject constructor(
      *
      * Emits a new [UserPreferences] snapshot whenever any preference changes.
      * Services and ViewModels should collect this flow to react to settings changes.
+     * A read failure emits the defaults with [UserPreferences.readError] set instead of throwing
+     * (#112).
      */
     val preferencesFlow: Flow<UserPreferences> = dataStore.data.map { prefs ->
         UserPreferences(
@@ -182,7 +204,7 @@ class UserPreferencesRepository @Inject constructor(
             syncFolderUri = prefs[KEY_SYNC_FOLDER_URI],
             keepScreenOnDuringNavigation = prefs[KEY_KEEP_SCREEN_ON] ?: true
         )
-    }
+    }.orDefaultsOnReadError()
 
     /**
      * Updates the default tile server.

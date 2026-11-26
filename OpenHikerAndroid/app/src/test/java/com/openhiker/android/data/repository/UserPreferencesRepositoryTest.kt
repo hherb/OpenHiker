@@ -22,7 +22,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import java.io.IOException
 
 /**
  * Unit tests for the pure data classes and enums in UserPreferencesRepository.
@@ -32,6 +37,27 @@ import org.junit.Test
  * pure JVM tests that validate enum lookup logic and data class defaults.
  */
 class UserPreferencesRepositoryTest {
+
+    // ── orDefaultsOnReadError (#112) ──────────────────────────────
+
+    @Test
+    fun `a read failure emits the defaults with the error`() = runTest {
+        val emitted = flow<UserPreferences> { throw IOException("disk error") }
+            .orDefaultsOnReadError().toList()
+        assertEquals(listOf(UserPreferences(readError = "disk error")), emitted)
+    }
+
+    @Test
+    fun `readable preferences pass through unchanged`() = runTest {
+        val prefs = UserPreferences(syncEnabled = true)
+        assertEquals(listOf(prefs), flowOf(prefs).orDefaultsOnReadError().toList())
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `an error other than a read failure still propagates`() = runTest {
+        flow<UserPreferences> { throw IllegalStateException("bug") }
+            .orDefaultsOnReadError().toList()
+    }
 
     // ── GpsAccuracyMode.fromId ────────────────────────────────────
 
