@@ -191,7 +191,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 - **Waypoint categories** are stored as the shared raw value (`waterSource`) on all platforms. Android's
   Room DB v2 migrates v1 rows that held the enum name. Read stored strings with
   `WaypointCategory.fromStored`, which accepts both forms (#61).
-- **Last PRs:** this branch (#112, #113), #111 (#110, #105 part 3), #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103
+- **Last PRs:** #114 (#112, #113), #111 (#110, #105 part 3), #109 (#107), #108 (Android #102), #106 (#104, #105 parts 1–2), #103
   (Android #77, Apple #80), #101 (Android #100), #99 (Android #72), #97 (Apple #84, #86), #96 (Android #95),
   #94 (Apple #91, #93), #92 (Apple #89), #88 (Apple #85), #83 (Apple #78, #81), #79 (Apple #75), #76 (Android
   #74), #73 (Android #68), #70 (#61 plus Android sync of saved routes and waypoints; fixes #69), #67 (Android
