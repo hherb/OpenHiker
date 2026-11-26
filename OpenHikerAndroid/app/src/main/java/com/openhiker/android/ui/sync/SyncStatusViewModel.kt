@@ -62,24 +62,29 @@ data class SyncBannerState(
 /**
  * Builds the banner lines from the stored sync state (#72).
  *
- * The last sync's errors come first, under a heading. The reset notice follows: it is not a
- * sync error, so it does not hold back the last-sync time, but it stays until dismissed.
+ * The last sync's errors come first, under a heading. The reset notices follow: they are not
+ * sync errors, so they do not hold back the last-sync time, but they stay until dismissed.
  * [actionErrors] are failures of the banner's own actions (Retry, Dismiss, deleting unreadable
  * route files) and of reading the settings (#112).
  *
  * @param state The stored sync state, or null before it was first read.
  * @param actionErrors The banner actions' failure lines, one per kind of failure (see
  *   `SyncStatusViewModel.actionErrors`), shown in the order given.
+ * @param settingsWereReset Whether damaged settings were reset to the defaults (#115).
  * @return The lines to show, empty when there is nothing to report.
  */
-internal fun syncBannerMessages(state: SyncState?, actionErrors: Collection<String>): List<String> =
-    buildList {
-        val errors = state?.lastErrors.orEmpty()
-        if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
-        addAll(errors)
-        if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
-        addAll(actionErrors)
-    }
+internal fun syncBannerMessages(
+    state: SyncState?,
+    actionErrors: Collection<String>,
+    settingsWereReset: Boolean = false
+): List<String> = buildList {
+    val errors = state?.lastErrors.orEmpty()
+    if (errors.isNotEmpty()) add(SYNC_FAILED_HEADING)
+    addAll(errors)
+    if (state?.stateWasReset == true) add(STATE_RESET_NOTICE)
+    if (settingsWereReset) add(SETTINGS_RESET_NOTICE)
+    addAll(actionErrors)
+}
 
 /**
  * Whether the banner offers "Retry": only after a failed sync, while sync is on and a folder is
@@ -135,6 +140,11 @@ internal const val STATE_RESET_NOTICE =
     "This device's sync records were damaged and have been reset. Items you deleted before " +
         "the next sync may come back; delete them again."
 
+/** Shown after a damaged settings file was replaced by the defaults (#115). */
+internal const val SETTINGS_RESET_NOTICE =
+    "Your settings were damaged and have been reset to the defaults. Check them in Settings; " +
+        "cloud sync is now off."
+
 /**
  * Backs the sync banner shown above every tab, the Android counterpart of Apple's
  * `CloudSyncErrorBanner` (#72).
@@ -147,8 +157,10 @@ internal const val STATE_RESET_NOTICE =
  *   the store, even when they cannot be saved; an exception it throws shows as a "Sync failed"
  *   line.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
- * @param preferences The user's preferences: sync on or off, and the sync folder URI. A read
- *   failure shows as a banner line and leaves sync looking turned off (#112).
+ * @param preferences The user's preferences: sync on or off, the sync folder URI and the
+ *   settings reset notice. A read failure shows as a banner line and leaves sync looking turned
+ *   off (#112).
+ * @param dismissSettingsReset Hides the settings reset notice for good (#115).
  * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
  */
 @HiltViewModel
@@ -157,6 +169,7 @@ class SyncStatusViewModel internal constructor(
     private val runSync: suspend (folderUri: String) -> Unit,
     private val syncStateStore: SyncStateStore,
     preferences: Flow<UserPreferences>,
+    private val dismissSettingsReset: suspend () -> Unit,
     private val plannedRouteRepository: PlannedRouteRepository
 ) : ViewModel() {
 
@@ -166,7 +179,8 @@ class SyncStatusViewModel internal constructor(
      * @param syncEngine Runs the sync for Retry and after a delete, and reports whether a sync is
      *   running.
      * @param syncStateStore Holds the last sync's errors and the reset notice.
-     * @param preferencesRepository Source of the sync setting and folder URI.
+     * @param preferencesRepository Source of the sync setting, the folder URI and the settings
+     *   reset notice.
      * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
      */
     @Inject
@@ -180,6 +194,7 @@ class SyncStatusViewModel internal constructor(
         { syncEngine.sync(Uri.parse(it)) },
         syncStateStore,
         preferencesRepository.preferencesFlow,
+        preferencesRepository::dismissSettingsResetNotice,
         plannedRouteRepository
     )
 
@@ -192,12 +207,20 @@ class SyncStatusViewModel internal constructor(
      */
     private val actionErrors = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    /** [preferences], with a read failure as the defaults plus a line Dismiss can hide. */
+    /**
+     * [preferences], with a read failure as the defaults plus a line Dismiss hides until the
+     * next failed read. A later read that works brings the stored values back and removes the
+     * line (#115).
+     */
     private val readPreferences: Flow<UserPreferences> = preferences.orDefaultsOnReadError()
         .onEach { prefs ->
-            val error = prefs.readError ?: return@onEach
-            val line = "$PREFERENCES_READ_FAILED: $error"
-            actionErrors.update { it + (PREFERENCES_READ_FAILED to line) }
+            val error = prefs.readError
+            if (error == null) {
+                actionErrors.update { it - PREFERENCES_READ_FAILED }
+            } else {
+                val line = "$PREFERENCES_READ_FAILED: $error"
+                actionErrors.update { it + (PREFERENCES_READ_FAILED to line) }
+            }
         }
 
     /** The banner's content; empty messages hide it. */
@@ -209,7 +232,7 @@ class SyncStatusViewModel internal constructor(
         plannedRouteRepository.skippedFiles
     ) { state, syncing, prefs, errors, skipped ->
         SyncBannerState(
-            messages = syncBannerMessages(state, errors.values),
+            messages = syncBannerMessages(state, errors.values, prefs.settingsWereReset),
             isSyncing = syncing,
             canRetry = canRetry(state, prefs.syncEnabled, prefs.syncFolderUri),
             unreadableRouteFiles = skipped.map { it.fileName }
@@ -277,13 +300,17 @@ class SyncStatusViewModel internal constructor(
     }
 
     /**
-     * Hides the errors, the reset notice and the banner actions' failure lines shown now, until
+     * Hides the errors, the reset notices and the banner actions' failure lines shown now, until
      * a later sync or action fails again. A failure that arrives after the tap still shows.
      */
     fun dismiss() {
+        val settingsWereReset = bannerState.value.messages.contains(SETTINGS_RESET_NOTICE)
         actionErrors.value = emptyMap()
         viewModelScope.launch {
             runReporting("Cannot dismiss the sync errors") { syncStateStore.dismissErrors() }
+            if (settingsWereReset) {
+                runReporting("Cannot dismiss the settings notice") { dismissSettingsReset() }
+            }
         }
     }
 

@@ -25,8 +25,10 @@ import com.openhiker.android.testutil.ViewModelScopes
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -75,6 +77,9 @@ class SyncStatusViewModelTest {
     /** Folder URIs the fake sync was asked to sync, in call order; written from IO threads too. */
     private val syncedFolders: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
+    /** How often the ViewModel asked to hide the settings reset notice. */
+    private var settingsResetDismissals = 0
+
     /** What the fake sync does after recording its call; succeeds by default. */
     private var syncAction: suspend () -> Unit = {}
 
@@ -91,6 +96,10 @@ class SyncStatusViewModelTest {
         },
         syncStateStore = store,
         preferences = preferences,
+        dismissSettingsReset = {
+            settingsResetDismissals++
+            prefs.value = prefs.value.copy(settingsWereReset = false)
+        },
         plannedRouteRepository = repo
     ))
 
@@ -240,7 +249,12 @@ class SyncStatusViewModelTest {
     fun `preferences that cannot be read show in the banner and turn sync off`() = runTest {
         brokenFile("bad.json")
         store.recordOutcome(listOf("Upload failed"))
-        preferences = flow { throw IOException("disk error") }
+        // The retry (#115) then hangs, so a re-read cannot bring the line back after Dismiss.
+        var reads = 0
+        preferences = flow {
+            if (++reads == 1) throw IOException("disk error")
+            awaitCancellation()
+        }
         val viewModel = viewModel()
         awaitStartupScan(viewModel)
 
@@ -259,6 +273,47 @@ class SyncStatusViewModelTest {
 
         viewModel.dismiss()
         viewModel.bannerState.first { it.messages.isEmpty() }
+    }
+
+    @Test
+    fun `preferences readable again bring Retry back and drop the read error (#115)`() =
+        runTest {
+            store.recordOutcome(listOf("Upload failed"))
+            var reads = 0
+            preferences = flow {
+                if (++reads == 1) throw IOException("disk error")
+                emitAll(prefs)
+            }
+            val viewModel = viewModel()
+
+            // Before #115 the first failure ended the flow: sync looked off until a restart.
+            val banner = viewModel.bannerState.first { it.canRetry }
+            assertEquals(listOf(SYNC_FAILED_HEADING, "Upload failed"), banner.messages)
+            assertEquals(2, reads)
+        }
+
+    @Test
+    fun `the settings reset notice shows until Dismiss hides it for good (#115)`() = runTest {
+        prefs.value = prefs.value.copy(settingsWereReset = true)
+        val viewModel = viewModel()
+        viewModel.bannerState.first { it.messages == listOf(SETTINGS_RESET_NOTICE) }
+
+        viewModel.dismiss()
+
+        viewModel.bannerState.first { it.messages.isEmpty() }
+        assertEquals(1, settingsResetDismissals)
+    }
+
+    @Test
+    fun `Dismiss without the settings reset notice leaves the settings alone`() = runTest {
+        store.recordOutcome(listOf("Upload failed"))
+        val viewModel = viewModel()
+        viewModel.bannerState.first { it.messages.isNotEmpty() }
+
+        viewModel.dismiss()
+
+        viewModel.bannerState.first { it.messages.isEmpty() }
+        assertEquals(0, settingsResetDismissals)
     }
 
     @Test

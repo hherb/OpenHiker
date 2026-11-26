@@ -27,6 +27,7 @@ import com.openhiker.android.data.repository.GpsAccuracyMode
 import com.openhiker.android.data.repository.UnitSystem
 import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.data.repository.retryOnReadError
 import com.openhiker.android.data.sync.SyncStateStore
 import com.openhiker.android.service.sync.CloudDriveSyncEngine
 import com.openhiker.android.service.sync.SyncWorker
@@ -34,10 +35,9 @@ import com.openhiker.core.model.TileServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
@@ -105,10 +105,6 @@ class SettingsViewModel @Inject constructor(
     /** Observable UI state combining preferences with transient state. */
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    /** Observable user preferences for direct consumption by other screens. */
-    val preferences: StateFlow<UserPreferences> = preferencesRepository.preferencesFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, UserPreferences())
-
     init {
         observePreferences()
         observeSyncStatus()
@@ -123,9 +119,7 @@ class SettingsViewModel @Inject constructor(
      * @param server The tile server to use as default.
      */
     fun setDefaultTileServer(server: TileServer) {
-        viewModelScope.launch {
-            preferencesRepository.setDefaultTileServer(server.id)
-        }
+        saveSetting { preferencesRepository.setDefaultTileServer(server.id) }
     }
 
     // ── GPS Settings ─────────────────────────────────────────────
@@ -136,9 +130,7 @@ class SettingsViewModel @Inject constructor(
      * @param mode The desired GPS accuracy/power trade-off.
      */
     fun setGpsAccuracyMode(mode: GpsAccuracyMode) {
-        viewModelScope.launch {
-            preferencesRepository.setGpsAccuracyMode(mode)
-        }
+        saveSetting { preferencesRepository.setGpsAccuracyMode(mode) }
     }
 
     // ── Navigation Settings ──────────────────────────────────────
@@ -149,9 +141,7 @@ class SettingsViewModel @Inject constructor(
      * @param unitSystem The unit system to use for distances and elevations.
      */
     fun setUnitSystem(unitSystem: UnitSystem) {
-        viewModelScope.launch {
-            preferencesRepository.setUnitSystem(unitSystem)
-        }
+        saveSetting { preferencesRepository.setUnitSystem(unitSystem) }
     }
 
     /**
@@ -160,9 +150,7 @@ class SettingsViewModel @Inject constructor(
      * @param enabled True to enable vibrations, false to disable.
      */
     fun setHapticFeedbackEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesRepository.setHapticFeedbackEnabled(enabled)
-        }
+        saveSetting { preferencesRepository.setHapticFeedbackEnabled(enabled) }
     }
 
     /**
@@ -171,9 +159,7 @@ class SettingsViewModel @Inject constructor(
      * @param enabled True to enable audio cues for navigation events.
      */
     fun setAudioCuesEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesRepository.setAudioCuesEnabled(enabled)
-        }
+        saveSetting { preferencesRepository.setAudioCuesEnabled(enabled) }
     }
 
     /**
@@ -182,9 +168,7 @@ class SettingsViewModel @Inject constructor(
      * @param enabled True to prevent screen sleep during navigation.
      */
     fun setKeepScreenOnDuringNavigation(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesRepository.setKeepScreenOnDuringNavigation(enabled)
-        }
+        saveSetting { preferencesRepository.setKeepScreenOnDuringNavigation(enabled) }
     }
 
     // ── Download Settings ────────────────────────────────────────
@@ -197,9 +181,7 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultMinZoom(zoom: Int) {
         val currentMax = _uiState.value.preferences.defaultMaxZoom
         val clamped = zoom.coerceIn(1, currentMax)
-        viewModelScope.launch {
-            preferencesRepository.setDefaultMinZoom(clamped)
-        }
+        saveSetting { preferencesRepository.setDefaultMinZoom(clamped) }
     }
 
     /**
@@ -212,9 +194,7 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultMaxZoom(zoom: Int) {
         val currentMin = _uiState.value.preferences.defaultMinZoom
         val clamped = zoom.coerceIn(currentMin, 18)
-        viewModelScope.launch {
-            preferencesRepository.setDefaultMaxZoom(clamped)
-        }
+        saveSetting { preferencesRepository.setDefaultMaxZoom(clamped) }
     }
 
     /**
@@ -223,9 +203,7 @@ class SettingsViewModel @Inject constructor(
      * @param limit Parallel download count (valid range: 2-12).
      */
     fun setConcurrentDownloadLimit(limit: Int) {
-        viewModelScope.launch {
-            preferencesRepository.setConcurrentDownloadLimit(limit)
-        }
+        saveSetting { preferencesRepository.setConcurrentDownloadLimit(limit) }
     }
 
     // ── Cloud Sync Settings ──────────────────────────────────────
@@ -255,7 +233,7 @@ class SettingsViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        saveSetting {
             preferencesRepository.setSyncFolderUri(uri.toString())
             preferencesRepository.setSyncEnabled(true)
             SyncWorker.schedule(application)
@@ -279,10 +257,13 @@ class SettingsViewModel @Inject constructor(
      * @param enabled True to enable, false to disable.
      */
     fun setSyncEnabled(enabled: Boolean) {
-        viewModelScope.launch {
+        saveSetting {
             preferencesRepository.setSyncEnabled(enabled)
 
-            if (enabled && _uiState.value.preferences.syncFolderUri != null) {
+            // Read the folder afresh: the shown settings may be defaults while the file could
+            // not be read, and acting on them would cancel sync and clear its errors (#115).
+            val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
+            if (enabled && folderUri != null) {
                 SyncWorker.schedule(application)
             } else {
                 SyncWorker.cancel(application)
@@ -306,14 +287,24 @@ class SettingsViewModel @Inject constructor(
      * the result via [SettingsUiState.lastSyncResult].
      */
     fun syncNow() {
-        val folderUri = _uiState.value.preferences.syncFolderUri ?: run {
-            _uiState.value = _uiState.value.copy(error = "Please select a cloud folder first")
-            return
-        }
-
         _uiState.value = _uiState.value.copy(error = null)
 
-        viewModelScope.launch { runSync(Uri.parse(folderUri)) }
+        viewModelScope.launch {
+            // Read afresh, as in setSyncEnabled, so unreadable settings are not taken for "no
+            // folder".
+            val folderUri = try {
+                preferencesRepository.preferencesFlow.first().syncFolderUri
+            } catch (e: IOException) {
+                Log.e(TAG, "Cannot read the settings", e)
+                _uiState.value = _uiState.value.copy(error = "Cannot read your settings: ${e.message}")
+                return@launch
+            }
+            if (folderUri == null) {
+                _uiState.value = _uiState.value.copy(error = "Please select a cloud folder first")
+                return@launch
+            }
+            runSync(Uri.parse(folderUri))
+        }
     }
 
     /**
@@ -394,12 +385,30 @@ class SettingsViewModel @Inject constructor(
     // ── Private Helpers ──────────────────────────────────────────
 
     /**
+     * Runs [action], which reads or writes the settings, and shows a read or write failure in
+     * [SettingsUiState.error] instead of crashing (#115).
+     *
+     * @param action The settings change to make.
+     */
+    private fun saveSetting(action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (e: IOException) {
+                Log.e(TAG, "Cannot save the setting", e)
+                _uiState.value = _uiState.value.copy(error = "Cannot save the setting: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Observes the DataStore preferences flow and updates the UI state
-     * whenever any preference changes.
+     * whenever any preference changes. A read failure keeps the values shown and reads again
+     * later; the sync banner reports it (#115).
      */
     private fun observePreferences() {
         viewModelScope.launch {
-            preferencesRepository.preferencesFlow.collect { prefs ->
+            preferencesRepository.preferencesFlow.retryOnReadError().collect { prefs ->
                 _uiState.value = _uiState.value.copy(
                     preferences = prefs,
                     syncFolderDisplayName = prefs.syncFolderUri?.let { uriString ->

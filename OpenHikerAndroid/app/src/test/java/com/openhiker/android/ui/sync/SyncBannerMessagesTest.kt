@@ -46,6 +46,16 @@ class SyncBannerMessagesTest {
     }
 
     @Test
+    fun `the settings reset notice follows the sync reset notice (#115)`() {
+        assertEquals(
+            listOf(STATE_RESET_NOTICE, SETTINGS_RESET_NOTICE, "Sync failed: x"),
+            syncBannerMessages(
+                SyncState(stateWasReset = true), listOf("Sync failed: x"), settingsWereReset = true
+            )
+        )
+    }
+
+    @Test
     fun `the reset notice shows without a heading when the last sync was clean`() {
         assertEquals(
             listOf(STATE_RESET_NOTICE),

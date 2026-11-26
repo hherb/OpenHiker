@@ -88,6 +88,11 @@ route files**. Sync never overwrites such a file, because it may hold changes th
 lacks. After you delete it, the app syncs again and brings back the copy from the sync folder, if there is
 one.
 
+If the phone cannot read your settings, the banner says so, and the app keeps trying to read them; until
+then, a setting you change may not be saved. If the settings file was damaged, the app resets every
+setting to its default and the banner tells you once. Check your settings, and turn cloud sync back on:
+choose the sync folder again.
+
 <!-- Screenshot: Settings screen -->
 > **[Screenshot placeholder]** *Android settings screen showing GPS accuracy (Balanced selected), Units (Metric), and Cloud Sync section with Google Drive folder selected*
 
