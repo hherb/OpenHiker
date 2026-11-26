@@ -66,7 +66,8 @@ data class SyncBannerState(
  * route files).
  *
  * @param state The stored sync state, or null before it was first read.
- * @param actionErrors The banner actions' failure lines, one per action, in the order they failed.
+ * @param actionErrors The banner actions' failure lines, one per kind of failure (see
+ *   `SyncStatusViewModel.actionErrors`), shown in the order given.
  * @return The lines to show, empty when there is nothing to report.
  */
 internal fun syncBannerMessages(state: SyncState?, actionErrors: Collection<String>): List<String> =
@@ -137,7 +138,8 @@ internal const val STATE_RESET_NOTICE =
  * them, so a background failure shows the next time the app is open.
  *
  * @param isSyncing True while a sync runs, from any caller.
- * @param runSync Syncs the folder with the given URI; the result reaches the banner via the store.
+ * @param runSync Syncs the folder with the given URI. The errors it records reach the banner via
+ *   the store; an exception it throws shows as a "Sync failed" line.
  * @param syncStateStore Holds the last sync's errors and the reset notice.
  * @param preferences The user's preferences: sync on or off, and the sync folder URI.
  * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
@@ -154,7 +156,8 @@ class SyncStatusViewModel internal constructor(
     /**
      * Creates the ViewModel on the app's sync engine and preferences.
      *
-     * @param syncEngine Runs the sync for "Retry" and reports whether a sync is running.
+     * @param syncEngine Runs the sync for Retry and after a delete, and reports whether a sync is
+     *   running.
      * @param syncStateStore Holds the last sync's errors and the reset notice.
      * @param preferencesRepository Source of the sync setting and folder URI.
      * @param plannedRouteRepository Lists and deletes the unreadable planned-route files.
@@ -175,8 +178,10 @@ class SyncStatusViewModel internal constructor(
 
     /**
      * The banner actions' failure lines, keyed by what failed (the `what` of [runReporting]).
-     * Each action replaces only its own line, so a delete failure is not hidden by the sync that
-     * follows it, nor by a concurrent Retry or Dismiss, and theirs are not hidden by it (#110).
+     * Each action clears only its own line (Retry and the follow-up sync share the [SYNC_FAILED]
+     * line), so a delete failure survives the sync that follows it and a concurrent Retry, and a
+     * Retry failure survives the end of the delete flow. Dismiss clears only the lines shown
+     * when it is tapped (#110).
      */
     private val actionErrors = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -201,15 +206,9 @@ class SyncStatusViewModel internal constructor(
         // while the app was closed.
         viewModelScope.launch {
             runReporting("Cannot read the sync status") { syncStateStore.load() }
-            // Finds unreadable route files, so the banner can offer to delete them. Sync reports
-            // a folder error too, so this one is only logged.
-            try {
-                plannedRouteRepository.loadAll()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Cannot read the planned routes", e)
-            }
+            // Finds unreadable route files, so the banner can offer to delete them. A folder
+            // error shows here too: with sync off nothing else reports it.
+            runReporting("Cannot read the planned routes") { plannedRouteRepository.loadAll() }
         }
     }
 
@@ -288,7 +287,9 @@ class SyncStatusViewModel internal constructor(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, what, e)
-            "$what: ${e.message}".also { line -> actionErrors.update { it + (what to line) } }
+            val line = "$what: ${e.message ?: e.javaClass.simpleName}"
+            actionErrors.update { it + (what to line) }
+            line
         }
     }
 

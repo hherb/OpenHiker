@@ -28,7 +28,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -42,12 +41,13 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.util.Collections
 
 /**
  * Tests the banner's "Delete unreadable route files" flow (#77, #104, #105, #107) and that a
- * banner action's failure line is never hidden by another action (#110). A real
- * [PlannedRouteRepository] and [SyncStateStore] on a temporary folder do the file work; the
- * sync itself is a fake, so each test decides when it ends and whether it fails.
+ * banner action's failure line is not hidden by another action's run, only by Dismiss (#110).
+ * A real [PlannedRouteRepository] and [SyncStateStore] on a temporary folder do the file work;
+ * the sync itself is a fake, so each test decides when it ends and whether it fails.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncStatusViewModelTest {
@@ -62,14 +62,15 @@ class SyncStatusViewModelTest {
     private val prefs =
         MutableStateFlow(UserPreferences(syncEnabled = true, syncFolderUri = FOLDER))
 
-    /** Folder URIs the fake sync was asked to sync, in call order. */
-    private val syncedFolders = mutableListOf<String>()
+    /** Folder URIs the fake sync was asked to sync, in call order; written from IO threads too. */
+    private val syncedFolders: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     /** What the fake sync does after recording its call; succeeds by default. */
     private var syncAction: suspend () -> Unit = {}
 
     private val scopes = ViewModelScopes()
 
+    /** A ViewModel on the real store and repository, with the fake sync. */
     private fun viewModel() = scopes.track(SyncStatusViewModel(
         isSyncing = MutableStateFlow(false),
         runSync = { folderUri ->
@@ -81,6 +82,7 @@ class SyncStatusViewModelTest {
         plannedRouteRepository = repo
     ))
 
+    /** The planned-route file [name] in the temporary folder. */
     private fun routeFile(name: String) = File(folder.root, "planned_routes/$name")
 
     /** An unparseable route file, which the delete can remove. */
@@ -95,8 +97,17 @@ class SyncStatusViewModelTest {
         File(this, "x").writeText("x")
     }
 
+    /** The delete's failure line among [messages], or null. */
     private fun deleteLine(messages: List<String>) =
         messages.singleOrNull { it.startsWith("Cannot delete the unreadable route files: ") }
+
+    /**
+     * Waits until the startup scan has listed [count] unreadable files, as the user can only
+     * tap Delete after that; a later scan result would otherwise race the delete's own.
+     */
+    private suspend fun awaitStartupScan(viewModel: SyncStatusViewModel, count: Int = 1) {
+        viewModel.bannerState.first { it.unreadableRouteFiles.size == count }
+    }
 
     @Before
     fun setUp() {
@@ -115,13 +126,16 @@ class SyncStatusViewModelTest {
         val synced = CompletableDeferred<Unit>()
         syncAction = { synced.complete(Unit) }
         val viewModel = viewModel()
+        awaitStartupScan(viewModel)
 
         viewModel.deleteUnreadableRouteFiles(listOf("bad.json"))
 
         synced.await()
         assertFalse(routeFile("bad.json").exists())
         assertEquals(listOf(FOLDER), syncedFolders)
-        assertEquals(emptyList<String>(), viewModel.bannerState.first().messages)
+        // Waiting for the emptied file list proves the banner ran after the delete.
+        val banner = viewModel.bannerState.first { it.unreadableRouteFiles.isEmpty() }
+        assertEquals(emptyList<String>(), banner.messages)
     }
 
     @Test
@@ -135,6 +149,7 @@ class SyncStatusViewModelTest {
             throw IOException("offline")
         }
         val viewModel = viewModel()
+        awaitStartupScan(viewModel)
 
         viewModel.deleteUnreadableRouteFiles(listOf("stuck.json"))
 
@@ -167,12 +182,12 @@ class SyncStatusViewModelTest {
             }
         }
         val viewModel = viewModel()
+        awaitStartupScan(viewModel)
         viewModel.deleteUnreadableRouteFiles(listOf("stuck.json"))
         syncStarted.await()
 
         viewModel.retry()
         release.complete(Unit)
-        advanceUntilIdle()
 
         val messages = viewModel.bannerState.first { it.messages.size == 2 }.messages
         assertEquals(2, syncedFolders.size)
@@ -186,6 +201,7 @@ class SyncStatusViewModelTest {
         store.recordOutcome(listOf("Planned routes: cannot read local file bad.json"))
         prefs.value = UserPreferences(syncEnabled = false, syncFolderUri = FOLDER)
         val viewModel = viewModel()
+        awaitStartupScan(viewModel)
 
         viewModel.deleteUnreadableRouteFiles(listOf("bad.json"))
 
@@ -205,7 +221,8 @@ class SyncStatusViewModelTest {
         val viewModel = viewModel()
 
         // The startup scan lists both files; the banner offers to delete them.
-        val before = viewModel.bannerState.first { it.unreadableRouteFiles.size == 2 }
+        awaitStartupScan(viewModel, count = 2)
+        val before = viewModel.bannerState.value
         assertEquals(setOf("bad.json", "stuck.json"), before.unreadableRouteFiles.toSet())
 
         viewModel.deleteUnreadableRouteFiles(listOf("bad.json", "stuck.json"))
@@ -218,6 +235,60 @@ class SyncStatusViewModelTest {
         assertFalse(routeFile("bad.json").exists())
         assertEquals(emptyList<String>(), syncedFolders)
     }
+
+    @Test
+    fun `a successful Retry clears the sync failure line and keeps the delete failure`() =
+        runTest {
+            stuckFile("stuck.json")
+            syncAction = { throw IOException("offline") }
+            val viewModel = viewModel()
+            awaitStartupScan(viewModel)
+            viewModel.deleteUnreadableRouteFiles(listOf("stuck.json"))
+            viewModel.bannerState.first { it.messages.contains("Sync failed: offline") }
+
+            syncAction = {}
+            viewModel.retry()
+
+            val messages = viewModel.bannerState.first { it.messages.size == 1 }.messages
+            assertTrue(deleteLine(messages) != null)
+        }
+
+    @Test
+    fun `a failure that arrives after Dismiss still shows`() = runTest {
+        stuckFile("stuck.json")
+        val syncStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        syncAction = {
+            syncStarted.complete(Unit)
+            release.await()
+            throw IOException("offline")
+        }
+        val viewModel = viewModel()
+        awaitStartupScan(viewModel)
+        viewModel.deleteUnreadableRouteFiles(listOf("stuck.json"))
+        syncStarted.await()
+        viewModel.bannerState.first { deleteLine(it.messages) != null }
+
+        viewModel.dismiss()
+        viewModel.bannerState.first { it.messages.isEmpty() }
+        release.complete(Unit)
+
+        val messages = viewModel.bannerState.first { it.messages.isNotEmpty() }.messages
+        assertEquals(listOf("Sync failed: offline"), messages)
+    }
+
+    @Test
+    fun `with sync off a planned-route folder that cannot be read shows in the banner`() =
+        runTest {
+            // A file where the directory should be makes the folder unreadable.
+            File(folder.root, "planned_routes").writeText("")
+            prefs.value = UserPreferences(syncEnabled = false, syncFolderUri = null)
+            val viewModel = viewModel()
+
+            val messages = viewModel.bannerState.first { it.messages.isNotEmpty() }.messages
+            assertEquals(1, messages.size)
+            assertTrue(messages.single().startsWith("Cannot read the planned routes: "))
+        }
 
     private companion object {
         const val FOLDER = "content://sync-folder"

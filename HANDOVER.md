@@ -73,9 +73,11 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   deleted. Edge cases (#107): Apple's tombstone delete removes the unreadable file by its URL
   (`deleteUnreadableFiles`, which returns what it deleted), so a lowercase `<uuid>.json` is found too.
   Android's delete flow syncs only with sync on (pure `afterRouteFileDelete`), "Retry" checks it too, and
-  `runReporting` returns its failure. The banner keeps one failure line per action (`actionErrors`, keyed by
-  what failed), so neither the follow-up sync nor a concurrent Retry or Dismiss hides a delete error, nor
-  the reverse (#110). Dismiss hides the lines shown when tapped.
+  `runReporting` returns its failure. The banner keeps one failure line per kind of failure (`actionErrors`,
+  keyed by what failed; Retry and the follow-up sync share one), so neither the follow-up sync nor a
+  concurrent Retry hides a delete error, and the delete flow does not hide a Retry error (#110). Dismiss
+  hides the lines shown when tapped. The startup scan of planned routes reports an unreadable folder in the
+  banner too, since with sync off nothing else does.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
@@ -199,7 +201,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **148/148 pass** (2026-11-26) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 227/227 per variant; 2026-11-26) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 230/230 per variant; 2026-11-26) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current
