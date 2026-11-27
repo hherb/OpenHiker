@@ -60,7 +60,10 @@ import javax.inject.Inject
  */
 private val Context.mapDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "map_preferences",
-    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+    corruptionHandler = ReplaceFileCorruptionHandler { e ->
+        Log.e("MapVM", "The map preferences file was damaged; reset it", e)
+        emptyPreferences()
+    }
 )
 
 /**
@@ -424,7 +427,7 @@ class MapViewModel @Inject constructor(
 
     /**
      * Writes the map's own state (camera, tile source). A failed write is only logged: the map
-     * keeps working and starts at the default position next time (#115).
+     * keeps working and next time starts at the last position that was saved (#115).
      *
      * @param change The edit to apply.
      */

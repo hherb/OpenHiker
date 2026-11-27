@@ -266,8 +266,8 @@ class SettingsViewModel @Inject constructor(
 
             // Read the folder afresh: the shown settings may be defaults while the file could
             // not be read, and acting on them would cancel sync and clear its errors (#115).
-            val folderUri = preferencesRepository.preferencesFlow.first().syncFolderUri
-            if (enabled && folderUri != null) {
+            // Turning sync off needs no folder, so it never waits on that read.
+            if (enabled && preferencesRepository.preferencesFlow.first().syncFolderUri != null) {
                 SyncWorker.schedule(application)
             } else {
                 SyncWorker.cancel(application)
@@ -390,7 +390,8 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Runs [action], which reads or writes the settings, and shows a read or write failure in
-     * [SettingsUiState.error] instead of crashing (#115).
+     * [SettingsUiState.error] instead of crashing (#115). Both show as "Cannot save the
+     * setting", since the setting was not saved or not acted on.
      *
      * @param action The settings change to make.
      */

@@ -293,6 +293,26 @@ class SyncStatusViewModelTest {
         }
 
     @Test
+    fun `a dismissed read error comes back when the settings fail to read again (#115)`() =
+        runTest {
+            var reads = 0
+            preferences = flow {
+                reads++
+                throw IOException("disk error")
+            }
+            val readError = listOf("$PREFERENCES_READ_FAILED: disk error")
+            val viewModel = viewModel()
+            viewModel.bannerState.first { it.messages == readError }
+
+            viewModel.dismiss()
+            viewModel.bannerState.first { it.messages.isEmpty() }
+
+            // A lasting failure keeps reporting itself instead of going quiet after one Dismiss.
+            viewModel.bannerState.first { it.messages == readError }
+            assertTrue(reads >= 2)
+        }
+
+    @Test
     fun `the settings reset notice shows until Dismiss hides it for good (#115)`() = runTest {
         prefs.value = prefs.value.copy(settingsWereReset = true)
         val viewModel = viewModel()

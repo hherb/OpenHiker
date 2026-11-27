@@ -301,7 +301,8 @@ class SyncStatusViewModel internal constructor(
 
     /**
      * Hides the errors, the reset notices and the banner actions' failure lines shown now, until
-     * a later sync or action fails again. A failure that arrives after the tap still shows.
+     * a later sync or action fails again or the settings fail to read again. A failure that
+     * arrives after the tap still shows.
      */
     fun dismiss() {
         val settingsWereReset = bannerState.value.messages.contains(SETTINGS_RESET_NOTICE)

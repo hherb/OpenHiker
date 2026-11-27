@@ -82,14 +82,14 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
   preferences read failure no longer crashes the banner: `SyncStatusViewModel` applies
   `orDefaultsOnReadError` (the defaults with `UserPreferences.readError` set), shows a "Cannot read your
   settings" line that Dismiss hides, and a delete then neither syncs nor clears the stored errors (#112).
-  Every other reader of the preferences survives a read failure too (#115). Settings and the map re-read
-  with capped backoff (`retryOnReadError`, 1 s doubling to 60 s) and emit nothing in between, so they never
-  act on defaults; the banner's `orDefaultsOnReadError` retries the same way, so Retry comes back once the
-  file reads again. Settings re-reads the folder before `setSyncEnabled` and `syncNow` act on it, and a
-  failed save shows in its snackbar. `SyncWorker` returns `retry()`. A file that cannot be parsed is
-  replaced by the defaults (`ReplaceFileCorruptionHandler`, `resetAfterCorruption`) with a
+  Every other reader of the preferences survives a read failure too (#115). Settings and the map re-read with
+  capped backoff (`retryOnReadError`, 1 s doubling to 60 s over the flow's lifetime) and emit nothing in
+  between, so they never act on defaults; the banner's `orDefaultsOnReadError` retries the same way, so Retry
+  comes back once the file reads again. Settings re-reads the folder before `setSyncEnabled` and `syncNow` act
+  on it, and a failed save shows in its snackbar. `SyncWorker` returns `retry()`. A file that cannot be parsed
+  is replaced by the defaults (`ReplaceFileCorruptionHandler`, `resetAfterCorruption`) with a
   `settings_were_reset` flag; the banner shows `SETTINGS_RESET_NOTICE` until Dismiss clears the flag. The
-  map's own `map_preferences` store resets silently and only logs failed reads and writes.
+  map's own `map_preferences` store resets without a notice and only logs resets, failed reads and writes.
 - **Android planned-route list** (#102). The Routes tab is `PlannedRouteListScreen`
   (`PlannedRouteListViewModel`, `ui/routing/`), as Apple's `PlannedRoutesListView`. It shows the routes
   newest first, opens `RouteDetailScreen`, and has a "Plan route" button for the planner (now the
@@ -213,7 +213,7 @@ project in `OpenHikerAndroid/` with modules `core` (pure Kotlin) and `app`.
 | iOS tests (`OpenHikerTests`) | `xcodebuild test … -scheme OpenHiker` on `iPhone 17,OS=27.0` | **148/148 pass** (2026-11-26) |
 | watchOS build | `… -scheme 'OpenHiker Watch App'` on `Apple Watch Ultra 3 (49mm),OS=26.5` | builds |
 | macOS build | `… -scheme 'OpenHiker macOS' -destination 'platform=macOS'` | builds |
-| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 244/244 per variant; 2026-11-27) |
+| Android tests | `cd OpenHikerAndroid && ./gradlew test --continue` | all pass (`:core` 340/340, `:app` 245/245 per variant; 2026-11-27) |
 
 The older destinations (iPhone 16 Pro, Apple Watch Ultra 2) only have old runtimes installed (iOS 18.4, watchOS
 11.x), and the iPhone 16 Pro run failed to find a destination (exit 70). CLAUDE.md and the skills now pin current

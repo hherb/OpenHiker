@@ -129,7 +129,8 @@ internal const val PREFERENCES_RETRY_MAX_MS = 60_000L
  * The wait before retry number [attempt] (0 for the first) of a failed preferences read: it
  * doubles from [PREFERENCES_RETRY_BASE_MS] up to [PREFERENCES_RETRY_MAX_MS].
  *
- * @param attempt How many retries came before this one.
+ * @param attempt How many retries came before this one, over the flow's lifetime: it does not
+ *   reset after a successful read, so a later failure may wait the full maximum.
  * @return The wait in milliseconds.
  */
 internal fun preferencesRetryDelayMs(attempt: Long): Long =
@@ -240,8 +241,9 @@ class UserPreferencesRepository internal constructor(
      *
      * Emits a new [UserPreferences] snapshot whenever any preference changes.
      * Services and ViewModels should collect this flow to react to settings changes.
-     * A read failure throws; [orDefaultsOnReadError] turns it into defaults for one collector,
-     * and [retryOnReadError] reads again. A damaged file does not throw: it is reset, and
+     * A read failure throws; [retryOnReadError] and [orDefaultsOnReadError] both read again,
+     * and only [orDefaultsOnReadError] emits defaults in between. A damaged file does not
+     * throw: it is reset, and
      * [UserPreferences.settingsWereReset] says so.
      */
     val preferencesFlow: Flow<UserPreferences> = dataStore.data.map { prefs ->

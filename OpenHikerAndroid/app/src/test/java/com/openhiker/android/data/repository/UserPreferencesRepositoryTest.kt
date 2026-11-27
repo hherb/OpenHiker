@@ -41,7 +41,7 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Unit tests for the pure data classes and enums in UserPreferencesRepository.
+ * Unit tests for UserPreferencesRepository and its data classes and enums.
  *
  * Covers [GpsAccuracyMode], [UnitSystem], and [UserPreferences] default values, the read-error
  * operators, and the repository on a real DataStore file, all on the JVM.
