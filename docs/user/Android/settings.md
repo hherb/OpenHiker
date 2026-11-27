@@ -81,12 +81,17 @@ folder is unavailable, the app lost access to it: choose it again under **Sync F
 syncs right away. If the folder cannot be reached, it was removed or its storage provider is offline;
 sync tries again later. If the app's own sync records were damaged, the banner says so: items you deleted
 shortly before may come back, and you can delete them again. Turning **Auto-Sync** off clears the
-banner.
+sync errors from the banner.
 
 If a planned-route file on the phone cannot be read, the banner names it and offers **Delete unreadable
 route files**. Sync never overwrites such a file, because it may hold changes the copy in the sync folder
 lacks. After you delete it, the app syncs again and brings back the copy from the sync folder, if there is
 one.
+
+If the phone cannot read your settings, the banner says so, and the app keeps trying to read them; until
+then, a setting you change may not be saved, and the line comes back after you close it. If the settings
+file was damaged, the app resets every setting to its default and the banner tells you so until you close
+it. Check your settings, and turn cloud sync back on: choose the sync folder again.
 
 <!-- Screenshot: Settings screen -->
 > **[Screenshot placeholder]** *Android settings screen showing GPS accuracy (Balanced selected), Units (Metric), and Cloud Sync section with Google Drive folder selected*

@@ -30,11 +30,13 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.openhiker.android.data.repository.UserPreferences
 import com.openhiker.android.data.repository.UserPreferencesRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -65,10 +67,17 @@ class SyncWorker @AssistedInject constructor(
      * Reads the cloud folder URI from the user preferences, then runs a
      * full sync cycle. The engine records the errors for the UI's banner.
      *
-     * @return The WorkManager result chosen by [workResultFor].
+     * @return The WorkManager result chosen by [workResultFor], or retry when the preferences
+     *   cannot be read: whether sync is on is unknown, and the read may work later (#115).
      */
     override suspend fun doWork(): Result {
-        val folderUri = getSyncFolderUri() ?: run {
+        val prefs = try {
+            preferencesRepository.preferencesFlow.first()
+        } catch (e: IOException) {
+            Log.e(TAG, "Cannot read the preferences; retrying later", e)
+            return Result.retry()
+        }
+        val folderUri = syncFolderUri(prefs) ?: run {
             Log.d(TAG, "Sync disabled or no folder configured, skipping")
             return Result.success()
         }
@@ -90,13 +99,12 @@ class SyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Reads the configured cloud sync folder URI from the user preferences, where the
-     * Settings screen stores it.
+     * The configured cloud sync folder URI, where the Settings screen stores it.
      *
+     * @param prefs The user preferences.
      * @return The folder URI, or null if not configured or sync is disabled.
      */
-    private suspend fun getSyncFolderUri(): Uri? {
-        val prefs = preferencesRepository.preferencesFlow.first()
+    private fun syncFolderUri(prefs: UserPreferences): Uri? {
         if (!prefs.syncEnabled) return null
         val uriString = prefs.syncFolderUri ?: return null
         return try {

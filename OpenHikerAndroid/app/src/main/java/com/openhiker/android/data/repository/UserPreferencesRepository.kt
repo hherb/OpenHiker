@@ -20,24 +20,33 @@ package com.openhiker.android.data.repository
 
 import android.content.Context
 import android.util.Log
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** DataStore instance for user preferences. */
+/**
+ * DataStore instance for user preferences. A file that cannot be parsed is replaced by the
+ * defaults with the reset notice set (#115), so it no longer fails every read.
+ */
 private val Context.userPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "user_preferences"
+    name = "user_preferences",
+    corruptionHandler = ReplaceFileCorruptionHandler(UserPreferencesRepository::resetAfterCorruption)
 )
 
 /**
@@ -96,16 +105,58 @@ enum class UnitSystem(val id: String, val displayName: String) {
 /**
  * Turns a failed preferences read into the default preferences with
  * [UserPreferences.readError] set, the standard DataStore pattern, so a collector shows the
- * error instead of crashing (#112). The flow then ends; a later collection reads the file again.
- * Other exceptions are programming errors and still propagate. Only the sync banner applies it:
- * a collector that acts on the settings must not act on these defaults.
+ * error instead of crashing (#112). It then reads again as [retryOnReadError] does, so a
+ * long-lived collector sees the stored values once they can be read (#115). Other exceptions
+ * are programming errors and still propagate. Only the sync banner applies it: a collector
+ * that acts on the settings must not act on these defaults; it applies [retryOnReadError].
  *
- * @return This flow, with an [IOException] from upstream replaced by one defaults snapshot.
+ * @param delayMs The wait before each retry; tests pass a shorter one.
+ * @return This flow, with each [IOException] from upstream replaced by one defaults snapshot.
  */
-internal fun Flow<UserPreferences>.orDefaultsOnReadError(): Flow<UserPreferences> = catch { e ->
-    if (e !is IOException) throw e
-    Log.e("UserPreferences", "Cannot read the preferences", e)
+internal fun Flow<UserPreferences>.orDefaultsOnReadError(
+    delayMs: (attempt: Long) -> Long = ::preferencesRetryDelayMs
+): Flow<UserPreferences> = retryOnReadError(delayMs) { e ->
     emit(UserPreferences(readError = e.message ?: e.javaClass.simpleName))
+}
+
+/** First wait before [retryOnReadError] reads the preferences again. */
+internal const val PREFERENCES_RETRY_BASE_MS = 1_000L
+
+/** Longest wait between two reads in [retryOnReadError]. */
+internal const val PREFERENCES_RETRY_MAX_MS = 60_000L
+
+/**
+ * The wait before retry number [attempt] (0 for the first) of a failed preferences read: it
+ * doubles from [PREFERENCES_RETRY_BASE_MS] up to [PREFERENCES_RETRY_MAX_MS].
+ *
+ * @param attempt How many retries came before this one, over the flow's lifetime: it does not
+ *   reset after a successful read, so a later failure may wait the full maximum.
+ * @return The wait in milliseconds.
+ */
+internal fun preferencesRetryDelayMs(attempt: Long): Long =
+    // The cap on the shift keeps it from overflowing; 2^6 s is already past the maximum.
+    minOf(PREFERENCES_RETRY_BASE_MS shl attempt.coerceIn(0, 6).toInt(), PREFERENCES_RETRY_MAX_MS)
+
+/**
+ * Reads the preferences again after a read failure, waiting [preferencesRetryDelayMs] longer
+ * each time, so a long-lived collector does not crash and sees the stored values once the file
+ * can be read again (#115). By default it emits nothing in between: the collector keeps what it
+ * had and never acts on defaults. The sync banner shows the failure (see
+ * [orDefaultsOnReadError]). Other exceptions still propagate.
+ *
+ * @param delayMs The wait before each retry; tests pass a shorter one.
+ * @param onError Runs on each read failure, before the wait; it may emit.
+ * @return This flow, retried after every [IOException].
+ */
+internal fun Flow<UserPreferences>.retryOnReadError(
+    delayMs: (attempt: Long) -> Long = ::preferencesRetryDelayMs,
+    onError: suspend FlowCollector<UserPreferences>.(IOException) -> Unit = {}
+): Flow<UserPreferences> = retryWhen { cause, attempt ->
+    if (cause !is IOException) return@retryWhen false
+    Log.e("UserPreferences", "Cannot read the preferences; retry ${attempt + 1}", cause)
+    onError(cause)
+    delay(delayMs(attempt))
+    true
 }
 
 /**
@@ -126,6 +177,8 @@ internal fun Flow<UserPreferences>.orDefaultsOnReadError(): Flow<UserPreferences
  * @property syncEnabled Whether automatic cloud sync is enabled.
  * @property syncFolderUri SAF tree URI for the cloud sync folder, or null.
  * @property keepScreenOnDuringNavigation Whether to prevent screen sleep during active navigation.
+ * @property settingsWereReset True after a damaged preferences file was replaced by the
+ *   defaults, until the user dismisses the notice (#115).
  * @property readError Why the stored preferences could not be read, or null. When set, every
  *   other property holds its default (see [orDefaultsOnReadError]).
  */
@@ -141,6 +194,7 @@ data class UserPreferences(
     val syncEnabled: Boolean = false,
     val syncFolderUri: String? = null,
     val keepScreenOnDuringNavigation: Boolean = true,
+    val settingsWereReset: Boolean = false,
     val readError: String? = null
 ) {
     companion object {
@@ -167,20 +221,30 @@ data class UserPreferences(
  *
  * Thread safety is guaranteed by DataStore's internal serialisation.
  *
- * @param context Application context for DataStore access.
+ * @param dataStore The DataStore holding the preferences; tests pass one on a temporary file.
  */
 @Singleton
-class UserPreferencesRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+class UserPreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
 ) {
-    private val dataStore = context.userPreferencesDataStore
+
+    /**
+     * Creates the repository on the app's preferences file.
+     *
+     * @param context Application context for DataStore access.
+     */
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context.userPreferencesDataStore)
 
     /**
      * Observable stream of the current user preferences.
      *
      * Emits a new [UserPreferences] snapshot whenever any preference changes.
      * Services and ViewModels should collect this flow to react to settings changes.
-     * A read failure throws; [orDefaultsOnReadError] turns it into defaults for one collector.
+     * A read failure throws; [retryOnReadError] and [orDefaultsOnReadError] both read again,
+     * and only [orDefaultsOnReadError] emits defaults in between. A damaged file does not
+     * throw: it is reset, and
+     * [UserPreferences.settingsWereReset] says so.
      */
     val preferencesFlow: Flow<UserPreferences> = dataStore.data.map { prefs ->
         UserPreferences(
@@ -202,8 +266,14 @@ class UserPreferencesRepository @Inject constructor(
                 ?: UserPreferences.DEFAULT_CONCURRENT_DOWNLOADS,
             syncEnabled = prefs[KEY_SYNC_ENABLED] ?: false,
             syncFolderUri = prefs[KEY_SYNC_FOLDER_URI],
-            keepScreenOnDuringNavigation = prefs[KEY_KEEP_SCREEN_ON] ?: true
+            keepScreenOnDuringNavigation = prefs[KEY_KEEP_SCREEN_ON] ?: true,
+            settingsWereReset = prefs[KEY_SETTINGS_WERE_RESET] ?: false
         )
+    }
+
+    /** Hides the notice that the damaged preferences were reset to the defaults (#115). */
+    suspend fun dismissSettingsResetNotice() {
+        dataStore.edit { it.remove(KEY_SETTINGS_WERE_RESET) }
     }
 
     /**
@@ -323,5 +393,18 @@ class UserPreferencesRepository @Inject constructor(
         private val KEY_SYNC_ENABLED = booleanPreferencesKey("sync_enabled")
         private val KEY_SYNC_FOLDER_URI = stringPreferencesKey("sync_folder_uri")
         private val KEY_KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on_navigation")
+        private val KEY_SETTINGS_WERE_RESET = booleanPreferencesKey("settings_were_reset")
+
+        /**
+         * Replaces a preferences file that cannot be parsed (#115): the defaults, with the
+         * reset notice set so the user learns that their settings, sync among them, are gone.
+         *
+         * @param e Why the file could not be parsed.
+         * @return The preferences to write in place of the damaged file.
+         */
+        internal fun resetAfterCorruption(e: CorruptionException): Preferences {
+            Log.e("UserPreferences", "Preferences file damaged; reset to the defaults", e)
+            return preferencesOf(KEY_SETTINGS_WERE_RESET to true)
+        }
     }
 }

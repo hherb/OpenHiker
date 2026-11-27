@@ -19,16 +19,21 @@
 package com.openhiker.android.ui.map
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openhiker.android.data.repository.RegionRepository
 import com.openhiker.android.data.repository.UserPreferencesRepository
+import com.openhiker.android.data.repository.retryOnReadError
 import com.openhiker.android.service.download.TileDownloadService
 import com.openhiker.android.service.map.OfflineStyleGenerator
 import com.openhiker.core.geo.BoundingBox
@@ -46,11 +51,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
-/** DataStore instance for persisting map camera position and preferences. */
+/**
+ * DataStore instance for persisting map camera position and preferences. A damaged file is
+ * replaced by an empty one: it holds only the last camera position and tile source (#115).
+ */
 private val Context.mapDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "map_preferences"
+    name = "map_preferences",
+    corruptionHandler = ReplaceFileCorruptionHandler { e ->
+        Log.e("MapVM", "The map preferences file was damaged; reset it", e)
+        emptyPreferences()
+    }
 )
 
 /**
@@ -147,7 +160,7 @@ class MapViewModel @Inject constructor(
      */
     private fun observeDefaultTileServer() {
         viewModelScope.launch {
-            userPreferencesRepository.preferencesFlow.collect { prefs ->
+            userPreferencesRepository.preferencesFlow.retryOnReadError().collect { prefs ->
                 val currentMode = _mapMode.value
                 if (currentMode is MapMode.Online) {
                     val preferred = TileServer.ALL.find { it.id == prefs.defaultTileServerId }
@@ -171,12 +184,10 @@ class MapViewModel @Inject constructor(
      */
     fun saveCameraPosition(latitude: Double, longitude: Double, zoom: Double) {
         _cameraState.value = CameraState(latitude, longitude, zoom)
-        viewModelScope.launch {
-            dataStore.edit { prefs ->
-                prefs[KEY_LATITUDE] = latitude
-                prefs[KEY_LONGITUDE] = longitude
-                prefs[KEY_ZOOM] = zoom
-            }
+        saveMapState { prefs ->
+            prefs[KEY_LATITUDE] = latitude
+            prefs[KEY_LONGITUDE] = longitude
+            prefs[KEY_ZOOM] = zoom
         }
     }
 
@@ -189,11 +200,7 @@ class MapViewModel @Inject constructor(
      */
     fun selectTileSource(server: TileServer) {
         _mapMode.value = MapMode.Online(server)
-        viewModelScope.launch {
-            dataStore.edit { prefs ->
-                prefs[KEY_TILE_SOURCE] = server.id
-            }
-        }
+        saveMapState { prefs -> prefs[KEY_TILE_SOURCE] = server.id }
     }
 
     /**
@@ -419,10 +426,32 @@ class MapViewModel @Inject constructor(
     }
 
     /**
-     * Restores camera position and tile source from DataStore.
+     * Writes the map's own state (camera, tile source). A failed write is only logged: the map
+     * keeps working and next time starts at the last position that was saved (#115).
+     *
+     * @param change The edit to apply.
+     */
+    private fun saveMapState(change: (MutablePreferences) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dataStore.edit(change)
+            } catch (e: IOException) {
+                Log.e(TAG, "Cannot save the map position", e)
+            }
+        }
+    }
+
+    /**
+     * Restores camera position and tile source from DataStore. If they cannot be read, the map
+     * starts at the defaults (#115).
      */
     private suspend fun restoreCameraPosition() {
-        val prefs = dataStore.data.first()
+        val prefs = try {
+            dataStore.data.first()
+        } catch (e: IOException) {
+            Log.e(TAG, "Cannot read the saved map position", e)
+            return
+        }
         val savedLat = prefs[KEY_LATITUDE]
         val savedLon = prefs[KEY_LONGITUDE]
         val latitude = savedLat ?: CameraState.DEFAULT_LATITUDE
@@ -441,6 +470,7 @@ class MapViewModel @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "MapVM"
         private val KEY_LATITUDE = doublePreferencesKey("lastLatitude")
         private val KEY_LONGITUDE = doublePreferencesKey("lastLongitude")
         private val KEY_ZOOM = doublePreferencesKey("lastZoom")
